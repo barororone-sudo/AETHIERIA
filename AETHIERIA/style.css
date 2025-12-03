@@ -1,0 +1,421 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    overflow: hidden;
+    font-family: 'Inter', sans-serif;
+    background-color: #000;
+}
+
+canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    outline: none;
+}
+
+#ui-container {
+    position: absolute;
+    top: 60px;
+    /* Moved down for Hearts */
+    left: 20px;
+    pointer-events: none;
+}
+
+.glass-panel {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 1.5rem 2rem;
+    border-radius: 24px;
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    font-weight: 300;
+    letter-spacing: 0.5px;
+}
+
+h1 {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+    letter-spacing: 2px;
+}
+
+p {
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
+#stamina-container {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    opacity: 0.8;
+    transition: opacity 0.3s;
+}
+
+#stamina-ring {
+    transition: stroke-dashoffset 0.1s linear;
+}
+
+/* HEARTS (ZELDA STYLE) */
+#hearts-container {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    /* MOVED TO RIGHT */
+    display: flex;
+    gap: 5px;
+    pointer-events: none;
+    z-index: 50;
+}
+
+.heart {
+    width: 30px;
+    height: 30px;
+    background-color: red;
+    clip-path: path('M15 27.5 L 2.5 15 A 7.5 7.5 0 0 1 15 5 A 7.5 7.5 0 0 1 27.5 15 Z');
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+}
+
+.heart.empty {
+    background-color: #444;
+    clip-path: path('M15 27.5 L 2.5 15 A 7.5 7.5 0 0 1 15 5 A 7.5 7.5 0 0 1 27.5 15 Z');
+}
+
+/* PAUSE MENU */
+#pause-menu {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(5px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    z-index: 200;
+    pointer-events: auto;
+    /* Fix: Enable clicks */
+}
+
+.menu-container,
+.stats-container {
+    padding: 20px;
+    min-width: 300px;
+    min-height: 400px;
+}
+
+#inventory-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.inventory-slot {
+    width: 60px;
+    height: 60px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    position: relative;
+    font-size: 10px;
+    text-align: center;
+    color: white;
+    overflow: hidden;
+}
+
+.inventory-slot:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: white;
+}
+
+.item-count {
+    position: absolute;
+    bottom: 2px;
+    right: 4px;
+    font-weight: bold;
+    text-shadow: 1px 1px 0 #000;
+}
+
+/* LOADING SCREEN */
+#loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    transition: opacity 0.5s;
+}
+
+.logo {
+    font-size: 64px;
+    color: white;
+    font-weight: bold;
+    letter-spacing: 10px;
+    margin-bottom: 40px;
+    text-shadow: 0 0 20px #00aaff;
+}
+
+.loading-bar-container {
+    width: 300px;
+    height: 4px;
+    background: #333;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+#loading-bar-fill {
+    width: 0%;
+    height: 100%;
+    background: #00aaff;
+    transition: width 0.2s;
+    box-shadow: 0 0 10px #00aaff;
+}
+
+/* ERROR POPUP */
+#error-popup {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(50, 0, 0, 0.8);
+    z-index: 10000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    pointer-events: auto;
+    /* Fix: Enable clicks */
+}
+
+.error-box {
+    background: #220000;
+    border: 2px solid #ff0000;
+    padding: 30px;
+    border-radius: 10px;
+    max-width: 600px;
+    color: #ffaaaa;
+    font-family: monospace;
+}
+
+.error-box h2 {
+    color: #ff0000;
+    margin-top: 0;
+}
+
+.error-buttons {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+.error-buttons button {
+    background: #440000;
+    color: white;
+    border: 1px solid #ff0000;
+    padding: 10px 20px;
+    cursor: pointer;
+}
+
+.error-buttons button:hover {
+    background: #660000;
+}
+
+/* MINIMAP ICONS */
+.minimap-icon-tower {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+    box-shadow: 0 0 4px black;
+}
+
+.minimap-icon-tower.locked {
+    background-color: #ff3333;
+    border: 2px solid #660000;
+}
+
+.minimap-icon-tower.unlocked {
+    background-color: #33ccff;
+    border: 2px solid #004466;
+    box-shadow: 0 0 8px #33ccff;
+}
+
+.minimap-icon-cloud {
+    position: absolute;
+    width: 40px;
+    /* Large enough to overlap */
+    height: 40px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 70%);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 5;
+    pointer-events: none;
+}
+
+.minimap-icon-enemy {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background-color: #ff0000;
+    border: 1px solid #660000;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 15;
+    /* Above Towers, Below Clouds? No, above clouds */
+    box-shadow: 0 0 2px black;
+}
+
+.minimap-icon-boss {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background-color: #ff0000;
+    border: 2px solid #660000;
+    border-radius: 0;
+    /* Square for boss */
+    transform: translate(-50%, -50%);
+    z-index: 16;
+    box-shadow: 0 0 5px red;
+}
+
+/* MINIMAP CONTAINER */
+#minimap-container {
+    position: absolute;
+    bottom: unset;
+    top: 20px;
+    left: 20px;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    /* ROUND */
+    border: 3px solid transparent;
+    /* TRANSPARENT BORDER */
+    box-shadow: 0 0 10px black;
+    overflow: hidden;
+    z-index: 100;
+    background: #2a2a2a;
+    transition: all 0.3s ease;
+    display: none;
+}
+
+/* BIG MAP STATE */
+#minimap-container.big-map-active {
+    width: 100vw;
+    height: 100vh;
+    top: 0;
+    left: 0;
+    border-radius: 0;
+    border: none;
+    z-index: 10000;
+}
+
+/* SCROLLING WRAPPER */
+#map-content {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 2000px;
+    /* World Size */
+    height: 2000px;
+    transform-origin: top left;
+    will-change: transform;
+}
+
+#map-layer-terrain,
+#map-layer-fog,
+#map-layer-icons {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    object-fit: cover;
+}
+
+#map-layer-terrain {
+    object-fit: cover;
+    opacity: 1.0;
+    /* Fully visible when revealed */
+    background-color: #3a5f3a;
+    /* Fallback Green if image missing */
+}
+
+#map-layer-icons {
+    pointer-events: none;
+}
+
+.map-icon-player {
+    position: absolute;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 12px solid #00ff00;
+    transform-origin: center;
+    z-index: 20;
+    filter: drop-shadow(0 0 2px black);
+}
+
+.map-icon-tower {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+    box-shadow: 0 0 3px black;
+}
+
+.map-icon-tower.locked {
+    background-color: #ff3333;
+    border: 2px solid #660000;
+}
+
+.map-icon-tower.unlocked {
+    background-color: #33ccff;
+    border: 2px solid #004466;
+    box-shadow: 0 0 6px #33ccff;
+}
+
+.map-icon-enemy {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background-color: #ff0000;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 15;
+}
+
+.map-icon-boss {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background-color: #ff0000;
+    border: 2px solid #fff;
+    transform: translate(-50%, -50%) rotate(45deg);
+    z-index: 16;
+}

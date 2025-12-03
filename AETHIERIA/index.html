@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AETHERIA - Prototype</title>
+    <link rel="stylesheet" href="style.css?v=6">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+            }
+        }
+    </script>
+    <circle id="stamina-ring" cx="50" cy="50" r="40" stroke="#00ff00" stroke-width="8" fill="none"
+        stroke-dasharray="251.3" stroke-dashoffset="0" transform="rotate(-90 50 50)" />
+    </svg>
+    </div>
+
+    <div id="ui-container">
+        <!-- LOADING SCREEN -->
+        <div id="loading-screen">
+            <div class="logo">AETHERIA</div>
+            <div class="loading-bar-container">
+                <div id="loading-bar-fill"></div>
+            </div>
+        </div>
+
+        <!-- MINIMAP -->
+        <div id="minimap-container">
+            <img id="map-layer-terrain" src="assets/world_map.png" style="z-index: 1;">
+            <canvas id="map-layer-fog" style="z-index: 2; opacity: 0.95;"></canvas>
+            <div id="map-layer-icons" style="z-index: 3;"></div>
+        </div>
+
+        <!-- ERROR POPUP -->
+        <div id="error-popup" style="display: none;">
+            <div class="error-box">
+                <h2>CRITICAL ERROR</h2>
+                <div id="error-content"></div>
+                <div class="error-buttons">
+                    <button onclick="location.reload()">RELOAD</button>
+                    <button onclick="document.getElementById('error-popup').style.display='none'">IGNORE</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="stamina-container" style="display: none;">
+            <svg width="100" height="100" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="40" stroke="rgba(255,255,255,0.2)" stroke-width="8" fill="none" />
+                <circle id="stamina-ring" cx="50" cy="50" r="40" stroke="#4caf50" stroke-width="8" fill="none"
+                    stroke-dasharray="251.2" stroke-dashoffset="0" transform="rotate(-90 50 50)" />
+            </svg>
+        </div>
+
+        <!-- PAUSE MENU -->
+        <div id="pause-menu" style="display: none;">
+            <div class="menu-container glass-panel">
+                <h2>INVENTORY</h2>
+                <div id="inventory-grid"></div>
+            </div>
+            <div class="stats-container glass-panel">
+                <h2>STATS</h2>
+                <div id="stats-content"></div>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="./js/main.js?v=7"></script>
+    </body>
+
+</html>
