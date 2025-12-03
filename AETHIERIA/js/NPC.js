@@ -10,6 +10,9 @@ export class NPC {
         this.name = "Ancien";
         this.interactionRadius = 3.0;
 
+        this.interactionRadius = 3.0;
+        this.VISUAL_OFFSET_Y = 1.0;
+
         this.initVisuals();
     }
 
@@ -35,8 +38,8 @@ export class NPC {
             if (groundY !== null) {
                 // NPC Mesh pivot is at feet (Group origin), so we set Y to groundY directly.
                 // But let's add a tiny offset to avoid z-fighting with floor
-                this.mesh.position.y = groundY + 0.1;
-                this.position.y = groundY + 0.1;
+                this.mesh.position.y = groundY + this.VISUAL_OFFSET_Y;
+                this.position.y = groundY + this.VISUAL_OFFSET_Y;
             }
         }
 

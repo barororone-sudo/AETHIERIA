@@ -20,6 +20,9 @@ export class World {
         this.physicsWorld = new CANNON.World();
         this.physicsWorld.gravity.set(0, -9.82, 0);
 
+        this.physicsWorld.gravity.set(0, -9.82, 0);
+
+        /** @type {CANNON.Material} */
         this.defaultMaterial = new CANNON.Material('default');
         const defaultContactMaterial = new CANNON.ContactMaterial(this.defaultMaterial, this.defaultMaterial, {
             friction: 0.3,
@@ -28,6 +31,7 @@ export class World {
         this.physicsWorld.addContactMaterial(defaultContactMaterial);
 
         // Slippery Material (No Friction)
+        /** @type {CANNON.Material} */
         this.slipperyMaterial = new CANNON.Material('slippery');
         const slipperyContact = new CANNON.ContactMaterial(this.slipperyMaterial, this.slipperyMaterial, {
             friction: 0.0,

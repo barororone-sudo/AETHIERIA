@@ -63,14 +63,14 @@ export class Player {
 
         // Timers
         this.hitStopTimer = 0;
-        this.shakeTimer = 0;
-        this.shakeIntensity = 0;
+        /** @type {number} */ this.shakeTimer = 0;
+        /** @type {number} */ this.shakeIntensity = 0;
 
         // Abilities
-        this.canGlide = true;
-        this.canSurf = true;
+        /** @type {boolean} */ this.canGlide = true;
+        /** @type {boolean} */ this.canSurf = true;
 
-        this.VISUAL_OFFSET_Y = 1.2;
+        /** @type {number} */ this.VISUAL_OFFSET_Y = 1.2;
 
         // Visuals (Initialized in initVisuals)
         /** @type {THREE.Group|null} */ this.mesh = null;
@@ -856,112 +856,389 @@ export class Player {
     updateVisuals() {
         const mesh = this.mesh;
         const body = this.body;
-        this.staminaContainer.style.display = 'block';
-        const circumference = 2 * Math.PI * 40;
-        const offset = circumference - (this.stamina / this.maxStamina) * circumference;
-        this.staminaRing.style.strokeDashoffset = String(offset);
-    } else {
-    this.staminaContainer.style.display = 'none';
-}
+
+        // Sync Position
+        if (mesh && body) {
+            mesh.position.copy(body.position);
+            // Physics Body is Sphere(0.5). Center is at 0.5m above ground.
+            // Mesh pivot is at feet.
+            // So Mesh Y should be Body Y - 0.5.
+            // We add VISUAL_OFFSET_Y to pull it out of the ground.
+            mesh.position.y -= 0.5;
+            mesh.position.y += this.VISUAL_OFFSET_Y;
+        } else {
+            return;
         }
 
-// Hearts (Zelda Style)
-if (this.heartsContainer) {
-    const maxHearts = this.maxHp / 20; // 1 Heart = 20 HP
-    const currentHearts = Math.ceil(this.hp / 20);
+        const now = performance.now() * 0.001;
+        const floatOffset = Math.sin(now * 2) * 0.05;
+        if (this.torso) this.torso.position.y = 1.0 + floatOffset;
 
-    // Only update if changed to avoid DOM thrashing
-    if (this.heartsContainer.childElementCount !== maxHearts || this.heartsContainer.dataset.hp != String(Math.ceil(this.hp))) {
-        this.heartsContainer.innerHTML = '';
-        this.heartsContainer.dataset.hp = String(Math.ceil(this.hp));
+        // Halo Rotation
+        if (this.halo) {
+            this.halo.rotation.z = now; // Spin
+            this.halo.rotation.x = (Math.PI / 2 + 0.2) + Math.sin(now) * 0.1; // Wobble
+        }
 
-        for (let i = 1; i <= maxHearts; i++) {
-            const heart = document.createElement('div');
-            heart.className = 'heart';
-            if (i > currentHearts) {
-                heart.classList.add('empty');
+        // Scarf Animation (Wind)
+        if (this.scarfSegments) {
+            const wind = Math.sin(now * 5) * 0.2;
+            this.scarfSegments.forEach((seg, i) => {
+                // Simple sway
+                seg.group.rotation.x = wind * ((i + 1) * 0.5);
+            });
+        }
+
+        // Skirt Animation (Physics-ish)
+        if (this.skirtPlanes) {
+            const speed = this.getInputVector().length();
+            const runFlare = speed * 0.5;
+            this.skirtPlanes.forEach((pivot, i) => {
+                pivot.rotation.x = runFlare + Math.sin(now * 10 + i) * 0.1 * speed;
+            });
+        }
+
+        // Bow Animation
+        if (this.bowGroup) {
+            if (this.combat && this.combat.isAiming) {
+                this.bowGroup.visible = true;
+                this.bowGroup.rotation.y = -Math.PI / 2;
+                this.bowGroup.rotation.x = -this.cameraState.phi + Math.PI / 2;
+
+                if (this.torso && this.mesh) {
+                    this.torso.rotation.y = this.cameraState.theta - this.mesh.rotation.y + Math.PI / 4;
+                }
+
+                if (this.armL) {
+                    this.armL.group.rotation.z = Math.PI / 2;
+                    this.armL.group.rotation.y = Math.PI / 4;
+                }
+                if (this.armR) {
+                    this.armR.group.rotation.z = Math.PI / 2;
+                    this.armR.group.rotation.y = -Math.PI / 4;
+                }
+
+            } else {
+                this.bowGroup.visible = false;
             }
-            this.heartsContainer.appendChild(heart);
         }
-    }
-}
 
-// Abilities UI
-if (this.iconGlide) {
-    this.iconGlide.style.opacity = this.canGlide ? (this.state === 'GLIDE' ? '1.0' : '0.5') : '0.1';
-    this.iconGlide.style.border = this.state === 'GLIDE' ? '2px solid #00ff00' : '2px solid #fff';
-}
-if (this.iconSurf) {
-    this.iconSurf.style.opacity = this.canSurf ? (this.state === 'SURF' ? '1.0' : '0.5') : '0.1';
-    this.iconSurf.style.border = this.state === 'SURF' ? '2px solid #00ff00' : '2px solid #fff';
-}
-    }
-
-getInputVector() {
-    const inputVector = new THREE.Vector3(0, 0, 0);
-    if (this.input.keys.forward) inputVector.z -= 1;
-    if (this.input.keys.backward) inputVector.z += 1;
-    if (this.input.keys.left) inputVector.x -= 1;
-    if (this.input.keys.right) inputVector.x += 1;
-
-    if (inputVector.length() > 0) {
-        // console.log("Input Vector:", inputVector);
-        inputVector.normalize();
-        const rotation = new THREE.Euler(0, this.cameraState.theta, 0);
-        inputVector.applyEuler(rotation);
-    }
-    return inputVector;
-}
-
-getForwardVector() {
-    const forward = new THREE.Vector3(0, 0, -1);
-    forward.applyEuler(new THREE.Euler(0, this.cameraState.theta, 0));
-    return forward;
-}
-
-checkGround() {
-    const mesh = this.mesh;
-    const world = this.world;
-    if (!mesh || !world) return false;
-
-    // 1. Check Terrain (The Truth)
-    if (world.terrainManager) {
-        const groundH = world.terrainManager.getGlobalHeight(mesh.position.x, mesh.position.z);
-        // Player origin is at feet. If y is close to groundH, we are grounded.
-        // Tolerance: 0.2
-        if (Math.abs(mesh.position.y - groundH) < 0.3) {
-            return true;
+        // Sword Trail Update
+        if (this.swordTrail && this.combat && this.combat.isAttacking) {
+            const base = new THREE.Vector3(0, 0, 0);
+            const tip = new THREE.Vector3(0, 1.2, 0);
+            if (this.weaponHolder) {
+                this.weaponHolder.localToWorld(base);
+                this.weaponHolder.localToWorld(tip);
+                this.swordTrail.update(base, tip);
+            }
+        } else if (this.swordTrail) {
+            this.swordTrail.updateGeometry();
         }
     }
 
-    // 2. Check Objects (Bridges, Platforms) via Raycast
-    const raycaster = new THREE.Raycaster(mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0)), new THREE.Vector3(0, -1, 0), 0, 2.0);
+    /**
+     * @param {number} dt
+     */
+    updateAnimations(dt) {
+        const time = performance.now() * 0.005;
+        const speed = this.getInputVector().length();
+        const isRunning = this.isSprinting && speed > 0.1;
 
-    const interactables = world.interactables || [];
-    const interactableMeshes = interactables.map(i => i.mesh || i).filter(i => i.isObject3D);
+        // Guard Clause for missing visuals
+        if (!this.mesh || !this.torso || !this.armL || !this.armR || !this.legL || !this.legR) {
+            return;
+        }
 
-    // Only check interactables/structures, not terrain chunks (already checked above)
-    const objects = [...interactableMeshes].filter(o => o);
+        // Reset Rotations (T-Pose / Relaxed)
+        if (this.armL && this.armL.group && this.armR && this.armR.group &&
+            this.legL && this.legL.group && this.legR && this.legR.group) {
 
-    if (objects.length > 0) {
-        const intersects = raycaster.intersectObjects(objects, true);
+            this.armL.group.rotation.z = Math.PI / 8;
+            this.armR.group.rotation.z = -Math.PI / 8;
+            this.armL.group.rotation.x = 0;
+            this.armR.group.rotation.x = 0;
+            this.legL.group.rotation.x = 0;
+            this.legR.group.rotation.x = 0;
+
+            if (this.forearmL) this.forearmL.group.rotation.x = 0;
+            if (this.forearmR) this.forearmR.group.rotation.x = 0;
+            if (this.shinL) this.shinL.group.rotation.x = 0;
+            if (this.shinR) this.shinR.group.rotation.x = 0;
+
+            // Reset Lean
+            this.mesh.rotation.x = 0;
+            this.torso.rotation.x = 0;
+            this.torso.rotation.y = 0;
+            this.torso.scale.set(1, 1, 1);
+        }
+
+        // IDLE BREATHING
+        if (this.state === 'IDLE' && speed < 0.1 && !this.combat.isAttacking) {
+            const breath = 1 + Math.sin(time * 2) * 0.02;
+            if (this.torso) this.torso.scale.y = breath;
+        }
+
+        // LOCOMOTION (WALK / RUN)
+        if ((this.state === 'WALK' || (this.state === 'IDLE' && speed > 0.1)) && !this.combat.isAttacking) {
+            const freq = isRunning ? 15 : 8;
+            const amp = isRunning ? 1.2 : 0.6;
+            const walkCycle = time * freq;
+
+            // Naruto Run Lean
+            if (isRunning && this.mesh) {
+                this.mesh.rotation.x = 0.5; // ~30 degrees forward
+                if (this.head) this.head.rotation.x = -0.4; // Look up
+
+                // Arms back
+                if (this.armL) {
+                    this.armL.group.rotation.x = 1.5;
+                    this.armL.group.rotation.z = 0.5;
+                }
+                if (this.armR) {
+                    this.armR.group.rotation.x = 1.5;
+                    this.armR.group.rotation.z = -0.5;
+                }
+            } else {
+                // Normal Walk Arms
+                if (this.armL) this.armL.group.rotation.x = Math.sin(walkCycle + Math.PI) * amp;
+                if (this.armR) this.armR.group.rotation.x = Math.sin(walkCycle) * amp;
+                if (this.head) this.head.rotation.x = 0;
+            }
+
+            // Torso Bounce
+            const bounce = Math.abs(Math.cos(walkCycle)) * 0.1;
+            if (this.torso) this.torso.position.y = 1.0 + bounce;
+
+            // Legs (Swing)
+            const legL_Rot = Math.sin(walkCycle) * amp;
+            const legR_Rot = Math.sin(walkCycle + Math.PI) * amp;
+
+            if (this.legL) this.legL.group.rotation.x = legL_Rot;
+            if (this.legR) this.legR.group.rotation.x = legR_Rot;
+
+            // Knees
+            const kneeLiftL = Math.max(0, Math.cos(walkCycle)) * 1.5;
+            const kneeLiftR = Math.max(0, Math.cos(walkCycle + Math.PI)) * 1.5;
+
+            if (this.shinL) this.shinL.group.rotation.x = -kneeLiftL * (isRunning ? 1.5 : 1.0);
+            if (this.shinR) this.shinR.group.rotation.x = -kneeLiftR * (isRunning ? 1.5 : 1.0);
+        }
+
+        // COMBAT ANIMATIONS
+        if (this.combat && this.combat.isAttacking) {
+            const progress = this.combat.attackProgress || 0;
+            const combo = this.combat.comboStep;
+
+            if (combo === 1) {
+                // Horizontal Slash
+                const p = Utils.easeOutBack(progress);
+                if (this.torso) this.torso.rotation.y = THREE.MathUtils.lerp(-1.0, 1.0, p);
+                if (this.armR) {
+                    this.armR.group.rotation.y = THREE.MathUtils.lerp(-1.5, 1.5, p);
+                    this.armR.group.rotation.x = -Math.PI / 2;
+                }
+            } else if (combo === 2) {
+                // Vertical Smash
+                if (progress < 0.3) {
+                    const windup = progress / 0.3;
+                    if (this.armR) this.armR.group.rotation.x = THREE.MathUtils.lerp(0, -Math.PI, windup);
+                } else {
+                    const smash = (progress - 0.3) / 0.7;
+                    const smashP = Utils.easeOutElastic(smash);
+                    if (this.armR) this.armR.group.rotation.x = THREE.MathUtils.lerp(-Math.PI, 0.5, smashP);
+                }
+            } else if (combo === 3) {
+                // Spin
+                const p = Utils.easeInOutQuad(progress);
+                if (this.mesh) this.mesh.rotation.y += p * Math.PI * 2;
+                if (this.armR) this.armR.group.rotation.z = -Math.PI / 2;
+                if (this.armL) this.armL.group.rotation.z = Math.PI / 2;
+            }
+        }
+    }
+
+    /**
+     * @param {number} dt
+     */
+    updateCamera(dt) {
+        if (!this.mesh) return;
+        const targetFov = this.combat.isAiming ? 40 : 75;
+        this.camera.fov = Utils.lerp(this.camera.fov, targetFov, dt * 10);
+        this.camera.updateProjectionMatrix();
+
+        // Clamp Vertical Angle (Anti-Underground)
+        const minPhi = 0.1;
+        const maxPhi = Math.PI / 2 - 0.2; // Don't go below horizon
+        this.cameraState.phi = Utils.clamp(this.cameraState.phi, minPhi, maxPhi);
+
+        const x = this.cameraState.distance * Math.sin(this.cameraState.phi) * Math.sin(this.cameraState.theta);
+        const y = this.cameraState.distance * Math.cos(this.cameraState.phi);
+        const z = this.cameraState.distance * Math.sin(this.cameraState.phi) * Math.cos(this.cameraState.theta);
+
+        const offset = new THREE.Vector3(0, 0, 0);
+
+        // Screen Shake
+        if (this.shakeTimer > 0) {
+            this.shakeTimer -= dt;
+            const shake = this.shakeIntensity * (this.shakeTimer > 0 ? 1 : 0);
+            offset.x += (Math.random() - 0.5) * shake;
+            offset.y += (Math.random() - 0.5) * shake;
+            offset.z += (Math.random() - 0.5) * shake;
+        }
+
+        const targetPos = new THREE.Vector3(
+            this.mesh.position.x + x + offset.x,
+            this.mesh.position.y + y + offset.y,
+            this.mesh.position.z + z + offset.z
+        );
+
+        // Smart Camera (Anti-Clipping)
+        // Raycast from Player Head to Camera Target
+        const headPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0)); // Approx head height
+        const dir = new THREE.Vector3().subVectors(targetPos, headPos).normalize();
+        const dist = headPos.distanceTo(targetPos);
+
+        const raycaster = new THREE.Raycaster(headPos, dir, 0, dist);
+
+        // Check against terrain and walls
+        /** @type {THREE.Object3D[]} */
+        let collisionObjects = [];
+        if (this.world.terrainManager && this.world.terrainManager.group) {
+            collisionObjects = [...this.world.terrainManager.group.children];
+        }
+        if (this.world.interactables) {
+            const meshes = this.world.interactables.map(i => i.mesh || i).filter(i => i.isObject3D);
+            collisionObjects = [...collisionObjects, ...meshes];
+        }
+
+        const intersects = raycaster.intersectObjects(collisionObjects, false);
+
+        if (intersects.length > 0) {
+            // Hit something! Move camera to hit point (plus a little buffer)
+            const hit = intersects[0];
+            if (hit.distance < dist) {
+                this.camera.position.copy(hit.point).addScaledVector(dir, -0.5); // Buffer
+            } else {
+                this.camera.position.copy(targetPos);
+            }
+        } else {
+            this.camera.position.copy(targetPos);
+        }
+
+        this.camera.lookAt(this.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0))); // Look at torso/head
+    }
+
+    updateUI() {
+        // Stamina
+        if (this.staminaContainer && this.staminaRing) {
+            if (this.stamina < this.maxStamina) {
+                this.staminaContainer.style.display = 'block';
+                const circumference = 2 * Math.PI * 40;
+                const offset = circumference - (this.stamina / this.maxStamina) * circumference;
+                this.staminaRing.style.strokeDashoffset = String(offset);
+            } else {
+                this.staminaContainer.style.display = 'none';
+            }
+        }
+
+        // Hearts (Zelda Style)
+        if (this.heartsContainer) {
+            const maxHearts = this.maxHp / 20; // 1 Heart = 20 HP
+            const currentHearts = Math.ceil(this.hp / 20);
+
+            // Only update if changed to avoid DOM thrashing
+            if (this.heartsContainer.childElementCount !== maxHearts || this.heartsContainer.dataset.hp != String(Math.ceil(this.hp))) {
+                this.heartsContainer.innerHTML = '';
+                this.heartsContainer.dataset.hp = String(Math.ceil(this.hp));
+
+                for (let i = 1; i <= maxHearts; i++) {
+                    const heart = document.createElement('div');
+                    heart.className = 'heart';
+                    if (i > currentHearts) {
+                        heart.classList.add('empty');
+                    }
+                    this.heartsContainer.appendChild(heart);
+                }
+            }
+        }
+
+        // Abilities UI
+        if (this.iconGlide) {
+            this.iconGlide.style.opacity = this.canGlide ? (this.state === 'GLIDE' ? '1.0' : '0.5') : '0.1';
+            this.iconGlide.style.border = this.state === 'GLIDE' ? '2px solid #00ff00' : '2px solid #fff';
+        }
+        if (this.iconSurf) {
+            this.iconSurf.style.opacity = this.canSurf ? (this.state === 'SURF' ? '1.0' : '0.5') : '0.1';
+            this.iconSurf.style.border = this.state === 'SURF' ? '2px solid #00ff00' : '2px solid #fff';
+        }
+    }
+
+    getInputVector() {
+        const inputVector = new THREE.Vector3(0, 0, 0);
+        if (this.input.keys.forward) inputVector.z -= 1;
+        if (this.input.keys.backward) inputVector.z += 1;
+        if (this.input.keys.left) inputVector.x -= 1;
+        if (this.input.keys.right) inputVector.x += 1;
+
+        if (inputVector.length() > 0) {
+            // console.log("Input Vector:", inputVector);
+            inputVector.normalize();
+            const rotation = new THREE.Euler(0, this.cameraState.theta, 0);
+            inputVector.applyEuler(rotation);
+        }
+        return inputVector;
+    }
+
+    getForwardVector() {
+        const forward = new THREE.Vector3(0, 0, -1);
+        forward.applyEuler(new THREE.Euler(0, this.cameraState.theta, 0));
+        return forward;
+    }
+
+    checkGround() {
+        const mesh = this.mesh;
+        const world = this.world;
+        if (!mesh || !world) return false;
+
+        // 1. Check Terrain (The Truth)
+        if (world.terrainManager) {
+            const groundH = world.terrainManager.getGlobalHeight(mesh.position.x, mesh.position.z);
+            // Player origin is at feet. If y is close to groundH, we are grounded.
+            // Tolerance: 0.2
+            if (Math.abs(mesh.position.y - groundH) < 0.3) {
+                return true;
+            }
+        }
+
+        // 2. Check Objects (Bridges, Platforms) via Raycast
+        const raycaster = new THREE.Raycaster(mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0)), new THREE.Vector3(0, -1, 0), 0, 2.0);
+
+        const interactables = world.interactables || [];
+        const interactableMeshes = interactables.map(i => i.mesh || i).filter(i => i.isObject3D);
+
+        // Only check interactables/structures, not terrain chunks (already checked above)
+        const objects = [...interactableMeshes].filter(o => o);
+
+        if (objects.length > 0) {
+            const intersects = raycaster.intersectObjects(objects, true);
+            return intersects.length > 0;
+        }
+
+        return false;
+    }
+
+    checkWall() {
+        const mesh = this.mesh;
+        const world = this.world;
+        if (!mesh || !world) return false;
+        const forward = this.getForwardVector();
+        const raycaster = new THREE.Raycaster(mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0)), forward, 0, 1.0);
+
+        const interactables = world.interactables || [];
+        const interactableMeshes = interactables.map(i => i.mesh || i).filter(i => i.isObject3D);
+
+        const intersects = raycaster.intersectObjects(interactableMeshes);
         return intersects.length > 0;
     }
-
-    return false;
-}
-
-checkWall() {
-    const mesh = this.mesh;
-    const world = this.world;
-    if (!mesh || !world) return false;
-    const forward = this.getForwardVector();
-    const raycaster = new THREE.Raycaster(mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0)), forward, 0, 1.0);
-
-    const interactables = world.interactables || [];
-    const interactableMeshes = interactables.map(i => i.mesh || i).filter(i => i.isObject3D);
-
-    const intersects = raycaster.intersectObjects(interactableMeshes);
-    return intersects.length > 0;
-}
 }

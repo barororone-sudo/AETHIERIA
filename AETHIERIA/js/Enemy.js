@@ -10,6 +10,7 @@ export class Enemy {
         this.maxHp = 100;
         this.element = element;
         this.isFrozen = false;
+        this.VISUAL_OFFSET_Y = 0.5;
 
         // Visuals
         if (mesh) {
@@ -54,6 +55,7 @@ export class Enemy {
         if (this.isFrozen) return;
 
         this.mesh.position.copy(this.body.position);
+        this.mesh.position.y += this.VISUAL_OFFSET_Y;
         this.mesh.quaternion.copy(this.body.quaternion);
 
         // Ensure playerPosition is a CANNON.Vec3
