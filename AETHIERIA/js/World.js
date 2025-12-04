@@ -85,7 +85,14 @@ export class World {
         // TOWERS
         this.towers = [];
 
-        this.time = 0;
+        this.towers = [];
+
+        // Day/Night Cycle
+        this.gameTime = 0.25; // Start at 6am (0.25)
+        this.dayDuration = 1440; // 24 minutes in seconds
+        this.sunLight = null;
+        this.moonLight = null;
+        this.ambientLight = null;
     }
 
     /**
@@ -204,15 +211,28 @@ export class World {
     }
 
     setupLights() {
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
-        this.scene.add(ambientLight);
+        this.ambientLight = new THREE.AmbientLight(0xffffff, 0.2); // Lower base ambient
+        this.scene.add(this.ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
-        directionalLight.position.set(10, 20, 10);
-        directionalLight.castShadow = true;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        this.scene.add(directionalLight);
+        // SUN
+        this.sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        this.sunLight.position.set(10, 20, 10);
+        this.sunLight.castShadow = true;
+        this.sunLight.shadow.mapSize.width = 2048;
+        this.sunLight.shadow.mapSize.height = 2048;
+        this.sunLight.shadow.camera.near = 0.5;
+        this.sunLight.shadow.camera.far = 500;
+        this.sunLight.shadow.camera.left = -100;
+        this.sunLight.shadow.camera.right = 100;
+        this.sunLight.shadow.camera.top = 100;
+        this.sunLight.shadow.camera.bottom = -100;
+        this.scene.add(this.sunLight);
+
+        // MOON
+        this.moonLight = new THREE.DirectionalLight(0x4444ff, 0.3);
+        this.moonLight.position.set(-10, -20, -10); // Opposite to sun
+        this.moonLight.castShadow = true; // Moon shadows!
+        this.scene.add(this.moonLight);
     }
 
     createSky() {
@@ -797,6 +817,105 @@ export class World {
 
         if (this.clouds) {
             this.clouds.rotation.y += dt * 0.005; // Slower clouds
+        }
+    }
+
+    updateDayNightCycle(dt) {
+        // Increment Time
+        this.gameTime += dt / this.dayDuration;
+        if (this.gameTime > 1) this.gameTime -= 1;
+
+        // Calculate Sun Position (0 = Noon, 0.5 = Midnight? No, let's map 0..1 to 0..2PI)
+        // Let's say 0.0 = Midnight, 0.25 = 6am (Sunrise), 0.5 = Noon, 0.75 = 6pm (Sunset)
+        // Angle: -PI/2 at 0.25 (Sunrise), PI/2 at 0.75 (Sunset)
+        // 0.5 (Noon) -> 0 rad (High up? No, Sun moves East to West)
+
+        // Simple rotation around Z axis
+        // Noon (0.5) -> Sun at (0, 100, 0)
+        // Midnight (0.0) -> Sun at (0, -100, 0)
+
+        const angle = (this.gameTime - 0.5) * Math.PI * 2; // 0.5 -> 0, 0 -> -PI, 1 -> PI
+        const radius = 100;
+
+        // Sun Position
+        if (this.sunLight) {
+            this.sunLight.position.set(Math.sin(angle) * radius, Math.cos(angle) * radius, 0);
+            this.sunLight.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4); // Tilt orbit
+        }
+
+        // Moon Position (Opposite)
+        if (this.moonLight) {
+            this.moonLight.position.set(Math.sin(angle + Math.PI) * radius, Math.cos(angle + Math.PI) * radius, 0);
+            this.moonLight.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4);
+        }
+
+        // Colors
+        const dawnColor = new THREE.Color(0xff9966);
+        const noonColor = new THREE.Color(0x87CEEB);
+        const duskColor = new THREE.Color(0x5d3fd3);
+        const nightColor = new THREE.Color(0x050510);
+
+        let skyColor = new THREE.Color();
+        let sunIntensity = 0;
+        let moonIntensity = 0;
+
+        // Keyframes
+        if (this.gameTime < 0.2) { // Night -> Dawn
+            skyColor.lerpColors(nightColor, dawnColor, this.gameTime / 0.2);
+            moonIntensity = 0.3 * (1 - (this.gameTime / 0.2));
+        } else if (this.gameTime < 0.3) { // Dawn -> Day
+            const t = (this.gameTime - 0.2) / 0.1;
+            skyColor.lerpColors(dawnColor, noonColor, t);
+            sunIntensity = t * 1.2;
+        } else if (this.gameTime < 0.7) { // Day
+            skyColor.copy(noonColor);
+            sunIntensity = 1.2;
+        } else if (this.gameTime < 0.8) { // Day -> Dusk
+            const t = (this.gameTime - 0.7) / 0.1;
+            skyColor.lerpColors(noonColor, duskColor, t);
+            sunIntensity = 1.2 * (1 - t);
+        } else { // Dusk -> Night
+            const t = (this.gameTime - 0.8) / 0.2;
+            skyColor.lerpColors(duskColor, nightColor, t);
+            moonIntensity = 0.3 * t;
+        }
+
+        // Apply
+        this.scene.background = skyColor;
+        this.scene.fog.color.copy(skyColor);
+
+        // Update Sky Mesh Uniforms
+        if (this.skyMesh && this.skyMesh.material.uniforms) {
+            this.skyMesh.material.uniforms.bottomColor.value.copy(skyColor);
+            this.skyMesh.material.uniforms.topColor.value.copy(skyColor).multiplyScalar(0.5); // Darker top
+            this.skyMesh.material.uniforms.time.value = this.gameTime;
+        }
+
+        if (this.sunLight) {
+            this.sunLight.intensity = sunIntensity;
+            // Sun Color Change (Orange at low angles)
+            if (sunIntensity < 0.5 && sunIntensity > 0) {
+                this.sunLight.color.setHex(0xffaa00);
+            } else {
+                this.sunLight.color.setHex(0xffffff);
+            }
+        }
+
+        if (this.moonLight) {
+            this.moonLight.intensity = moonIntensity;
+        }
+
+        if (this.ambientLight) {
+            // Ambient varies slightly
+            const baseAmbient = 0.1;
+            const dayAmbient = 0.6;
+            let ambient = baseAmbient;
+            if (this.gameTime > 0.25 && this.gameTime < 0.75) {
+                ambient = dayAmbient; // Day
+            } else if (this.gameTime > 0.2 && this.gameTime < 0.8) {
+                ambient = THREE.MathUtils.lerp(baseAmbient, dayAmbient, 0.5); // Transition
+            }
+            this.ambientLight.intensity = ambient;
         }
 
         // Update Enemies

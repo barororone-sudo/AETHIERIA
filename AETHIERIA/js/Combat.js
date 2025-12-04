@@ -343,17 +343,46 @@ export class Combat {
         }
 
         const spawnPos = this.player.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
-        const forward = this.player.getForwardVector();
+
+        // --- AIMING LOGIC ---
+        // Raycast from Camera Center to find target
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(0, 0), this.player.game.camera);
+
+        // Intersect with World (Terrain, Enemies, etc.)
+        // For now, let's just intersect with a virtual plane or far distance if nothing hit
+        // Ideally we check enemies and terrain.
+        // Let's assume a default target distance of 50 units if nothing is hit.
+
+        let targetPoint = new THREE.Vector3();
+
+        // 1. Check collisions with environment/enemies
+        const objectsToCheck = [];
+        if (this.player.world.enemies) objectsToCheck.push(...this.player.world.enemies.map(e => e.mesh));
+        // TODO: Add terrain meshes to objectsToCheck if available
+
+        const intersects = raycaster.intersectObjects(objectsToCheck, true);
+
+        if (intersects.length > 0) {
+            targetPoint.copy(intersects[0].point);
+        } else {
+            // No hit, aim at point far away along camera forward vector
+            targetPoint.copy(raycaster.ray.origin).add(raycaster.ray.direction.multiplyScalar(100));
+        }
+
+        // Calculate Direction from Spawn to Target
+        const direction = new THREE.Vector3().subVectors(targetPoint, spawnPos).normalize();
 
         // Get from Pool
         const arrowMesh = this.pool.get('arrow');
         if (!arrowMesh) return;
 
         arrowMesh.position.copy(spawnPos);
-        arrowMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), forward.clone().negate()); // Look at target
+        // Look at target
+        arrowMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction.clone().negate());
 
         // Physics
-        const velocity = forward.clone().multiplyScalar(40); // Fast
+        const velocity = direction.multiplyScalar(40); // Fast
 
         const arrow = {
             mesh: arrowMesh,

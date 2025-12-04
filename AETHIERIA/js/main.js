@@ -131,9 +131,17 @@ export class Game {
             }
         } else {
             this.saveManager.reset();
+            this.saveManager.save(); // Create initial save immediately
         }
 
         this.ui.hideMainMenu();
+        // Hide Loading Screen if it's still there
+        const loadingScreen = document.getElementById('loading-screen');
+        if (loadingScreen) {
+            loadingScreen.style.opacity = '0';
+            setTimeout(() => loadingScreen.remove(), 500);
+        }
+
         this.ui.showMinimap(); // Show Map only when game starts
         this.isRunning = true;
         this.animate();

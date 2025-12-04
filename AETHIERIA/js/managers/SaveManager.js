@@ -12,6 +12,13 @@ export class SaveManager {
                 this.save();
             }
         }, 60000);
+
+        // Save on Exit/Refresh
+        window.addEventListener('beforeunload', () => {
+            if (this.game.isRunning) {
+                this.save();
+            }
+        });
     }
 
     /**

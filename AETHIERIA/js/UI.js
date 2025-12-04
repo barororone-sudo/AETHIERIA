@@ -123,7 +123,10 @@ export class UIManager {
         const continueBtn = document.createElement('button');
         continueBtn.innerText = 'Continue';
         continueBtn.style.cssText = btnStyle;
-        continueBtn.onclick = () => this.game.start(true);
+        continueBtn.onclick = () => {
+            this.hideMainMenu();
+            this.game.start(true);
+        };
 
         // Check if save exists
         if (!localStorage.getItem(this.game.saveManager.getCurrentKey())) {
@@ -135,7 +138,10 @@ export class UIManager {
         const newGameBtn = document.createElement('button');
         newGameBtn.innerText = 'New Game';
         newGameBtn.style.cssText = btnStyle;
-        newGameBtn.onclick = () => this.game.start(false);
+        newGameBtn.onclick = () => {
+            this.hideMainMenu();
+            this.game.start(false);
+        };
 
         this.mainMenu.appendChild(continueBtn);
         this.mainMenu.appendChild(newGameBtn);

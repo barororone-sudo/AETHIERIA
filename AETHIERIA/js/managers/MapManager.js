@@ -62,9 +62,10 @@ export class MapManager {
         this.content.appendChild(this.iconLayer);
 
         // Enforce Z-Index
+        // Enforce Z-Index (Terrain -> Fog -> Icons)
         this.terrainLayer.style.zIndex = '1';
-        this.fogCanvas.style.zIndex = '2';
-        this.iconLayer.style.zIndex = '3';
+        this.fogCanvas.style.zIndex = '2'; // Fog above terrain
+        this.iconLayer.style.zIndex = '10'; // Icons above fog
 
         // 4. Setup Fog
         this.fogCtx = this.fogCanvas.getContext('2d');
@@ -638,9 +639,8 @@ export class MapManager {
             if (this.game) {
                 this.game.isPaused = false;
                 document.body.style.cursor = 'none';
-                if (document.hasFocus()) {
-                    document.body.requestPointerLock().catch(e => console.warn("MapManager PointerLock failed:", e));
-                }
+                // REMOVED: document.body.requestPointerLock() to avoid "User Gesture" error.
+                // Player must click to resume.
             }
         }
         console.log("Map toggled. Big Map:", this.isBigMap, "Paused:", this.game.isPaused);

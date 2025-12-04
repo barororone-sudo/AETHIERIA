@@ -99,7 +99,7 @@ export class Player {
 
         // Abilities
         // Abilities
-        /** @type {boolean} */ this.canGlide = true; // Unlocked by default for testing
+        /** @type {boolean} */ this.canGlide = false; // Locked by default
         /** @type {boolean} */ this.canSurf = true;
 
         /** @type {number} */ this.VISUAL_OFFSET_Y = 0.0;
@@ -282,18 +282,10 @@ export class Player {
         light.position.set(0, 1, 0);
         this.mesh.add(light);
 
-        // 5. Glider (Paraglider)
-        // Simple V-Shape
-        const gliderGeo = new THREE.BufferGeometry();
-        const gliderVertices = new Float32Array([
-            // Left Wing
-            0, 0, 0, -1.5, 0.5, 0.5, 0, 0, 1.0,
-            // Right Wing
-            0, 0, 0, 0, 0, 1.0, 1.5, 0.5, 0.5
-        ]);
-        gliderGeo.setAttribute('position', new THREE.BufferAttribute(gliderVertices, 3));
-        gliderGeo.computeVertexNormals();
-
+        // 5. Glider (Paraglider) - Procedural Triangle
+        const gliderGeo = new THREE.ConeGeometry(1.5, 1.0, 3); // Triangle shape
+        gliderGeo.rotateX(Math.PI / 2); // Flat
+        gliderGeo.rotateY(Math.PI); // Point forward
         const gliderMat = new THREE.MeshStandardMaterial({
             color: 0x3366ff,
             side: THREE.DoubleSide,
@@ -301,9 +293,26 @@ export class Player {
         });
 
         this.gliderMesh = new THREE.Mesh(gliderGeo, gliderMat);
-        this.gliderMesh.position.set(0, 1.5, -0.5); // Above head
+        this.gliderMesh.position.set(0, 1.5, -0.5);
         this.gliderMesh.visible = false;
         this.mesh.add(this.gliderMesh);
+
+        // 6. Shield Group (Surfboard / Back)
+        this.shieldGroup = new THREE.Group();
+
+        // Shield Visual
+        const shieldGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.1, 16);
+        const shieldMat = new THREE.MeshStandardMaterial({
+            color: 0x8B4513, // Wood
+            roughness: 0.8
+        });
+        this.shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
+        this.shieldMesh.rotation.x = Math.PI / 2; // Flat
+        this.shieldGroup.add(this.shieldMesh);
+
+        // Default Position: On Back
+        this.shieldGroup.position.set(0, 0.0, -0.35); // Relative to bodyMesh center
+        this.bodyMesh.add(this.shieldGroup); // Attach to body by default
 
         // Equip Weapon immediately
         this.equipWeapon('assets/sword_iron.glb');
@@ -458,18 +467,24 @@ export class Player {
 
     checkWall() {
         if (!this.mesh) return false;
-        const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+        // Raycast from chest height (approx center of body)
+        // Mesh is shifted down 0.5, so mesh.y + 1.0 is top of head.
+        // Let's lower it to mesh.y + 0.5 (Center of body)
+        const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 0.5, 0));
         const forward = this.getForwardVector();
-        const raycaster = new THREE.Raycaster(rayOrigin, forward, 0, 1.0);
+        // Increase length to ensure we hit the wall even if physics keeps us slightly away
+        const raycaster = new THREE.Raycaster(rayOrigin, forward, 0, 2.0);
 
         if (this.world && this.world.terrainManager && this.world.terrainManager.group) {
             const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
-            if (intersects.length > 0 && intersects[0].face) {
-                // Check Normal: Must be a wall (mostly vertical)
-                const normal = intersects[0].face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(intersects[0].object.matrixWorld)).normalize();
-                // If normal.y is close to 0, it's a wall. If it's 1, it's a floor.
-                if (Math.abs(normal.y) < 0.5) {
-                    return true;
+            if (intersects.length > 0) {
+                // console.log("Wall Ray Hit:", intersects[0].object.name, intersects[0].distance);
+                if (intersects[0].face) {
+                    const normal = intersects[0].face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(intersects[0].object.matrixWorld)).normalize();
+                    // console.log("Wall Normal Y:", normal.y);
+                    if (Math.abs(normal.y) < 0.5) {
+                        return true;
+                    }
                 }
             }
         }
@@ -618,9 +633,10 @@ export class Player {
 
         switch (this.state) {
             case 'GLIDE':
-                this.body.velocity.y = -3.0; // Faster fall (was -1.5)
-                const glideSpeed = 12; // Slightly faster forward
+                this.body.velocity.y -= 5.0 * dt; // Gravity (prevent infinite flight)
+                const glideSpeed = 12;
                 const forward = this.getForwardVector();
+
                 // Constant forward speed
                 this.body.velocity.x = forward.x * glideSpeed;
                 this.body.velocity.z = forward.z * glideSpeed;
@@ -633,19 +649,43 @@ export class Player {
                 break;
 
             case 'SURF':
-                this.body.linearDamping = 0.05; // Zero friction
+                // Slope Physics
+                let slopeAngle = 0;
+                let onSlope = false;
+
+                if (grounded && this.world && this.world.terrainManager) {
+                    const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+                    const raycaster = new THREE.Raycaster(rayOrigin, new THREE.Vector3(0, -1, 0), 0, 2.5);
+                    const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
+
+                    if (intersects.length > 0 && intersects[0].face) {
+                        const normal = intersects[0].face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(intersects[0].object.matrixWorld)).normalize();
+                        // Angle between UP (0,1,0) and Normal
+                        slopeAngle = normal.angleTo(new THREE.Vector3(0, 1, 0)) * (180 / Math.PI);
+                        onSlope = true;
+
+                        // Gravity Slide
+                        // Project gravity onto slope
+                        const gravity = new THREE.Vector3(0, -20, 0);
+                        const slideForce = gravity.clone().projectOnPlane(normal);
+                        this.body.velocity.x += slideForce.x * dt;
+                        this.body.velocity.z += slideForce.z * dt;
+                    }
+                }
+
+                if (slopeAngle < 10) {
+                    // Flat ground: High Friction (Stop)
+                    this.body.linearDamping = 0.8;
+                } else {
+                    // Slope: Low Friction (Slide)
+                    this.body.linearDamping = 0.01;
+                }
+
+                // Input Steering (only slight influence)
                 if (inputLen > 0) {
                     const surfDir = input.clone().normalize();
-                    this.body.velocity.x += surfDir.x * dt * 30; // High accel
-                    this.body.velocity.z += surfDir.z * dt * 30;
-
-                    // Cap speed
-                    const hVel = new THREE.Vector2(this.body.velocity.x, this.body.velocity.z);
-                    if (hVel.length() > 25) {
-                        hVel.normalize().multiplyScalar(25);
-                        this.body.velocity.x = hVel.x;
-                        this.body.velocity.z = hVel.y;
-                    }
+                    this.body.velocity.x += surfDir.x * dt * 5;
+                    this.body.velocity.z += surfDir.z * dt * 5;
                 }
                 break;
 
@@ -799,6 +839,23 @@ export class Player {
                 leftHandPos.set(-0.6, 0.2, -0.2); // Back arm up
                 rightHandPos.set(0.6, -0.1, 0.2); // Front arm down
 
+                // Shield under feet (Re-parent to Root Mesh)
+                if (this.shieldGroup && this.shieldGroup.parent !== this.mesh) {
+                    this.mesh.attach(this.shieldGroup);
+                    this.shieldGroup.position.set(0, -0.5, 0); // Under feet
+                    this.shieldGroup.rotation.set(0, 0, 0); // Flat
+                }
+                break;
+
+            default:
+                // Reset Shield to Back (Re-parent to Body)
+                if (this.shieldGroup && this.shieldGroup.parent !== this.bodyMesh) {
+                    this.bodyMesh.attach(this.shieldGroup);
+                    this.shieldGroup.position.set(0, 0.0, -0.35);
+                    this.shieldGroup.rotation.set(0, 0, 0);
+                }
+                break;
+
                 // Dynamic Balance
                 const surfBob = Math.sin(time * 5) * 0.05;
                 leftHandPos.y += surfBob;
@@ -866,7 +923,6 @@ export class Player {
 
             case 'IDLE':
             case 'AIR':
-            default:
                 // Hover Idle
                 const hoverY = Math.sin(time * 3) * 0.05;
                 targetPosY = 0.6 + hoverY;
