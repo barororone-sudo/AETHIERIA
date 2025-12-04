@@ -124,7 +124,7 @@ export class Combat {
                 const dist = move.length();
                 const raycaster = new THREE.Raycaster(p.mesh.position, dir, 0, dist);
                 // FIX: Assign camera to raycaster to support Sprites
-                raycaster.camera = this.player.game.camera;
+                // raycaster.camera = this.player.game.camera; // Not needed for Meshes
 
                 // Check Enemies
                 const enemies = (this.player.world && this.player.world.enemies) ? this.player.world.enemies : [];

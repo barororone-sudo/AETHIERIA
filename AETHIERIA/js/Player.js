@@ -941,6 +941,20 @@ export class Player {
     }
 
     /**
+     * @param {string} name
+     * @param {boolean} loop
+     */
+    playAnimation(name, loop) {
+        // Placeholder for future animation system
+        // Currently visuals are procedural
+        if (name === 'BOW') {
+            // Logic to raise arms for bow is handled in updateVisuals via isAiming check
+            // But we can add a trigger here if needed
+            console.log(`Playing Animation: ${name}`);
+        }
+    }
+
+    /**
      * @param {THREE.Vector3} position
      */
     spawnHitParticles(position) {
