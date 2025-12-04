@@ -96,9 +96,11 @@ export class Player {
         this.inventory.addItem('sword_iron', 1);
         this.inventory.addItem('potion_health', 5);
 
-        // UI Elements
-        // UI Elements
-        // Decoupled: Managed by UIManager via this.game.ui
+        // Attack Animation State
+        this.isAttacking = false;
+        this.attackTimer = 0;
+        this.attackDuration = 0.3;
+        this.currentComboIndex = 0;
 
         this.initInput();
         this.initUI();
@@ -145,7 +147,6 @@ export class Player {
 
     initPhysics() {
         if (!this.world) return;
-        if (!this.world) return;
         // Sphere shape for smoother movement
         const radius = 0.5;
         const shape = new CANNON.Sphere(radius);
@@ -168,160 +169,72 @@ export class Player {
 
     initVisuals() {
         if (!this.world) return;
+
+        // Cleanup existing
+        if (this.mesh) {
+            this.world.scene.remove(this.mesh);
+        }
+
         this.mesh = new THREE.Group();
         this.world.scene.add(this.mesh);
 
-        // Load GLB
-        this.loadGLB();
-    }
+        // --- CYBER-BOT AVATAR ---
 
-    loadGLB() {
-        const loader = new GLTFLoader();
-        /** @type {Object<string, THREE.AnimationClip>} */
-        this.animations = {};
-        this.currentAction = null;
-        /** @type {string|null} */
-        this.currentAnimName = null;
-
-        // 1. Load Main Model
-        loader.load('assets/hero.glb', (/** @type {any} */ gltf) => {
-            console.log("Main GLB Loaded!", gltf);
-            const model = gltf.scene;
-            model.scale.set(1.0, 1.0, 1.0);
-
-            // Shadows & Toon Material
-            model.traverse((/** @type {THREE.Object3D} */ child) => {
-                if (/** @type {THREE.Mesh} */(child).isMesh) {
-                    child.castShadow = true;
-                    child.receiveShadow = true;
-
-                    // Apply Toon Material
-                    const mesh = /** @type {THREE.Mesh} */(child);
-                    if (mesh.material) {
-                        const oldMat = /** @type {THREE.MeshStandardMaterial} */(mesh.material);
-
-                        // Handle Array of Materials (rare for GLB characters but possible)
-                        if (Array.isArray(oldMat)) {
-                            // Not supported yet for simplicity, keep original
-                        } else {
-                            const newMat = new ToonMaterial({
-                                map: oldMat.map || null,
-                                uColor: new THREE.Color(0xffffff),
-                                uRimColor: new THREE.Color(0xffffff),
-                                uRimAmount: 0.6,
-                                uRimThreshold: 0.4
-                            });
-
-                            // Dispose old material
-                            // oldMat.dispose(); // Good practice but maybe risky if shared
-
-                            mesh.material = newMat;
-                        }
-                    }
-                }
-            });
-
-            if (this.mesh) this.mesh.add(model);
-            this.glbModel = model;
-
-            // --- BONE SOCKET SYSTEM ---
-            // Find Right Hand Bone
-            /** @type {THREE.Object3D|null} */
-            let handBone = null;
-
-            // Priority List
-            const boneNames = ['RightHand', 'mixamorig:RightHand', 'Hand.R', 'RightHandIndex1'];
-
-            // First pass: Exact match or high priority
-            model.traverse((/** @type {any} */ child) => {
-                if (handBone) return; // Stop if found
-                if (child.isBone) {
-                    if (child.name === 'RightHand' || child.name === 'mixamorig:RightHand' || child.name === 'Hand.R') {
-                        handBone = child;
-                    }
-                }
-            });
-
-            // Second pass: Partial match if not found (but exclude fingers if possible)
-            if (!handBone) {
-                model.traverse((/** @type {any} */ child) => {
-                    if (handBone) return;
-                    if (child.isBone && child.name.includes('RightHand') && !child.name.includes('Pinky') && !child.name.includes('Index') && !child.name.includes('Thumb') && !child.name.includes('Middle') && !child.name.includes('Ring')) {
-                        handBone = child;
-                    }
-                });
-            }
-
-            // Fallback: If still not found, take anything with RightHand (even fingers, better than nothing)
-            if (!handBone) {
-                model.traverse((/** @type {any} */ child) => {
-                    if (handBone) return;
-                    if (child.isBone && child.name.includes('RightHand')) {
-                        handBone = child;
-                    }
-                });
-            }
-
-            if (handBone) {
-                console.log("Found Hand Bone:", handBone.name);
-                this.weaponSlot = new THREE.Group();
-                handBone.add(this.weaponSlot);
-
-                // Reset transform relative to bone
-                this.weaponSlot.position.set(0, 0, 0);
-                this.weaponSlot.rotation.set(0, 0, 0);
-                this.weaponSlot.scale.set(1, 1, 1);
-            } else {
-                console.warn("Right Hand Bone not found!");
-            }
-
-            // Mixer Setup
-            this.mixer = new THREE.AnimationMixer(model);
-
-            // 2. Load Extra Animations in Parallel
-            const anims = {
-                RUN: 'assets/déplacement.glb',
-                ATTACK: 'assets/sword_attack.glb',
-                CLIMB: 'assets/grimper.glb',
-                JUMP: 'assets/Jumping.glb',
-                BOW: 'assets/arc.glb'
-            };
-
-            const promises = Object.entries(anims).map(([name, path]) => {
-                return new Promise((resolve) => {
-                    loader.load(path, (/** @type {any} */ animGltf) => {
-                        if (animGltf.animations.length > 0) {
-                            if (this.animations) this.animations[name] = animGltf.animations[0];
-                        }
-                        resolve(null);
-                    }, undefined, (/** @type {any} */ err) => {
-                        console.warn(`Failed to load animation ${name} at ${path}`, err);
-                        resolve(null); // Resolve anyway to not block others
-                    });
-                });
-            });
-
-            // Also check if the main model has animations (e.g. default IDLE)
-            if (gltf.animations.length > 0) {
-                if (this.animations) {
-                    this.animations['IDLE'] = gltf.animations[0];
-                }
-            }
-
-            Promise.all(promises).then(() => {
-                if (this.animations) {
-                    console.log("All animations loaded:", Object.keys(this.animations));
-                    // Start Idle
-                    this.playAnimation('IDLE');
-
-                    // Equip Starter Weapon
-                    this.equipWeapon('assets/sword_iron.glb');
-                }
-            });
-
-        }, undefined, (/** @type {any} */ error) => {
-            console.error('An error happened loading the GLB:', error);
+        // 1. Body (Black Box)
+        const bodyGeo = new THREE.BoxGeometry(0.6, 1.2, 0.4);
+        const bodyMat = new THREE.MeshStandardMaterial({
+            color: 0x111111,
+            roughness: 0.7,
+            metalness: 0.5
         });
+        this.bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+        this.bodyMesh.position.y = 0.6; // Center pivot at feet
+        this.bodyMesh.castShadow = true;
+        this.bodyMesh.receiveShadow = true;
+        this.mesh.add(this.bodyMesh);
+
+        // 2. Visor (Neon Red Eye)
+        const visorGeo = new THREE.BoxGeometry(0.4, 0.1, 0.1);
+        const visorMat = new THREE.MeshStandardMaterial({
+            color: 0xff0000,
+            emissive: 0xff0000,
+            emissiveIntensity: 2.0
+        });
+        this.visor = new THREE.Mesh(visorGeo, visorMat);
+        this.visor.position.set(0, 0.3, 0.2); // Front of face
+        this.bodyMesh.add(this.visor);
+
+        // 3. Floating Hands (Rayman Style)
+        const handGeo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+        const handMat = new THREE.MeshStandardMaterial({
+            color: 0x00ffff,
+            emissive: 0x00ffff,
+            emissiveIntensity: 0.5
+        });
+
+        // Left Hand
+        this.leftHand = new THREE.Mesh(handGeo, handMat);
+        this.leftHand.position.set(-0.5, 0.0, 0); // Relative to body center (which is at 0.6Y)
+        this.bodyMesh.add(this.leftHand);
+
+        // Right Hand (Weapon Slot)
+        this.rightHand = new THREE.Mesh(handGeo, handMat);
+        this.rightHand.position.set(0.5, 0.0, 0);
+        this.bodyMesh.add(this.rightHand);
+
+        // Weapon Slot Attachment
+        this.weaponSlot = new THREE.Group();
+        // Rotate weapon slot to align sword correctly (Standard swords point UP)
+        this.weaponSlot.rotation.x = Math.PI / 2;
+        this.rightHand.add(this.weaponSlot);
+
+        // 4. Ambient Glow (PointLight)
+        const light = new THREE.PointLight(0x00ffff, 2, 5);
+        light.position.set(0, 1, 0);
+        this.mesh.add(light);
+
+        // Equip Weapon immediately
+        this.equipWeapon('assets/sword_iron.glb');
     }
 
     /**
@@ -336,8 +249,6 @@ export class Player {
         }
 
         const loader = new GLTFLoader();
-
-        // Setup Draco Loader
         // @ts-ignore
         const dracoLoader = new DRACOLoader();
         // @ts-ignore
@@ -347,12 +258,6 @@ export class Player {
 
         loader.load(path, (/** @type {any} */ gltf) => {
             const sword = gltf.scene;
-
-            // Adjust rotation to fit in hand (standard fix for many assets)
-            // Usually swords point UP (Y) or Forward (Z). In hand, Z is often "out" of palm.
-            // Let's try rotating -90 on X or Y. 
-            // For now, let's assume standard alignment and tweak if user complains.
-            // User suggested: "Applique une rotation par défaut si nécessaire (souvent -90° sur X ou Y)"
             sword.rotation.x = -Math.PI / 2; // Common fix
 
             sword.traverse((/** @type {THREE.Object3D} */ child) => {
@@ -363,59 +268,9 @@ export class Player {
             });
 
             if (this.weaponSlot) this.weaponSlot.add(sword);
-            console.log("Equipped Weapon:", path);
-
-            // Dispose Draco
             // @ts-ignore
             dracoLoader.dispose();
         });
-    }
-
-    /**
-     * @param {string} name 
-     * @param {boolean} loop 
-     * @param {number} duration Crossfade duration in seconds
-     */
-    playAnimation(name, loop = true, duration = 0.2) {
-        if (!this.mixer || !this.animations || !this.animations[name]) return;
-        if (this.currentAnimName === name) return;
-
-        const newClip = this.animations[name];
-        const newAction = this.mixer.clipAction(newClip);
-        const currentAction = this.currentAction;
-
-        if (currentAction) {
-            // Crossfade
-            newAction.reset();
-            newAction.play();
-            currentAction.crossFadeTo(newAction, duration, true);
-        } else {
-            newAction.play();
-        }
-
-        if (!loop) {
-            newAction.setLoop(THREE.LoopOnce, 1);
-            newAction.clampWhenFinished = true;
-
-            // For JUMP, we want to clamp and NOT return to IDLE automatically (handled by state machine)
-            if (name !== 'JUMP') {
-                const mixer = this.mixer;
-                const onFinished = (/** @type {any} */ e) => {
-                    if (e.action === newAction) {
-                        mixer.removeEventListener('finished', onFinished);
-                        // Return to Idle
-                        this.playAnimation('IDLE', true, 0.2);
-                    }
-                };
-                mixer.addEventListener('finished', onFinished);
-            }
-        } else {
-            newAction.setLoop(THREE.LoopRepeat, Infinity);
-            newAction.clampWhenFinished = false;
-        }
-
-        this.currentAction = newAction;
-        this.currentAnimName = name;
     }
 
     initUI() {
@@ -684,68 +539,11 @@ export class Player {
         this.mesh.position.copy(this.body.position);
         this.mesh.position.y -= 0.5;
     }
+
     /**
      * @param {number} dt
      */
     updateVisuals(dt) {
-        // --- GLB ANIMATION STATE MACHINE ---
-        if (this.mixer && this.animations) {
-            // Priority 1: Jump (Air/Glide)
-            if (this.state === 'AIR' || this.state === 'GLIDE') {
-                this.playAnimation('JUMP', false);
-                return;
-            }
-
-            // Priority 2: Combat
-            if (this.combat) {
-                if (this.combat.isAttacking) {
-                    this.playAnimation('ATTACK', false);
-                    this.mixer.update(dt);
-                    return;
-                }
-                if (this.combat.isAiming) {
-                    this.playAnimation('BOW', false); // or clamp
-                    this.mixer.update(dt);
-                    return;
-                }
-            }
-
-            // Priority 3: Movement
-            if (this.state === 'CLIMB') {
-                this.playAnimation('CLIMB');
-            } else if (this.state === 'RUN' || this.state === 'WALK') {
-                // Calculate Real Velocity (Horizontal)
-                const velocity = new THREE.Vector2(this.body.velocity.x, this.body.velocity.z).length();
-
-                // Anti-Wall-Run: If trying to move but blocked (low velocity), play IDLE
-                // We check if input is active (implied by state RUN/WALK usually, but let's trust the state)
-                // If velocity is very low, we are likely pushing a wall.
-                if (velocity < 0.1) {
-                    this.playAnimation('IDLE');
-                } else {
-                    this.playAnimation('RUN');
-                    // Dynamic TimeScale for "No Skating"
-                    if (this.currentAction) {
-                        // User requested velocity.length() / 7.0
-                        let scale = velocity / 7.0;
-                        // Clamp to avoid super slow/fast animation
-                        scale = Math.max(0.5, Math.min(scale, 2.0));
-                        this.currentAction.timeScale = scale;
-                    }
-                }
-            } else {
-                // Default
-                this.playAnimation('IDLE');
-            }
-
-            this.mixer.update(dt);
-        }
-    }
-
-    /**
-     * @param {number} dt
-     */
-    updateCamera(dt) {
         if (!this.mesh) return;
         // Camera Target (Shoulders/Head)
         const targetPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.6, 0)); // Was 1.5

@@ -78,9 +78,10 @@ export class Combat {
      */
     update(dt) {
         const now = performance.now();
-        if (this.comboStep > 0 && now - this.lastAttackTime > this.comboResetTime) {
-            this.comboStep = 0;
-            if (this.weapon) this.weapon.visible = false;
+        if (this.comboStep >= 0 && now - this.lastAttackTime > this.comboResetTime) {
+            // Reset combo if idle too long (visual only, logic handled in attack)
+            // this.comboStep = 0; // Don't reset here, let attack() handle it or just keep index
+            if (this.weapon && !this.isAttacking) this.weapon.visible = false;
         }
 
         // Attack State Logic
@@ -195,21 +196,37 @@ export class Combat {
         }
 
         const now = performance.now();
-        this.comboStep = (this.comboStep % 3) + 1;
+
+        // Combo Logic
+        if (now - this.lastAttackTime < 1000) { // 1s window
+            this.comboStep = (this.comboStep + 1) % 3;
+        } else {
+            this.comboStep = 0;
+        }
+
         this.lastAttackTime = now;
         this.isAttacking = true;
         this.attackProgress = 0;
+
+        // Show weapon
         if (this.weapon) this.weapon.visible = true;
 
         if (this.player.audio) this.player.audio.playSFX('sword');
 
         console.log(`Attack Combo: ${this.comboStep}`);
 
+        // Trigger Visuals on Player
+        if (this.player.triggerAttackVisuals) {
+            this.player.triggerAttackVisuals(this.comboStep);
+        }
+
         // Lunge (Forward Impulse)
+        // Combo 2 (3rd hit) lunges further
+        const lungeForce = (this.comboStep === 2) ? 15 : 5;
         const forward = this.player.getForwardVector();
         if (this.player.body) {
-            this.player.body.velocity.x += forward.x * 5;
-            this.player.body.velocity.z += forward.z * 5;
+            this.player.body.velocity.x += forward.x * lungeForce;
+            this.player.body.velocity.z += forward.z * lungeForce;
         }
     }
 
