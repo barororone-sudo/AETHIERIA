@@ -6,30 +6,70 @@ export class TerrainManager {
     constructor(world) {
         this.world = world;
         this.chunkSize = 64;
-        this.chunkResolution = 32; // Power of 2 recommended for some algos, but 32 segments -> 33 vertices?
-        // Three.js PlaneGeometry(size, size, segments, segments) creates (segments+1)^2 vertices.
-        // Cannon Heightfield expects matrix of size [nx, ny].
-        // If we want 1:1, we should match vertices.
-        // Let's say segments = 32. Vertices = 33.
-        // So resolution should be 33?
-        // Let's stick to segments = 32 in Chunk.js, so resolution (vertices) is 33.
-        // Wait, user said "generateHeightData(size, resolution)".
-        // If resolution is the number of data points, then PlaneGeometry segments should be resolution - 1.
-        this.chunkResolution = 33;
-        this.noiseScale = 0.1;
-        this.maxHeight = 20;
+        this.chunkResolution = 33; // Vertices per edge
+        this.renderDistance = 2; // Radius
+        this.unloadDistance = 3;
 
-        this.chunks = new Map(); // Key: "x,z", Value: Chunk
-        this.renderDistance = 2; // Radius in chunks to load
-        this.unloadDistance = 3; // Radius in chunks to unload
+        this.chunks = new Map();
+        this.group = new THREE.Group();
+        this.world.scene.add(this.group);
 
         // Initialize Noise
         if (Utils.Noise && Utils.Noise.init) {
             Utils.Noise.init();
         }
 
-        this.group = new THREE.Group();
-        this.world.scene.add(this.group);
+        // Shared Geometries/Materials for Population (Performance)
+        this.assets = this.createAssets();
+    }
+
+    createAssets() {
+        // Simple geometries for InstancedMesh
+        return {
+            treeLog: new THREE.CylinderGeometry(0.2, 0.3, 1.5, 5),
+            treeLeaves: new THREE.ConeGeometry(1.5, 3, 5),
+            cactus: new THREE.CylinderGeometry(0.3, 0.3, 2, 6),
+            rock: new THREE.DodecahedronGeometry(0.8, 0),
+            building: new THREE.BoxGeometry(1, 1, 1), // Scaled dynamically
+
+            matBrown: new THREE.MeshStandardMaterial({ color: 0x5C4033 }),
+            matGreen: new THREE.MeshStandardMaterial({ color: 0x2E8B57 }),
+            matCactus: new THREE.MeshStandardMaterial({ color: 0x6B8E23 }),
+            matGrey: new THREE.MeshStandardMaterial({ color: 0x808080 }),
+            matDarkRock: new THREE.MeshStandardMaterial({ color: 0x444444 }),
+            matWhite: new THREE.MeshStandardMaterial({ color: 0xFFFFFF }),
+            matConcrete: new THREE.MeshStandardMaterial({
+                color: 0x888888,
+                roughness: 0.2,
+                map: this.createBuildingTexture()
+            })
+        };
+    }
+
+    createBuildingTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+
+        // Background (Concrete)
+        ctx.fillStyle = '#555555';
+        ctx.fillRect(0, 0, 64, 64);
+
+        // Windows (Lit)
+        ctx.fillStyle = '#ffffaa'; // Yellow light
+        // Draw grid of windows
+        for (let y = 4; y < 64; y += 12) {
+            for (let x = 4; x < 64; x += 12) {
+                if (Math.random() > 0.3) { // Some lights off
+                    ctx.fillRect(x, y, 6, 8);
+                }
+            }
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.magFilter = THREE.NearestFilter; // Pixelated look
+        return tex;
     }
 
     getChunkKey(x, z) {
@@ -37,69 +77,179 @@ export class TerrainManager {
     }
 
     /**
-     * THE TRUTH: Global Height Function
-     * @param {number} x World X
-     * @param {number} z World Z
-     * @returns {number} Height at (x, z)
+     * Get Moisture Value (-1 to 1)
+     * Low Frequency Noise
      */
-    getGlobalHeight(x, z) {
-        // Multi-octave Perlin Noise
-        const scale1 = 0.02;
-        const scale2 = 0.05;
-        const scale3 = 0.1;
-
-        let y = 0;
-
-        // Ensure Noise is ready
+    getMoisture(x, z) {
         if (!Utils.Noise || !Utils.Noise.perlin2) return 0;
-
-        // Base Hills
-        y += Utils.Noise.perlin2(x * scale1, z * scale1) * 20;
-
-        // Detail
-        y += Utils.Noise.perlin2(x * scale2, z * scale2) * 5;
-
-        // Micro Detail
-        y += Utils.Noise.perlin2(x * scale3, z * scale3) * 1;
-
-        // Normalize / Offset
-        y += 5;
-
-        // Flatten valleys
-        if (y < 0) y = y * 0.5;
-
-        return y;
+        return Utils.Noise.perlin2(x * 0.001, z * 0.001);
     }
 
-    // Alias for compatibility if needed, but we should use getGlobalHeight everywhere
-    getHeightAt(x, z) {
-        return this.getGlobalHeight(x, z);
+    /**
+     * Get Biome based on Height and Moisture
+     * @returns {string} Biome Type
+     */
+    getBiome(x, z, height, moisture) {
+        // 1. Altitude Overrides
+        if (height > 45) return 'SNOW';
+        if (height > 35) return 'MOUNTAIN'; // Transition to snow
+
+        // 2. City Pocket (Rare noise check)
+        // High frequency noise mask for cities
+        const cityNoise = Utils.Noise.perlin2(x * 0.01, z * 0.01);
+        if (cityNoise > 0.7 && moisture > -0.2 && moisture < 0.2) return 'CITY';
+
+        // 3. Moisture based
+        if (moisture < -0.3) return 'DESERT';
+        if (moisture > 0.4) return 'FOREST';
+
+        return 'PLAINS';
+    }
+
+    /**
+     * FBM (Fractal Brownian Motion) Height Calculation
+     */
+    getGlobalHeight(x, z) {
+        if (!Utils.Noise || !Utils.Noise.perlin2) return 0;
+
+        const moisture = this.getMoisture(x, z);
+
+        // Determine "Base Biome" for topography settings (ignoring height for now)
+        let biomeType = 'PLAINS';
+        if (moisture < -0.3) biomeType = 'DESERT';
+        else if (moisture > 0.4) biomeType = 'FOREST';
+
+        // City check for topography (needs to be flat)
+        const cityNoise = Utils.Noise.perlin2(x * 0.01, z * 0.01);
+        if (cityNoise > 0.7 && moisture > -0.2 && moisture < 0.2) biomeType = 'CITY';
+
+
+        // Topography Settings
+        let amplitude = 10;
+        let frequency = 0.01;
+        let octaves = 3;
+        let baseHeight = 0;
+
+        switch (biomeType) {
+            case 'DESERT':
+                amplitude = 5; // Dunes
+                frequency = 0.005;
+                octaves = 2;
+                baseHeight = 2;
+                break;
+            case 'FOREST':
+                amplitude = 15; // Hilly
+                frequency = 0.015;
+                octaves = 4;
+                baseHeight = 5;
+                break;
+            case 'PLAINS':
+                amplitude = 8; // Gentle
+                frequency = 0.008;
+                octaves = 3;
+                baseHeight = 3;
+                break;
+            case 'CITY':
+                amplitude = 2; // Flat foundation
+                frequency = 0.005;
+                octaves = 1;
+                baseHeight = 4;
+                break;
+        }
+
+        // Apply FBM
+        let y = 0;
+        let amp = amplitude;
+        let freq = frequency;
+
+        for (let i = 0; i < octaves; i++) {
+            y += Utils.Noise.perlin2(x * freq, z * freq) * amp;
+            amp *= 0.5;
+            freq *= 2.0;
+        }
+
+        // Mountain Pass (Global)
+        // Add large mountains regardless of biome if noise is high enough?
+        // Or blend in mountains based on a separate "Mountain Map"?
+        // Let's use a global "Mountain Noise"
+        const mountainNoise = Utils.Noise.perlin2(x * 0.003, z * 0.003);
+        if (mountainNoise > 0.5) {
+            // Blend into mountains
+            const t = (mountainNoise - 0.5) / 0.5; // 0 to 1
+            const mountainH = Utils.Noise.perlin2(x * 0.01, z * 0.01) * 60 + 20;
+            y = THREE.MathUtils.lerp(y, mountainH, t);
+        }
+
+        y += baseHeight;
+
+        // Flatten Valleys / Water
+        if (y < 2) y = THREE.MathUtils.lerp(y, 1, 0.5);
+
+        return Math.max(0.5, y); // Minimum height
+    }
+
+    getBiomeColor(x, z, height, moisture) {
+        const biome = this.getBiome(x, z, height, moisture);
+        const color = new THREE.Color();
+
+        // Jitter
+        const noise = Utils.Noise.perlin2(x * 0.2, z * 0.2) * 0.1;
+
+        switch (biome) {
+            case 'DESERT':
+                color.setHex(0xe6c288); // Sand
+                color.r += noise * 0.5;
+                break;
+            case 'FOREST':
+                color.setHex(0x2d4a2d); // Dark Green
+                color.g += noise;
+                break;
+            case 'PLAINS':
+                color.setHex(0x55aa55); // Grass
+                color.g += noise;
+                color.r += noise * 0.5;
+                break;
+            case 'SNOW':
+                color.setHex(0xffffff); // White
+                color.b -= noise * 0.1; // Blueish tint
+                break;
+            case 'MOUNTAIN':
+                color.setHex(0x666666); // Grey
+                color.r += noise;
+                color.g += noise;
+                color.b += noise;
+                break;
+            case 'CITY':
+                color.setHex(0x888888); // Concrete
+                // Grid pattern hint?
+                if (Math.abs(x % 10) < 1 || Math.abs(z % 10) < 1) {
+                    color.setHex(0x555555); // Road
+                }
+                break;
+            default:
+                color.setHex(0xff00ff); // Error
+        }
+
+        return color;
     }
 
     update(playerPos) {
         if (!playerPos) return;
-        // console.log("TerrainManager update", playerPos);
 
-        const pX = playerPos.x;
-        const pZ = playerPos.z;
+        const cx = Math.round(playerPos.x / this.chunkSize);
+        const cz = Math.round(playerPos.z / this.chunkSize);
 
-        // Current Chunk Coordinates
-        const cx = Math.round(pX / this.chunkSize);
-        const cz = Math.round(pZ / this.chunkSize);
-
-        // 1. Load Chunks in Range
+        // Load
         for (let x = cx - this.renderDistance; x <= cx + this.renderDistance; x++) {
             for (let z = cz - this.renderDistance; z <= cz + this.renderDistance; z++) {
                 const key = this.getChunkKey(x, z);
                 if (!this.chunks.has(key)) {
-                    const chunk = new Chunk(this, x, z);
-                    this.chunks.set(key, chunk);
-                    console.log(`Created Chunk ${key}`);
+                    this.chunks.set(key, new Chunk(this, x, z));
                 }
             }
         }
 
-        // 2. Unload Far Chunks
+        // Unload
         for (const [key, chunk] of this.chunks) {
             const dist = Math.sqrt((chunk.x - cx) ** 2 + (chunk.z - cz) ** 2);
             if (dist > this.unloadDistance) {
@@ -108,38 +258,15 @@ export class TerrainManager {
             }
         }
 
-        // 3. Update Physics (Only center chunk)
-        // Optimization: Only the chunk directly under the player gets physics
-        // Or maybe the 3x3 grid around player to prevent falling through edges?
-        // User asked for "Seul le Chunk sous les pieds du joueur".
-        // Let's be safe and do the one under feet.
-
-        // Actually, player might be on the edge. 
-        // Let's do the one under feet, and maybe neighbors if very close to edge?
-        // For now, strict adherence to instruction: "Seul le Chunk sous les pieds du joueur"
-        // But "sous les pieds" might mean the one containing the position.
-
-        // Note: My chunk coordinates are rounded (nearest center). 
-        // Real grid index is floor((pos + size/2) / size)? 
-        // Chunk at (0,0) covers -32 to 32.
-        // Math.round(0/64) = 0. Correct.
-        // Math.round(31/64) = 0. Correct.
-        // Math.round(33/64) = 1. Correct.
-
-        // 3. Update Physics (3x3 Grid around player)
-        // Enabling only the center chunk causes falling through when crossing borders.
-        // We enable the 3x3 grid (radius 1) to ensure seamless transition.
-
+        // Physics (3x3)
         for (const [key, chunk] of this.chunks) {
             const dx = Math.abs(chunk.x - cx);
             const dz = Math.abs(chunk.z - cz);
-
-            // Enable physics if within 1 chunk distance (3x3 grid)
-            if (dx <= 1 && dz <= 1) {
-                chunk.enablePhysics(this.world.physicsWorld);
-            } else {
-                chunk.disablePhysics(this.world.physicsWorld);
-            }
+            if (dx <= 1 && dz <= 1) chunk.enablePhysics(this.world.physicsWorld);
+            else chunk.disablePhysics(this.world.physicsWorld);
         }
     }
+
+    // Alias
+    getHeightAt(x, z) { return this.getGlobalHeight(x, z); }
 }

@@ -450,7 +450,7 @@ export class MapManager {
         const animDt = dt || 0.016;
 
         const anim = this.revealAnimation;
-        anim.currentRadius += anim.speed * animDt * 60; // Speed up a bit for visual flair
+        anim.currentRadius += anim.speed * animDt; // Correct speed (units per second)
 
         if (anim.currentRadius >= anim.targetRadius) {
             anim.currentRadius = anim.targetRadius;
@@ -503,6 +503,8 @@ export class MapManager {
     }
 
     updateEnemyIcons() {
+        if (!this.game.player || !this.game.player.mesh) return;
+        const playerPos = this.game.player.mesh.position;
         const enemies = this.game.world.enemies || [];
 
         enemies.forEach((enemy, index) => {
@@ -515,7 +517,17 @@ export class MapManager {
                 return;
             }
 
+            // RADAR LOGIC: Only show if close to player
+            const dist = playerPos.distanceTo(enemy.body.position);
+            const isVisible = dist < 40; // 40m Radar Range
+
             let icon = this.icons.get(`enemy-${index}`);
+
+            if (!isVisible) {
+                if (icon) icon.style.display = 'none';
+                return;
+            }
+
             if (!icon) {
                 icon = document.createElement('div');
                 // Style for enemy icon
@@ -526,12 +538,14 @@ export class MapManager {
                     borderRadius: '50%',
                     position: 'absolute',
                     transform: 'translate(-50%, -50%)',
-                    zIndex: '5'
+                    zIndex: '5',
+                    boxShadow: '0 0 5px red' // Glow for visibility
                 });
                 this.iconLayer.appendChild(icon);
                 this.icons.set(`enemy-${index}`, icon);
             }
 
+            icon.style.display = 'block';
             const pos = this.worldToMap(enemy.body.position.x, enemy.body.position.z);
             icon.style.left = `${pos.x}px`;
             icon.style.top = `${pos.y}px`;
@@ -585,9 +599,11 @@ export class MapManager {
         if (tower.icon) {
             tower.icon.style.backgroundColor = '#00ccff'; // Unlocked color
             tower.icon.style.boxShadow = '0 0 10px #00ccff';
+            tower.icon.style.zIndex = '20'; // Bring to top
         }
-        // Reveal is now handled by animation usually, but we ensure it here just in case
-        // this.revealZone(tower.position.x, tower.position.z, 300); 
+        // Reveal the zone (Fog of War)
+        console.log("MapManager: Unlocking Tower - Revealing Zone");
+        this.revealZone(tower.position.x, tower.position.z, 300);
     }
 
     toggleMap(forceState) {

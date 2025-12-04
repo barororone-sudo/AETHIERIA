@@ -57,7 +57,7 @@ export class Player {
         this.staminaRegenRate = 10;
         this.staminaDrainRates = {
             SPRINT: 20,
-            GLIDE: 25, // Increased from 10
+            GLIDE: 35, // Increased for short flight
             CLIMB: 15,
             SURF: 5,
             SWIM: 10
@@ -98,7 +98,7 @@ export class Player {
         /** @type {number} */ this.shakeIntensity = 0;
 
         // Abilities
-        /** @type {boolean} */ this.canGlide = true;
+        /** @type {boolean} */ this.canGlide = false; // Locked by default
         /** @type {boolean} */ this.canSurf = true;
 
         /** @type {number} */ this.VISUAL_OFFSET_Y = 0.0;
@@ -281,6 +281,29 @@ export class Player {
         light.position.set(0, 1, 0);
         this.mesh.add(light);
 
+        // 5. Glider (Paraglider)
+        // Simple V-Shape
+        const gliderGeo = new THREE.BufferGeometry();
+        const gliderVertices = new Float32Array([
+            // Left Wing
+            0, 0, 0, -1.5, 0.5, 0.5, 0, 0, 1.0,
+            // Right Wing
+            0, 0, 0, 0, 0, 1.0, 1.5, 0.5, 0.5
+        ]);
+        gliderGeo.setAttribute('position', new THREE.BufferAttribute(gliderVertices, 3));
+        gliderGeo.computeVertexNormals();
+
+        const gliderMat = new THREE.MeshStandardMaterial({
+            color: 0x3366ff,
+            side: THREE.DoubleSide,
+            roughness: 0.5
+        });
+
+        this.gliderMesh = new THREE.Mesh(gliderGeo, gliderMat);
+        this.gliderMesh.position.set(0, 1.5, -0.5); // Above head
+        this.gliderMesh.visible = false;
+        this.mesh.add(this.gliderMesh);
+
         // Equip Weapon immediately
         this.equipWeapon('assets/sword_iron.glb');
     }
@@ -440,9 +463,21 @@ export class Player {
 
         if (this.world && this.world.terrainManager && this.world.terrainManager.group) {
             const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
-            return intersects.length > 0;
+            if (intersects.length > 0 && intersects[0].face) {
+                // Check Normal: Must be a wall (mostly vertical)
+                const normal = intersects[0].face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(intersects[0].object.matrixWorld)).normalize();
+                // If normal.y is close to 0, it's a wall. If it's 1, it's a floor.
+                if (Math.abs(normal.y) < 0.5) {
+                    return true;
+                }
+            }
         }
         return false;
+    }
+
+    unlockGlider() {
+        this.canGlide = true;
+        if (this.game.ui) this.game.ui.showToast("Paravoile Débloquée !");
     }
 
     /**
@@ -469,7 +504,9 @@ export class Player {
                     this.body.velocity.y = 8;
                     this.state = 'AIR';
                     this.lastJumpTime = Date.now();
-                } else if (this.input.keys.crouch && this.canSurf && speed > 0.1 && !this.exhausted) {
+                } else if (this.input.keys.jump && this.combat.isAiming && this.canSurf && !this.exhausted) {
+                    // Shield Surf from Ground (Jump + Block)
+                    this.body.velocity.y = 5; // Small hop
                     this.state = 'SURF';
                     this.enterSurf();
                 } else {
@@ -490,6 +527,10 @@ export class Player {
                     this.state = 'IDLE';
                 } else if (this.input.keys.jump && this.canGlide && !this.exhausted && (Date.now() - this.lastJumpTime > 500)) {
                     this.state = 'GLIDE';
+                } else if (this.input.keys.jump && this.combat.isAiming && this.canSurf && !this.exhausted) {
+                    // Shield Surf: Jump while Blocking/Aiming
+                    this.state = 'SURF';
+                    this.enterSurf();
                 } else if (this.input.keys.forward && !this.exhausted && this.checkWall()) {
                     this.state = 'CLIMB';
                     this.body.velocity.set(0, 0, 0);
@@ -726,6 +767,8 @@ export class Player {
 
         // --- STATE MACHINE VISUALS ---
 
+        if (this.gliderMesh) this.gliderMesh.visible = false; // Hide by default
+
         switch (this.state) {
             case 'GLIDE':
                 // Superman Pose
@@ -741,6 +784,8 @@ export class Player {
                     const offset = new THREE.Vector3((Math.random() - 0.5) * 1, 0, (Math.random() - 0.5) * 1);
                     this.spawnHitParticles(this.mesh.position.clone().add(offset));
                 }
+
+                if (this.gliderMesh) this.gliderMesh.visible = true;
                 break;
 
             case 'SURF':

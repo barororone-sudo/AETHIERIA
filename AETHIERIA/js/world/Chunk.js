@@ -1,99 +1,46 @@
-// @ts-check
 import * as THREE from 'three';
-// @ts-ignore
 import * as CANNON from 'cannon-es';
 
 export class Chunk {
-    /**
-     * @param {import('./TerrainManager').TerrainManager} terrainManager
-     * @param {number} x Chunk X Index
-     * @param {number} z Chunk Z Index
-     */
     constructor(terrainManager, x, z) {
-        this.terrainManager = terrainManager;
+        this.tm = terrainManager;
         this.x = x;
         this.z = z;
-        this.size = terrainManager.chunkSize;
-        this.resolution = terrainManager.chunkResolution; // e.g. 33
+        this.size = this.tm.chunkSize;
+        this.resolution = this.tm.chunkResolution;
 
-        // World Position of the Chunk Center (for Visual) and Corner (for Physics)
-        // Chunk X/Z are indices.
-        // World Origin of Chunk (Top-Left Corner):
         this.worldX = x * this.size;
         this.worldZ = z * this.size;
 
         this.mesh = null;
         this.body = null;
         this.hasPhysics = false;
-        /** @type {THREE.Line[]} */
-        this.debugLines = [];
+        this.instancedMeshes = []; // Store population meshes
 
-        // 1. Create Visual Mesh (The Truth: Global Height)
         this.createVisual();
-
-        // 2. Create Physics Body (The Truth: Global Height)
         this.createPhysics();
-
-        // 3. Debug Borders
-        // const DEBUG_BORDERS = true;
-        // if (DEBUG_BORDERS) this.createDebugBorders();
+        this.populateChunk();
     }
 
     createVisual() {
         const segments = this.resolution - 1;
         const geometry = new THREE.PlaneGeometry(this.size, this.size, segments, segments);
+        geometry.rotateX(-Math.PI / 2);
+        geometry.translate(this.worldX + this.size / 2, 0, this.worldZ + this.size / 2);
 
-        // CORNER PIVOT LOGIC (CORRECTED):
-        // We want the mesh to cover [worldX, worldX + size] and [worldZ, worldZ + size].
-        // Mesh Position will be (worldX, 0, worldZ).
-        // So Local X must be [0, size].
-        // Local Y (which becomes -World Z) must be [-size, 0].
-        // Because Rot(-90 X) maps (x, y, z) -> (x, z, -y).
-        // So World Z = -Local Y.
-        // We want World Z to be [0, size] relative to origin.
-        // So -Local Y must be [0, size].
-        // So Local Y must be [-size, 0].
-
-        geometry.translate(this.size / 2, -this.size / 2, 0);
-
-        const posAttribute = geometry.attributes.position;
+        const posAttr = geometry.attributes.position;
         const colors = [];
 
-        for (let i = 0; i < posAttribute.count; i++) {
-            const localX = posAttribute.getX(i);
-            const localY = posAttribute.getY(i);
+        for (let i = 0; i < posAttr.count; i++) {
+            const x = posAttr.getX(i);
+            const z = posAttr.getZ(i);
 
-            // World Position of this vertex
-            // Mesh is at (this.worldX, 0, this.worldZ)
-            const wx = this.worldX + localX;
-            // World Z = MeshZ + (-localY)
-            const wz = this.worldZ - localY;
+            const h = this.tm.getGlobalHeight(x, z);
+            posAttr.setY(i, h);
 
-            // THE TRUTH
-            const height = this.terrainManager.getGlobalHeight(wx, wz);
-
-            // Set Z (which becomes World Y after rotation)
-            // Rot(-90 X) maps Local Z -> World Y.
-            // So we set Local Z = height.
-            posAttribute.setZ(i, height);
-
-            // Biome Coloring
-            const color = new THREE.Color();
-            if (height < 2) {
-                color.setHex(0xe6c288); // Sand
-            } else if (height < 15) {
-                // Grass with variation
-                const variation = (Math.random() - 0.5) * 0.1;
-                color.setHex(0x55aa55);
-                color.r += variation;
-                color.g += variation;
-                color.b += variation;
-            } else if (height < 25) {
-                color.setHex(0x666666); // Rock
-            } else {
-                color.setHex(0xffffff); // Snow
-            }
-            colors.push(color.r, color.g, color.b);
+            const m = this.tm.getMoisture(x, z);
+            const c = this.tm.getBiomeColor(x, z, h, m);
+            colors.push(c.r, c.g, c.b);
         }
 
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
@@ -101,139 +48,208 @@ export class Chunk {
 
         const material = new THREE.MeshStandardMaterial({
             vertexColors: true,
-            roughness: 0.8,
-            flatShading: true,
-            side: THREE.DoubleSide
+            roughness: 0.9,
+            metalness: 0.1,
+            flatShading: true
         });
 
         this.mesh = new THREE.Mesh(geometry, material);
-
-        // Rotate -90 X to make it flat
-        this.mesh.rotation.x = -Math.PI / 2;
-
-        // Position at Chunk Corner
-        this.mesh.position.set(this.worldX, 0, this.worldZ);
-
-        // Shadow
         this.mesh.receiveShadow = true;
-        this.mesh.castShadow = false;
-
-        if (this.terrainManager.group) {
-            this.terrainManager.group.add(this.mesh);
-        } else {
-            this.terrainManager.world.scene.add(this.mesh);
-        }
+        this.tm.group.add(this.mesh);
     }
 
     createPhysics() {
-        // Cannon Heightfield
-        // Extents: Local X [0, size], Local Y [0, size].
-        // Rot(-90 X) maps Local Y -> World -Z.
-        // So Physics Body extends in World -Z.
-        // We want to cover [worldZ, worldZ + size].
-        // So we must position the Body at worldZ + size.
-        // Then it extends to (worldZ + size) - size = worldZ.
-
-        const resolution = this.resolution;
-        const elementSize = this.size / (resolution - 1);
+        const res = this.resolution;
         const data = [];
+        const elementSize = this.size / (res - 1);
 
-        const startX = this.worldX;
-        const startZ = this.worldZ + this.size;
+        // Cannon Heightfield orientation is tricky.
+        // It assumes local X, Y. We map Y to World -Z.
+        // We iterate X then Z.
 
-        for (let i = 0; i < resolution; i++) {
+        for (let i = 0; i < res; i++) {
             const row = [];
-            for (let j = 0; j < resolution; j++) {
-                // Calculate World Pos for this grid point
-                // i is Local X. j is Local Y.
-                // World X = BodyX + i * elem = startX + i * elem.
-                // World Z = BodyZ - j * elem = startZ - j * elem. (Minus because Y -> -Z)
+            for (let j = 0; j < res; j++) {
+                // Local grid points
+                // WorldX = this.worldX + i * elementSize
+                // WorldZ = this.worldZ + (res - 1 - j) * elementSize  <-- Flip Z for Cannon
 
-                const wx = startX + i * elementSize;
-                const wz = startZ - j * elementSize;
+                const wx = this.worldX + i * elementSize;
+                const wz = this.worldZ + (res - 1 - j) * elementSize;
 
-                const height = this.terrainManager.getGlobalHeight(wx, wz);
-                row.push(height);
+                const h = this.tm.getGlobalHeight(wx, wz);
+                row.push(h);
             }
             data.push(row);
         }
 
-        // Create Shape
-        const heightfieldShape = new CANNON.Heightfield(data, {
-            elementSize: elementSize
-        });
+        const shape = new CANNON.Heightfield(data, { elementSize });
+        this.body = new CANNON.Body({ mass: 0, material: this.tm.world.slipperyMaterial });
+        this.body.addShape(shape);
 
-        this.body = new CANNON.Body({ mass: 0, material: this.terrainManager.world.slipperyMaterial });
-        this.body.addShape(heightfieldShape);
+        // Position: Top-Left corner of the chunk in World Space
+        // Cannon Heightfield origin is at (0,0,0) of the body.
+        // We rotate -90 X.
+        // So Body Local X+ is World X+. Body Local Y+ is World Z-.
+        // We need Body Pos to be at (worldX, 0, worldZ + size).
 
-        // Rotate -90 X
+        this.body.position.set(this.worldX, 0, this.worldZ + this.size);
         this.body.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-
-        // Position
-        this.body.position.set(startX, 0, startZ);
-
-        // Do not add to world yet
     }
 
-    enablePhysics(physicsWorld) {
+    populateChunk() {
+        // Use InstancedMesh for performance
+        // We create local InstancedMeshes for this chunk. 
+        // Ideally these should be global and we just add matrices, but Three.js InstancedMesh 
+        // is fixed size. Dynamic batching is complex.
+        // For simplicity: One InstancedMesh per object type PER CHUNK.
+
+        const assets = this.tm.assets;
+        const count = 50; // Objects per chunk
+
+        // Prepare Arrays
+        const treeMatrices = [];
+        const cactusMatrices = [];
+        const rockMatrices = [];
+        const buildingMatrices = [];
+        const snowTreeMatrices = [];
+
+        for (let i = 0; i < count; i++) {
+            const lx = Math.random() * this.size;
+            const lz = Math.random() * this.size;
+            const wx = this.worldX + lx;
+            const wz = this.worldZ + lz;
+
+            const h = this.tm.getGlobalHeight(wx, wz);
+            if (h < 2.5) continue; // No underwater
+
+            const m = this.tm.getMoisture(wx, wz);
+            const biome = this.tm.getBiome(wx, wz, h, m);
+
+            const dummy = new THREE.Object3D();
+            dummy.position.set(wx, h, wz);
+            dummy.rotation.y = Math.random() * Math.PI * 2;
+
+            if (biome === 'FOREST') {
+                // Tree
+                const scale = 0.8 + Math.random() * 0.5;
+                dummy.scale.setScalar(scale);
+                dummy.updateMatrix();
+                treeMatrices.push(dummy.matrix.clone());
+            } else if (biome === 'DESERT') {
+                // Cactus or Rock
+                if (Math.random() > 0.3) {
+                    dummy.scale.set(1, 0.8 + Math.random(), 1);
+                    dummy.updateMatrix();
+                    cactusMatrices.push(dummy.matrix.clone());
+                } else {
+                    dummy.scale.setScalar(0.5 + Math.random());
+                    dummy.updateMatrix();
+                    rockMatrices.push(dummy.matrix.clone());
+                }
+            } else if (biome === 'CITY') {
+                // Building
+                // Snap to grid for city look?
+                const gx = Math.round(wx / 5) * 5;
+                const gz = Math.round(wz / 5) * 5;
+                const gh = this.tm.getGlobalHeight(gx, gz);
+                dummy.position.set(gx, gh + 0.5, gz); // Adjust y
+
+                const height = 2 + Math.random() * 8; // Tall
+                dummy.scale.set(3, height, 3);
+                dummy.position.y += height / 2; // Center pivot
+
+                dummy.updateMatrix();
+                buildingMatrices.push(dummy.matrix.clone());
+            } else if (biome === 'SNOW') {
+                // Dead Tree or Rock
+                if (Math.random() > 0.5) {
+                    dummy.scale.setScalar(0.5 + Math.random());
+                    dummy.updateMatrix();
+                    rockMatrices.push(dummy.matrix.clone()); // Re-use rock
+                } else {
+                    // White Tree
+                    dummy.scale.setScalar(0.7);
+                    dummy.updateMatrix();
+                    snowTreeMatrices.push(dummy.matrix.clone());
+                }
+            } else if (biome === 'PLAINS') {
+                // Sparse Trees
+                if (Math.random() < 0.1) {
+                    dummy.scale.setScalar(0.8);
+                    dummy.updateMatrix();
+                    treeMatrices.push(dummy.matrix.clone());
+                }
+            }
+        }
+
+        // Create Meshes
+        this.createInstancedMesh(assets.treeLog, assets.matBrown, treeMatrices, 'logs');
+        this.createInstancedMesh(assets.treeLeaves, assets.matGreen, treeMatrices, 'leaves', 1.5); // Offset leaves up
+
+        this.createInstancedMesh(assets.cactus, assets.matCactus, cactusMatrices, 'cactus', 1.0);
+        this.createInstancedMesh(assets.rock, assets.matDarkRock, rockMatrices, 'rocks');
+        this.createInstancedMesh(assets.building, assets.matConcrete, buildingMatrices, 'buildings');
+
+        // Snow Trees (White logs/leaves)
+        this.createInstancedMesh(assets.treeLog, assets.matWhite, snowTreeMatrices, 'snowLogs');
+        this.createInstancedMesh(assets.treeLeaves, assets.matWhite, snowTreeMatrices, 'snowLeaves', 1.5);
+    }
+
+    createInstancedMesh(geometry, material, matrices, name, yOffset = 0) {
+        if (matrices.length === 0) return;
+
+        const mesh = new THREE.InstancedMesh(geometry, material, matrices.length);
+        mesh.name = name;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        for (let i = 0; i < matrices.length; i++) {
+            const mat = matrices[i].clone();
+            if (yOffset !== 0) {
+                // Extract position, add offset, recompose
+                const pos = new THREE.Vector3();
+                const rot = new THREE.Quaternion();
+                const scale = new THREE.Vector3();
+                mat.decompose(pos, rot, scale);
+                pos.y += yOffset * scale.y;
+                mat.compose(pos, rot, scale);
+            }
+            mesh.setMatrixAt(i, mat);
+        }
+
+        this.tm.group.add(mesh);
+        this.instancedMeshes.push(mesh);
+    }
+
+    enablePhysics(world) {
         if (!this.hasPhysics && this.body) {
-            physicsWorld.addBody(this.body);
+            world.addBody(this.body);
             this.hasPhysics = true;
         }
     }
 
-    disablePhysics(physicsWorld) {
+    disablePhysics(world) {
         if (this.hasPhysics && this.body) {
-            physicsWorld.removeBody(this.body);
+            world.removeBody(this.body);
             this.hasPhysics = false;
         }
     }
 
-    createDebugBorders() {
-        // Draw red lines at corners of the mesh extents
-        // Extents: [worldX - s/2, worldX + s/2], [worldZ - s/2, worldZ + s/2]
-        const s2 = this.size / 2;
-        const corners = [
-            [this.worldX - s2, this.worldZ - s2],
-            [this.worldX + s2, this.worldZ - s2],
-            [this.worldX + s2, this.worldZ + s2],
-            [this.worldX - s2, this.worldZ + s2]
-        ];
-
-        const mat = new THREE.LineBasicMaterial({ color: 0xff0000 });
-
-        corners.forEach(([x, z]) => {
-            const h = this.terrainManager.getGlobalHeight(x, z);
-            const pts = [
-                new THREE.Vector3(x, h, z),
-                new THREE.Vector3(x, h + 5, z) // 5m pole
-            ];
-            const geo = new THREE.BufferGeometry().setFromPoints(pts);
-            const line = new THREE.Line(geo, mat);
-            this.terrainManager.world.scene.add(line);
-            this.debugLines.push(line);
-        });
-    }
-
     destroy() {
         if (this.mesh) {
-            if (this.mesh.parent) this.mesh.parent.remove(this.mesh);
+            this.tm.group.remove(this.mesh);
             this.mesh.geometry.dispose();
-            if (Array.isArray(this.mesh.material)) {
-                this.mesh.material.forEach(m => m.dispose());
-            } else {
-                this.mesh.material.dispose();
-            }
         }
         if (this.body && this.hasPhysics) {
-            // Should be removed by TerrainManager, but safety check
-            // We don't have access to physicsWorld here easily unless passed.
-            // Assuming TerrainManager handles disablePhysics before destroy.
+            this.tm.world.physicsWorld.removeBody(this.body);
         }
 
-        this.debugLines.forEach(l => {
-            if (l.parent) l.parent.remove(l);
-            l.geometry.dispose();
+        // Cleanup Instanced Meshes
+        this.instancedMeshes.forEach(mesh => {
+            this.tm.group.remove(mesh);
+            mesh.dispose(); // Custom dispose if needed, but geometry is shared
         });
+        this.instancedMeshes = [];
     }
 }

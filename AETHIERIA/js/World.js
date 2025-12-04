@@ -63,8 +63,10 @@ export class World {
         // --- GAMEPLAY OBJECTS ---
         this.interactables = [];
         this.generateFogGrid();
-        this.createWall(this.defaultMaterial);
-        this.createArena(new THREE.Vector3(0, 0.5, -40));
+        // this.createWall(this.defaultMaterial); // Removed for procedural generation focus
+        // this.createArena(new THREE.Vector3(0, 0.5, -40)); // Removed for procedural generation focus
+
+        this.createAmbientParticles();
 
         // --- ENEMIES ---
         this.enemies = [];
@@ -150,6 +152,9 @@ export class World {
 
         // Spawn Chest with Sword
         this.spawnChest(new THREE.Vector3(15, 0.5, 10), 'sword_01');
+
+        // Spawn Chest with Glider
+        this.spawnChest(new THREE.Vector3(25, 0.5, 10), 'glider');
 
         // Spawn Guardian (Boss) - Initially inactive or distant?
         // Let's keep the Golem spawn for now but maybe move it
@@ -298,19 +303,126 @@ export class World {
     }
 
     createWater() {
-        const geometry = new THREE.PlaneGeometry(10000, 10000);
-        const material = new THREE.MeshStandardMaterial({
-            color: 0x0099ff,
+        const geometry = new THREE.PlaneGeometry(10000, 10000, 128, 128);
+
+        // Water Shader
+        const vertexShader = `
+            uniform float time;
+            varying vec2 vUv;
+            varying float vWave;
+            
+            void main() {
+                vUv = uv;
+                vec3 pos = position;
+                
+                // Gerstner-like Waves
+                float wave1 = sin(pos.x * 0.05 + time * 1.0) * 0.5;
+                float wave2 = cos(pos.y * 0.05 + time * 0.8) * 0.5; // y is z here before rotation? No, plane is XY.
+                // Actually plane is XY, rotated -90 X later. So pos.y is "North".
+                
+                pos.z += wave1 + wave2; // Z is height in PlaneGeometry
+                vWave = pos.z;
+                
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+            }
+        `;
+
+        const fragmentShader = `
+            uniform float time;
+            uniform vec3 colorDeep;
+            uniform vec3 colorShallow;
+            varying vec2 vUv;
+            varying float vWave;
+            
+            void main() {
+                // Mix colors based on wave height
+                vec3 color = mix(colorDeep, colorShallow, vWave * 0.5 + 0.5);
+                
+                // Foam lines
+                float foam = step(0.8, sin(vUv.x * 100.0 + time) * sin(vUv.y * 100.0 + time));
+                color += vec3(foam * 0.1);
+
+                gl_FragColor = vec4(color, 0.8);
+            }
+        `;
+
+        const material = new THREE.ShaderMaterial({
+            vertexShader,
+            fragmentShader,
+            uniforms: {
+                time: { value: 0 },
+                colorDeep: { value: new THREE.Color(0x0044ff) },
+                colorShallow: { value: new THREE.Color(0x00ccff) }
+            },
             transparent: true,
-            opacity: 0.6,
-            roughness: 0.1,
-            metalness: 0.1,
             side: THREE.DoubleSide
         });
+
         this.water = new THREE.Mesh(geometry, material);
         this.water.rotation.x = -Math.PI / 2;
         this.water.position.y = 1.5; // Sea Level
         this.scene.add(this.water);
+    }
+
+    createAmbientParticles() {
+        const count = 1000;
+        const geometry = new THREE.BufferGeometry();
+        const positions = [];
+        const speeds = [];
+
+        for (let i = 0; i < count; i++) {
+            positions.push(
+                (Math.random() - 0.5) * 100,
+                Math.random() * 20,
+                (Math.random() - 0.5) * 100
+            );
+            speeds.push(Math.random() * 0.5 + 0.1);
+        }
+
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('speed', new THREE.Float32BufferAttribute(speeds, 1));
+
+        const material = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.2,
+            transparent: true,
+            opacity: 0.6,
+            blending: THREE.AdditiveBlending
+        });
+
+        this.ambientParticles = new THREE.Points(geometry, material);
+        this.scene.add(this.ambientParticles);
+    }
+
+    updateAmbientParticles(dt, playerPos) {
+        if (!this.ambientParticles) return;
+
+        const positions = this.ambientParticles.geometry.attributes.position.array;
+        const speeds = this.ambientParticles.geometry.attributes.speed.array;
+        const count = positions.length / 3;
+
+        for (let i = 0; i < count; i++) {
+            let x = positions[i * 3];
+            let y = positions[i * 3 + 1];
+            let z = positions[i * 3 + 2];
+            const speed = speeds[i];
+
+            // Float Up
+            y += speed * dt;
+
+            // Wrap around player
+            const range = 50;
+            if (y > playerPos.y + 20) y = playerPos.y - 5;
+            if (x > playerPos.x + range) x -= range * 2;
+            if (x < playerPos.x - range) x += range * 2;
+            if (z > playerPos.z + range) z -= range * 2;
+            if (z < playerPos.z - range) z += range * 2;
+
+            positions[i * 3] = x;
+            positions[i * 3 + 1] = y;
+            positions[i * 3 + 2] = z;
+        }
+        this.ambientParticles.geometry.attributes.position.needsUpdate = true;
     }
 
     createGrassField() {
@@ -533,6 +645,9 @@ export class World {
                     const lumina = this.npcs.find(n => n.name === 'Lumina');
                     if (lumina) lumina.dialogueData = 'lumina_sword_found';
                 }
+                if (itemId === 'glider') {
+                    this.game.player.unlockGlider();
+                }
             }
         };
         this.interactables.push(mesh);
@@ -665,6 +780,16 @@ export class World {
         // --- DYNAMIC VEGETATION ---
         if (this.grassMesh && this.grassMesh.material.uniforms) {
             this.grassMesh.material.uniforms.time.value = this.time;
+        }
+
+        // --- WATER ANIMATION ---
+        if (this.water && this.water.material.uniforms) {
+            this.water.material.uniforms.time.value = this.time;
+        }
+
+        // --- PARTICLES ---
+        if (playerBody) {
+            this.updateAmbientParticles(dt, playerBody.position);
         }
 
         // --- DAY/NIGHT CYCLE ---

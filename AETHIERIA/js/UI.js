@@ -117,6 +117,7 @@ export class UIManager {
             cursor: pointer;
             transition: all 0.3s;
             border-radius: 5px;
+            border-radius: 5px;
         `;
 
         const continueBtn = document.createElement('button');
@@ -272,48 +273,63 @@ export class UIManager {
     initStaminaWheel() {
         this.staminaContainer = document.createElement('div');
         this.staminaContainer.id = 'stamina-wheel-container';
-        this.staminaContainer.style.position = 'absolute';
-        this.staminaContainer.style.pointerEvents = 'none';
-        this.staminaContainer.style.display = 'none'; // Hidden by default
-        this.staminaContainer.style.zIndex = '1000';
-
-        // SVG Wheel
-        this.staminaContainer.innerHTML = `
-            <svg width="60" height="60" viewBox="0 0 60 60">
-                <!-- Background Circle -->
-                <circle cx="30" cy="30" r="20" fill="rgba(0,0,0,0.5)" stroke="none" />
-                <!-- Progress Circle (Green) -->
-                <circle id="stamina-progress" cx="30" cy="30" r="18" fill="none" stroke="#00ff00" stroke-width="4" 
-                        stroke-dasharray="113" stroke-dashoffset="0" transform="rotate(-90 30 30)" />
-                <!-- Dividers (3 segments) -->
-                <line x1="30" y1="10" x2="30" y2="14" stroke="black" stroke-width="2" transform="rotate(0 30 30)" />
-                <line x1="30" y1="10" x2="30" y2="14" stroke="black" stroke-width="2" transform="rotate(120 30 30)" />
-                <line x1="30" y1="10" x2="30" y2="14" stroke="black" stroke-width="2" transform="rotate(240 30 30)" />
-            </svg>
-        `;
-
+        this.staminaContainer.style.display = 'none';
         document.body.appendChild(this.staminaContainer);
     }
 
     updateStamina(current, max) {
         if (!this.staminaContainer) this.initStaminaWheel();
 
+        // Logic: Base circle is 100 stamina. Extra stamina adds rings or segments.
+        // For simplicity: 1 Full Circle = 100 Stamina.
+        // If max > 100, we just scale the circle slightly or add a second ring?
+        // Let's do the scaling approach for now as it's cleaner to implement quickly.
+        // Or better: The "Zelda" way is a partial circle that grows to a full circle, then a second circle.
+        // Let's stick to: 1 Ring = Max Stamina. Visual size depends on Max Stamina.
+
+        // Base Radius = 20px. Max Radius = 40px.
+        // Scale factor based on max/100.
+        const scale = Math.min(2.0, Math.max(1.0, max / 100));
+        const size = 60 * scale;
+        const radius = 20 * scale;
+        const strokeWidth = 5 * scale;
+        const center = size / 2;
+        const circumference = 2 * Math.PI * radius;
+
+        // Re-build SVG if max changed (or init)
+        // We check if we need to redraw structure
+        if (this.currentMaxStamina !== max) {
+            this.currentMaxStamina = max;
+            this.staminaContainer.innerHTML = `
+                <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+                    <!-- Background -->
+                    <circle cx="${center}" cy="${center}" r="${radius}" fill="rgba(0,0,0,0.5)" stroke="none" />
+                    <!-- Progress -->
+                    <circle id="stamina-progress" cx="${center}" cy="${center}" r="${radius - strokeWidth / 2}" 
+                            fill="none" stroke="#00ff00" stroke-width="${strokeWidth}" 
+                            stroke-dasharray="${circumference}" stroke-dashoffset="0" 
+                            transform="rotate(-90 ${center} ${center})" 
+                            stroke-linecap="round" />
+                </svg>
+            `;
+        }
+
         const pct = Math.max(0, current / max);
         const circle = this.staminaContainer.querySelector('#stamina-progress');
 
-        // Circumference = 2 * PI * r (18) ≈ 113
-        const circumference = 113;
-        const offset = circumference * (1 - pct);
-
         if (circle) {
+            const offset = circumference * (1 - pct);
             circle.style.strokeDashoffset = offset;
 
-            // Color Logic
-            if (pct < 0.2) circle.style.stroke = '#ff3333'; // Red when low
-            else circle.style.stroke = '#00ff00'; // Green normal
+            // Color: Red if exhausted or very low
+            if (pct < 0.2 && current < 20) {
+                circle.style.stroke = '#ff3333';
+            } else {
+                circle.style.stroke = '#00ff00';
+            }
         }
 
-        // Visibility Logic
+        // Visibility
         if (pct >= 1.0) {
             this.staminaContainer.style.opacity = '0';
         } else {
@@ -321,17 +337,17 @@ export class UIManager {
             this.staminaContainer.style.opacity = '1';
         }
 
-        // Position Logic (Follow Player)
+        // Position: Above Head
         if (this.game.player && this.game.player.mesh) {
             const pos = this.game.player.mesh.position.clone();
-            pos.y += 2.0; // Above head
+            pos.y += 2.2; // Slightly higher
             pos.project(this.game.camera);
 
             const x = (pos.x * 0.5 + 0.5) * window.innerWidth;
             const y = (-(pos.y * 0.5) + 0.5) * window.innerHeight;
 
-            this.staminaContainer.style.left = `${x - 30}px`; // Center (60px width)
-            this.staminaContainer.style.top = `${y - 30}px`;
+            this.staminaContainer.style.left = `${x - size / 2}px`;
+            this.staminaContainer.style.top = `${y - size / 2}px`;
         }
     }
 
@@ -448,6 +464,12 @@ export class UIManager {
     }
 
     update(dt) {
+        const p = this.game.player;
+        if (p) {
+            this.updateStamina(p.stamina, p.maxStamina);
+            this.updateHearts(p.hp, p.maxHp);
+        }
+
         // Update Crosshair Visibility
         if (this.game.player.combat) {
             this.crosshair.style.display = this.game.player.combat.isAiming ? 'block' : 'none';
@@ -498,11 +520,6 @@ export class UIManager {
             this.mapManager.update(dt);
         }
     }
-
-
-
-
-
 
     toggleMap(forceState = null) {
         if (this.mapManager) {
