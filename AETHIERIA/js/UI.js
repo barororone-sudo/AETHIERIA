@@ -123,10 +123,10 @@ export class UIManager {
         const continueBtn = document.createElement('button');
         continueBtn.innerText = 'Continue';
         continueBtn.style.cssText = btnStyle;
-        continueBtn.onclick = () => this.game.startGame(true);
+        continueBtn.onclick = () => this.game.start(true);
 
         // Check if save exists
-        if (!localStorage.getItem('AETHERIA_SAVE_V1')) {
+        if (!localStorage.getItem(this.game.saveManager.getCurrentKey())) {
             continueBtn.disabled = true;
             continueBtn.style.opacity = '0.5';
             continueBtn.style.cursor = 'not-allowed';
@@ -135,12 +135,159 @@ export class UIManager {
         const newGameBtn = document.createElement('button');
         newGameBtn.innerText = 'New Game';
         newGameBtn.style.cssText = btnStyle;
-        newGameBtn.onclick = () => this.game.startGame(false);
+        newGameBtn.onclick = () => this.game.start(false);
 
         this.mainMenu.appendChild(continueBtn);
         this.mainMenu.appendChild(newGameBtn);
 
         document.body.appendChild(this.mainMenu);
+        document.body.appendChild(this.mainMenu);
+    }
+
+    createSlotSelectionUI() {
+        // Remove Main Menu if it exists
+        this.hideMainMenu();
+
+        const container = document.createElement('div');
+        container.id = 'slot-selection';
+        container.style.position = 'fixed';
+        container.style.top = '0';
+        container.style.left = '0';
+        container.style.width = '100%';
+        container.style.height = '100%';
+        container.style.backgroundColor = 'rgba(10, 10, 20, 0.95)';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.justifyContent = 'center';
+        container.style.alignItems = 'center';
+        container.style.zIndex = '3000';
+        container.style.backdropFilter = 'blur(10px)';
+        container.style.fontFamily = 'Cinzel, serif';
+
+        const title = document.createElement('h1');
+        title.innerText = 'CHOISIS TON AVENTURE';
+        title.style.color = '#ffd700';
+        title.style.fontSize = '60px';
+        title.style.marginBottom = '60px';
+        title.style.textShadow = '0 0 20px #ffaa00';
+        container.appendChild(title);
+
+        const slotsContainer = document.createElement('div');
+        slotsContainer.style.display = 'flex';
+        slotsContainer.style.gap = '30px'; // Reduced gap for 3 slots
+        container.appendChild(slotsContainer);
+
+        // Create Slots dynamically
+        const slotsInfo = this.game.saveManager.getSlotsInfo();
+
+        slotsInfo.forEach(info => {
+            const cardWrapper = document.createElement('div');
+            cardWrapper.style.position = 'relative';
+
+            const card = document.createElement('div');
+            card.style.width = '250px';
+            card.style.height = '350px';
+            card.style.background = 'linear-gradient(180deg, rgba(30,30,40,1) 0%, rgba(20,20,30,1) 100%)';
+            card.style.border = '2px solid #444';
+            card.style.borderRadius = '15px';
+            card.style.display = 'flex';
+            card.style.flexDirection = 'column';
+            card.style.alignItems = 'center';
+            card.style.justifyContent = 'center';
+            card.style.cursor = 'pointer';
+            card.style.transition = 'all 0.3s';
+            card.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+            card.style.overflow = 'hidden';
+
+            // Hover Effect
+            card.onmouseenter = () => {
+                card.style.transform = 'translateY(-10px) scale(1.05)';
+                card.style.border = '2px solid #ffd700';
+                card.style.boxShadow = '0 0 30px rgba(255, 215, 0, 0.3)';
+            };
+            card.onmouseleave = () => {
+                card.style.transform = 'translateY(0) scale(1.0)';
+                card.style.border = '2px solid #444';
+                card.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+            };
+
+            // Content
+            const slotTitle = document.createElement('h2');
+            slotTitle.innerText = `PARTIE ${info.id}`;
+            slotTitle.style.color = '#aaa';
+            slotTitle.style.marginBottom = '20px';
+            card.appendChild(slotTitle);
+
+            if (info.exists) {
+                // Info
+                const details = document.createElement('div');
+                details.style.textAlign = 'center';
+                details.style.color = 'white';
+                details.innerHTML = `
+                    <p style="font-size: 24px; color: #ffd700; margin: 10px 0;">Niveau ${info.level}</p>
+                    <p style="font-size: 14px; color: #888; margin: 5px 0;">${info.location}</p>
+                    <p style="font-size: 12px; color: #666; margin-top: 20px;">${info.date}</p>
+                `;
+                card.appendChild(details);
+
+                // Trash Button (Outside Card to avoid click conflict, or inside with stopPropagation)
+                const trashBtn = document.createElement('button');
+                trashBtn.innerHTML = '🗑️';
+                trashBtn.style.position = 'absolute';
+                trashBtn.style.top = '-10px';
+                trashBtn.style.right = '-10px';
+                trashBtn.style.width = '40px';
+                trashBtn.style.height = '40px';
+                trashBtn.style.borderRadius = '50%';
+                trashBtn.style.border = 'none';
+                trashBtn.style.background = '#ff4444';
+                trashBtn.style.color = 'white';
+                trashBtn.style.fontSize = '20px';
+                trashBtn.style.cursor = 'pointer';
+                trashBtn.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+                trashBtn.style.display = 'flex';
+                trashBtn.style.alignItems = 'center';
+                trashBtn.style.justifyContent = 'center';
+                trashBtn.style.zIndex = '10';
+
+                trashBtn.onclick = (e) => {
+                    e.stopPropagation(); // Prevent card click
+                    if (confirm(`Supprimer la sauvegarde Partie ${info.id} ? Cette action est irréversible.`)) {
+                        this.game.saveManager.deleteSlot(info.id);
+                        // Refresh UI
+                        container.remove();
+                        this.showSlotSelection();
+                    }
+                };
+                cardWrapper.appendChild(trashBtn);
+
+            } else {
+                // Empty
+                const empty = document.createElement('div');
+                empty.innerText = '+ Nouvelle Partie';
+                empty.style.color = '#666';
+                empty.style.fontSize = '20px';
+                empty.style.border = '2px dashed #444';
+                empty.style.padding = '20px';
+                empty.style.borderRadius = '10px';
+                card.appendChild(empty);
+            }
+
+            // Click Handler (Select Slot)
+            card.onclick = () => {
+                this.game.saveManager.selectSlot(info.id);
+
+                container.style.opacity = '0';
+                setTimeout(() => container.remove(), 500);
+
+                this.createMainMenu();
+            };
+
+            cardWrapper.appendChild(card);
+            slotsContainer.appendChild(cardWrapper);
+        });
+
+        document.body.appendChild(container);
     }
 
     hideMainMenu() {

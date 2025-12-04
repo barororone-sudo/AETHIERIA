@@ -113,8 +113,8 @@ export class Game {
                 if (this.isRunning) this.audio.startMusic();
             }, { once: true });
 
-            // this.startGame(false); // Removed to allow Main Menu interaction
-
+            // Phase 3: Profile Selection
+            this.ui.createSlotSelectionUI();
         } catch (e) {
             ErrorHandler.showError("Initialization Failed", "main.js", 0, 0, e);
         }
@@ -123,7 +123,7 @@ export class Game {
     /**
      * @param {boolean} continueSave
      */
-    startGame(continueSave) {
+    start(continueSave) {
         if (continueSave) {
             if (!this.saveManager.load()) {
                 alert("No save found!");

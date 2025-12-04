@@ -98,7 +98,8 @@ export class Player {
         /** @type {number} */ this.shakeIntensity = 0;
 
         // Abilities
-        /** @type {boolean} */ this.canGlide = false; // Locked by default
+        // Abilities
+        /** @type {boolean} */ this.canGlide = true; // Unlocked by default for testing
         /** @type {boolean} */ this.canSurf = true;
 
         /** @type {number} */ this.VISUAL_OFFSET_Y = 0.0;
@@ -881,8 +882,15 @@ export class Player {
         const lerpFactor = dt * 10;
 
         // Body
+        // Body
+        // Only apply Y rotation if NOT surfing (Surf handles its own sideways rotation)
+        if (this.state !== 'SURF') {
+            this.bodyMesh.rotation.y = THREE.MathUtils.lerp(this.bodyMesh.rotation.y, targetRotY, lerpFactor);
+        } else {
+            this.bodyMesh.rotation.y = targetRotY; // Snap or lerp to sideways
+        }
+
         this.bodyMesh.rotation.x = THREE.MathUtils.lerp(this.bodyMesh.rotation.x, targetRotX, lerpFactor);
-        this.bodyMesh.rotation.y = THREE.MathUtils.lerp(this.bodyMesh.rotation.y, targetRotY, lerpFactor);
         this.bodyMesh.rotation.z = THREE.MathUtils.lerp(this.bodyMesh.rotation.z, targetRotZ, lerpFactor);
         this.bodyMesh.position.y = THREE.MathUtils.lerp(this.bodyMesh.position.y, targetPosY, lerpFactor);
 
