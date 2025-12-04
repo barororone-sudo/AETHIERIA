@@ -148,6 +148,7 @@ export class UIManager {
 
         document.body.appendChild(this.mainMenu);
         document.body.appendChild(this.mainMenu);
+        this.setupKeyboardNavigation(this.mainMenu);
     }
 
     createSlotSelectionUI() {
@@ -191,6 +192,8 @@ export class UIManager {
             cardWrapper.style.position = 'relative';
 
             const card = document.createElement('div');
+            card.className = 'slot-card'; // For keyboard navigation selector
+            card.setAttribute('tabindex', '0'); // Make focusable
             card.style.width = '250px';
             card.style.height = '350px';
             card.style.background = 'linear-gradient(180deg, rgba(30,30,40,1) 0%, rgba(20,20,30,1) 100%)';
@@ -294,6 +297,7 @@ export class UIManager {
         });
 
         document.body.appendChild(container);
+        this.setupKeyboardNavigation(container);
     }
 
     hideMainMenu() {
@@ -736,5 +740,76 @@ export class UIManager {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    }
+    setupKeyboardNavigation(container) {
+        if (!container) return;
+
+        // Cleanup previous listener if exists
+        if (this.keyboardHandler) {
+            document.removeEventListener('keydown', this.keyboardHandler);
+            this.keyboardHandler = null;
+        }
+
+        // Find all interactive elements
+        // Updated selector to find buttons AND the new .slot-card class
+        const buttons = Array.from(container.querySelectorAll('button, .slot-card'));
+        if (buttons.length === 0) return;
+
+        let currentIndex = 0;
+
+        // Helper to update visual focus
+        const updateFocus = () => {
+            buttons.forEach((btn, index) => {
+                if (index === currentIndex) {
+                    btn.classList.add('focused');
+                    // Scroll into view if needed
+                    btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    btn.classList.remove('focused');
+                }
+            });
+        };
+
+        // Initial Focus
+        updateFocus();
+
+        // Keyboard Handler
+        this.keyboardHandler = (e) => {
+            // Safety check: if menu is closed, remove listener
+            if (container.style.display === 'none' || !document.body.contains(container)) {
+                document.removeEventListener('keydown', this.keyboardHandler);
+                this.keyboardHandler = null;
+                return;
+            }
+
+            switch (e.code) {
+                case 'ArrowUp':
+                case 'KeyW':
+                case 'ArrowLeft':
+                case 'KeyA':
+                    currentIndex = (currentIndex - 1 + buttons.length) % buttons.length;
+                    updateFocus();
+                    e.preventDefault();
+                    break;
+
+                case 'ArrowDown':
+                case 'KeyS':
+                case 'ArrowRight':
+                case 'KeyD':
+                    currentIndex = (currentIndex + 1) % buttons.length;
+                    updateFocus();
+                    e.preventDefault();
+                    break;
+
+                case 'Enter':
+                case 'Space':
+                case 'KeyF': // Added F key support
+                    buttons[currentIndex].click();
+                    e.preventDefault();
+                    break;
+            }
+        };
+
+        document.addEventListener('keydown', this.keyboardHandler);
     }
 }

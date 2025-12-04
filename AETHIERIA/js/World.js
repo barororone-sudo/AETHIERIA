@@ -90,9 +90,6 @@ export class World {
         // Day/Night Cycle
         this.gameTime = 0.25; // Start at 6am (0.25)
         this.dayDuration = 1440; // 24 minutes in seconds
-        this.sunLight = null;
-        this.moonLight = null;
-        this.ambientLight = null;
     }
 
     /**
@@ -211,6 +208,10 @@ export class World {
     }
 
     setupLights() {
+        // EMERGENCY LIGHT
+        const emergencyLight = new THREE.AmbientLight(0xffffff, 1.0);
+        this.scene.add(emergencyLight);
+
         this.ambientLight = new THREE.AmbientLight(0xffffff, 0.2); // Lower base ambient
         this.scene.add(this.ambientLight);
 
@@ -227,12 +228,14 @@ export class World {
         this.sunLight.shadow.camera.top = 100;
         this.sunLight.shadow.camera.bottom = -100;
         this.scene.add(this.sunLight);
+        this.scene.add(this.sunLight.target); // Important for following player
 
         // MOON
         this.moonLight = new THREE.DirectionalLight(0x4444ff, 0.3);
         this.moonLight.position.set(-10, -20, -10); // Opposite to sun
         this.moonLight.castShadow = true; // Moon shadows!
         this.scene.add(this.moonLight);
+        this.scene.add(this.moonLight.target); // Important for following player
     }
 
     createSky() {
@@ -733,8 +736,8 @@ export class World {
 
     generateFogGrid() {
         this.fogGrid = [];
-        const gridSize = 50; // 50 meters
         const worldSize = 2000; // Assuming 2000x2000 world
+        const gridSize = 50; // 50 meters
         const halfSize = worldSize / 2;
 
         for (let x = -halfSize; x < halfSize; x += gridSize) {
@@ -749,260 +752,80 @@ export class World {
         console.log(`Generated Fog Grid: ${this.fogGrid.length} points`);
     }
 
-    updateFog(playerPos) {
-        if (!this.fogGrid) return;
+    updateDayNightCycle(dt) {
+        // 1. Sécurité (Null Check)
+        if (!this.sunLight || !this.game.player || !this.game.player.mesh) return;
 
-        const discoveryRadius = 30; // 30m radius
-        let changed = false;
+        this.gameTime += dt / this.dayDuration;
+        if (this.gameTime >= 1.0) this.gameTime = 0.0;
 
-        for (const point of this.fogGrid) {
-            if (point.isDiscovered) continue;
+        const time = this.gameTime;
+        const sunAngle = (time - 0.25) * Math.PI * 2; // Noon at 0.5
 
-            const dx = playerPos.x - point.x;
-            const dz = playerPos.z - point.z;
-            const distSq = dx * dx + dz * dz;
+        // Player Position for Following
+        const playerPos = this.game.player.mesh.position;
 
-            if (distSq < discoveryRadius * discoveryRadius) {
-                point.isDiscovered = true;
-                changed = true;
+        // Sun Position (Relative to Player)
+        const sunDist = 100;
+        this.sunLight.position.x = playerPos.x + Math.cos(sunAngle) * sunDist;
+        this.sunLight.position.y = playerPos.y + Math.sin(sunAngle) * sunDist;
+        this.sunLight.position.z = playerPos.z - 50; // Offset Z slightly
+
+        // Update Target to follow player
+        this.sunLight.target.position.copy(playerPos);
+        this.sunLight.target.updateMatrixWorld();
+
+        // Moon Position (Opposite)
+        this.moonLight.position.x = playerPos.x - Math.cos(sunAngle) * sunDist;
+        this.moonLight.position.y = playerPos.y - Math.sin(sunAngle) * sunDist;
+        this.moonLight.position.z = playerPos.z + 50;
+
+        this.moonLight.target.position.copy(playerPos);
+        this.moonLight.target.updateMatrixWorld();
+
+        // Colors
+        const isDay = time > 0.25 && time < 0.75;
+
+        if (isDay) {
+            this.sunLight.intensity = 1.2;
+            this.moonLight.intensity = 0.0;
+            this.scene.background = new THREE.Color(0x87CEEB); // Sky Blue
+            if (this.scene.fog) {
+                this.scene.fog.color.setHex(0x87CEEB);
+                this.scene.fog.density = 0.002;
+            }
+        } else {
+            this.sunLight.intensity = 0.0;
+            this.moonLight.intensity = 1.5; // Bright Moon
+            this.scene.background = new THREE.Color(0x1a1a3d); // Deep Blue Night
+            if (this.scene.fog) {
+                this.scene.fog.color.setHex(0x1a1a3d);
+                this.scene.fog.density = 0.005;
             }
         }
-    }
 
-    revealFog(cx, cz, radius) {
-        if (!this.fogGrid) return;
-        const rSq = radius * radius;
-
-        for (const point of this.fogGrid) {
-            if (point.isDiscovered) continue;
-            const dx = cx - point.x;
-            const dz = cz - point.z;
-            if (dx * dx + dz * dz < rSq) {
-                point.isDiscovered = true;
-            }
+        // Update Sky Mesh Uniforms
+        if (this.skyMesh) {
+            this.skyMesh.position.copy(playerPos); // Sky follows player
+            this.skyMesh.material.uniforms.time.value = time;
         }
     }
 
     update(dt, playerBody) {
-        this.time += dt;
-        this.physicsWorld.step(1 / 60, dt, 3);
-
-        // Update Terrain
-        if (playerBody) {
-            this.terrainManager.update(playerBody.position);
-        }
-
-        // Update Fog Discovery
-        if (playerBody) {
-            this.updateFog(playerBody.position);
-        }
-
-        // --- DYNAMIC VEGETATION ---
-        if (this.grassMesh && this.grassMesh.material.uniforms) {
-            this.grassMesh.material.uniforms.time.value = this.time;
-        }
-
-        // --- WATER ANIMATION ---
-        if (this.water && this.water.material.uniforms) {
-            this.water.material.uniforms.time.value = this.time;
-        }
-
-        // --- PARTICLES ---
-        if (playerBody) {
-            this.updateAmbientParticles(dt, playerBody.position);
-        }
-
-        // --- DAY/NIGHT CYCLE ---
         this.updateDayNightCycle(dt);
 
-        if (this.clouds) {
-            this.clouds.rotation.y += dt * 0.005; // Slower clouds
-        }
-    }
-
-    updateDayNightCycle(dt) {
-        // Increment Time
-        this.gameTime += dt / this.dayDuration;
-        if (this.gameTime > 1) this.gameTime -= 1;
-
-        // Calculate Sun Position (0 = Noon, 0.5 = Midnight? No, let's map 0..1 to 0..2PI)
-        // Let's say 0.0 = Midnight, 0.25 = 6am (Sunrise), 0.5 = Noon, 0.75 = 6pm (Sunset)
-        // Angle: -PI/2 at 0.25 (Sunrise), PI/2 at 0.75 (Sunset)
-        // 0.5 (Noon) -> 0 rad (High up? No, Sun moves East to West)
-
-        // Simple rotation around Z axis
-        // Noon (0.5) -> Sun at (0, 100, 0)
-        // Midnight (0.0) -> Sun at (0, -100, 0)
-
-        const angle = (this.gameTime - 0.5) * Math.PI * 2; // 0.5 -> 0, 0 -> -PI, 1 -> PI
-        const radius = 100;
-
-        // Sun Position
-        if (this.sunLight) {
-            this.sunLight.position.set(Math.sin(angle) * radius, Math.cos(angle) * radius, 0);
-            this.sunLight.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4); // Tilt orbit
+        if (this.terrainManager && this.terrainManager.update) {
+            this.terrainManager.update(dt);
         }
 
-        // Moon Position (Opposite)
-        if (this.moonLight) {
-            this.moonLight.position.set(Math.sin(angle + Math.PI) * radius, Math.cos(angle + Math.PI) * radius, 0);
-            this.moonLight.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4);
-        }
-
-        // Colors
-        const dawnColor = new THREE.Color(0xff9966);
-        const noonColor = new THREE.Color(0x87CEEB);
-        const duskColor = new THREE.Color(0x5d3fd3);
-        const nightColor = new THREE.Color(0x050510);
-
-        let skyColor = new THREE.Color();
-        let sunIntensity = 0;
-        let moonIntensity = 0;
-
-        // Keyframes
-        if (this.gameTime < 0.2) { // Night -> Dawn
-            skyColor.lerpColors(nightColor, dawnColor, this.gameTime / 0.2);
-            moonIntensity = 0.3 * (1 - (this.gameTime / 0.2));
-        } else if (this.gameTime < 0.3) { // Dawn -> Day
-            const t = (this.gameTime - 0.2) / 0.1;
-            skyColor.lerpColors(dawnColor, noonColor, t);
-            sunIntensity = t * 1.2;
-        } else if (this.gameTime < 0.7) { // Day
-            skyColor.copy(noonColor);
-            sunIntensity = 1.2;
-        } else if (this.gameTime < 0.8) { // Day -> Dusk
-            const t = (this.gameTime - 0.7) / 0.1;
-            skyColor.lerpColors(noonColor, duskColor, t);
-            sunIntensity = 1.2 * (1 - t);
-        } else { // Dusk -> Night
-            const t = (this.gameTime - 0.8) / 0.2;
-            skyColor.lerpColors(duskColor, nightColor, t);
-            moonIntensity = 0.3 * t;
-        }
-
-        // Apply
-        this.scene.background = skyColor;
-        this.scene.fog.color.copy(skyColor);
-
-        // Update Sky Mesh Uniforms
-        if (this.skyMesh && this.skyMesh.material.uniforms) {
-            this.skyMesh.material.uniforms.bottomColor.value.copy(skyColor);
-            this.skyMesh.material.uniforms.topColor.value.copy(skyColor).multiplyScalar(0.5); // Darker top
-            this.skyMesh.material.uniforms.time.value = this.gameTime;
-        }
-
-        if (this.sunLight) {
-            this.sunLight.intensity = sunIntensity;
-            // Sun Color Change (Orange at low angles)
-            if (sunIntensity < 0.5 && sunIntensity > 0) {
-                this.sunLight.color.setHex(0xffaa00);
-            } else {
-                this.sunLight.color.setHex(0xffffff);
-            }
-        }
-
-        if (this.moonLight) {
-            this.moonLight.intensity = moonIntensity;
-        }
-
-        if (this.ambientLight) {
-            // Ambient varies slightly
-            const baseAmbient = 0.1;
-            const dayAmbient = 0.6;
-            let ambient = baseAmbient;
-            if (this.gameTime > 0.25 && this.gameTime < 0.75) {
-                ambient = dayAmbient; // Day
-            } else if (this.gameTime > 0.2 && this.gameTime < 0.8) {
-                ambient = THREE.MathUtils.lerp(baseAmbient, dayAmbient, 0.5); // Transition
-            }
-            this.ambientLight.intensity = ambient;
-        }
-
-        // Update Enemies
-        if (playerBody && this.enemies && this.enemies.length > 0) {
-            this.enemies.forEach(enemy => {
-                if (!enemy.isDead) enemy.update(dt, playerBody.position);
-            });
-        }
-
-        if (playerBody && this.golem && !this.golem.isDead) {
-            this.golem.update(dt, playerBody.position);
-        }
-
-        // Update Loot
         if (playerBody) {
             this.updateLoot(dt, playerBody);
+            this.updateUpdrafts(dt, playerBody);
         }
 
-        // Update NPCs
-        if (this.npcs && this.npcs.length > 0) {
+        if (this.npcs) {
             this.npcs.forEach(npc => npc.update(dt));
         }
-
-        // Update Updrafts
-        this.updateUpdrafts(dt, playerBody);
-
-        // Update Towers
-        this.towers.forEach(tower => tower.update(dt));
-    }
-
-    updateDayNightCycle(dt) {
-        const dayDuration = 120; // 2 minutes for full day
-        const dayTime = (this.time % dayDuration) / dayDuration; // 0 to 1
-        const sunAngle = dayTime * Math.PI * 2;
-        const sunRadius = 100;
-
-        // Find Sun
-        const sun = this.scene.children.find(c => c.isDirectionalLight);
-        if (sun) {
-            sun.position.set(
-                Math.cos(sunAngle) * sunRadius,
-                Math.sin(sunAngle) * sunRadius,
-                20
-            );
-
-            // Sun Intensity: Peak at noon (sin=1), 0 at horizon
-            const sunHeight = Math.sin(sunAngle);
-            sun.intensity = Math.max(0, sunHeight) * 2.0;
-
-            // Turn off shadows at night to save perf / avoid weird artifacts
-            sun.castShadow = sunHeight > 0.1;
-        }
-
-        // Sky & Fog Colors
-        // 0.0 = Sunrise, 0.25 = Noon, 0.5 = Sunset, 0.75 = Midnight
-        let skyColor = new THREE.Color();
-        let fogColor = new THREE.Color();
-        let ambientIntensity = 0.5;
-
-        if (dayTime < 0.1) { // Sunrise
-            const t = dayTime / 0.1;
-            skyColor.lerpColors(new THREE.Color(0x000033), new THREE.Color(0xffaa00), t);
-            fogColor.lerpColors(new THREE.Color(0x000033), new THREE.Color(0xffaa00), t);
-            ambientIntensity = 0.2 + t * 0.3;
-        } else if (dayTime < 0.4) { // Day
-            const t = (dayTime - 0.1) / 0.3;
-            skyColor.lerpColors(new THREE.Color(0xffaa00), new THREE.Color(0x87CEEB), t);
-            fogColor.lerpColors(new THREE.Color(0xffaa00), new THREE.Color(0x87CEEB), t);
-            ambientIntensity = 0.5 + t * 0.2; // Brightest at noon
-        } else if (dayTime < 0.6) { // Sunset
-            const t = (dayTime - 0.4) / 0.2;
-            skyColor.lerpColors(new THREE.Color(0x87CEEB), new THREE.Color(0xFF4500), t);
-            fogColor.lerpColors(new THREE.Color(0x87CEEB), new THREE.Color(0xFF4500), t);
-            ambientIntensity = 0.7 - t * 0.4;
-        } else { // Night
-            const t = (dayTime - 0.6) / 0.4;
-            skyColor.lerpColors(new THREE.Color(0xFF4500), new THREE.Color(0x000033), Math.min(1, t * 2)); // Fade to night quickly
-            fogColor.lerpColors(new THREE.Color(0xFF4500), new THREE.Color(0x000011), Math.min(1, t * 2));
-            ambientIntensity = 0.3;
-        }
-
-        this.scene.background = skyColor;
-        this.scene.fog.color = fogColor;
-
-        // Update Ambient Light
-        const ambient = this.scene.children.find(c => c.isAmbientLight);
-        if (ambient) ambient.intensity = ambientIntensity;
     }
 
     createUpdraft(position) {

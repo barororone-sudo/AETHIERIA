@@ -10,7 +10,8 @@ export class Input {
             jump: false,
             crouch: false, // Ctrl
             sprint: false,  // Shift
-            interact: false
+            interact: false,
+            confirm: false
         };
 
         this.init();
@@ -53,6 +54,11 @@ export class Input {
                 break;
             case 'KeyF':
                 this.keys.interact = isDown;
+                break;
+            case 'Enter':
+            case 'Space':
+                this.keys.confirm = isDown;
+                if (e.code === 'Space') this.keys.jump = isDown; // Keep Jump on Space too
                 break;
         }
     }

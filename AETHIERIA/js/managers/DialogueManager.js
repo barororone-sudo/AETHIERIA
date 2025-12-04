@@ -320,4 +320,30 @@ export class DialogueManager {
             this.showNode(this.currentNode.next || null);
         }
     }
+
+    update(dt) {
+        if (!this.isActive) return;
+
+        // Keyboard Navigation (Confirm Key OR Interact Key)
+        if (this.game.input.keys.confirm || this.game.input.keys.interact) {
+            if (!this.isConfirmPressed) {
+                this.isConfirmPressed = true;
+
+                // Logic similar to advance() but handles choices too if needed (though choices usually need selection)
+                // For now, confirm just advances text or finishes typing
+                if (this.currentChoices && this.currentChoices.length > 0) {
+                    // If choices are visible, Confirm selects the current choice
+                    this.handleChoice(this.currentChoices[this.selectedChoiceIndex]);
+                } else {
+                    this.advance();
+                }
+            }
+        } else {
+            this.isConfirmPressed = false;
+        }
+
+        // Choice Selection (W/S or Up/Down) - Optional if Input.js handles it, but good to have here if Input is polling
+        // Actually Input.js is state-based, so we might need to handle "press once" logic here for navigation too if we move away from event-based handleInput
+        // But the user only asked for Confirm logic in update() for now.
+    }
 }

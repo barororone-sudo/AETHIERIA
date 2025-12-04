@@ -4,6 +4,15 @@
     --accent: #3CF2B2;
 }
 
+/* Keyboard Navigation Focus */
+.focused {
+    transform: scale(1.1);
+    border-color: #ffd700 !important;
+    background-color: rgba(255, 255, 255, 0.2) !important;
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.5);
+    outline: none;
+}
+
 body {
     margin: 0;
     overflow: hidden;

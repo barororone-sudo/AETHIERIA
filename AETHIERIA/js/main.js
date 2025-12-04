@@ -115,6 +115,11 @@ export class Game {
 
             // Phase 3: Profile Selection
             this.ui.createSlotSelectionUI();
+
+            // Force Hide Loading Screen
+            const loadingScreen = document.getElementById('loading-screen');
+            if (loadingScreen) loadingScreen.style.display = 'none';
+
         } catch (e) {
             ErrorHandler.showError("Initialization Failed", "main.js", 0, 0, e);
         }

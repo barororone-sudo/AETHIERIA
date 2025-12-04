@@ -75,6 +75,7 @@ export class Player {
         this.lastJumpTime = 0;
         this.stepTimer = 0;
         this.lastGenTime = 0; // Debounce for scroll wheel
+        this.hasReleasedJump = true;
 
         // Camera State
         this.cameraState = {
@@ -212,7 +213,7 @@ export class Player {
             fixedRotation: true // Prevent tipping over
         });
 
-        this.body.position.set(0, 10, 0); // Start in air
+        this.body.position.set(0, 50, 0); // SAFE SPAWN HIGH UP
         this.world.physicsWorld.addBody(this.body);
     }
 
@@ -473,7 +474,8 @@ export class Player {
         const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 0.5, 0));
         const forward = this.getForwardVector();
         // Increase length to ensure we hit the wall even if physics keeps us slightly away
-        const raycaster = new THREE.Raycaster(rayOrigin, forward, 0, 2.0);
+        // Reduced from 2.0 to 1.0 to prevent false positives (stuck in air)
+        const raycaster = new THREE.Raycaster(rayOrigin, forward, 0, 1.0);
 
         if (this.world && this.world.terrainManager && this.world.terrainManager.group) {
             const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
@@ -539,10 +541,15 @@ export class Player {
                 break;
 
             case 'AIR':
+                if (!this.input.keys.jump) this.hasReleasedJump = true;
+
                 if (grounded && this.body.velocity.y <= 0) {
                     this.state = 'IDLE';
-                } else if (this.input.keys.jump && this.canGlide && !this.exhausted && (Date.now() - this.lastJumpTime > 500)) {
+                } else if (this.input.keys.crouch) {
+                    this.state = 'DIVE';
+                } else if (this.input.keys.jump && this.canGlide && !this.exhausted && this.hasReleasedJump && (Date.now() - this.lastJumpTime > 500)) {
                     this.state = 'GLIDE';
+                    this.hasReleasedJump = false; // Consume press
                 } else if (this.input.keys.jump && this.combat.isAiming && this.canSurf && !this.exhausted) {
                     // Shield Surf: Jump while Blocking/Aiming
                     this.state = 'SURF';
@@ -553,10 +560,24 @@ export class Player {
                 }
                 break;
 
+            case 'DIVE':
+                if (grounded) {
+                    this.state = 'IDLE';
+                    this.screenShake(0.5, 0.2); // Impact
+                } else if (!this.input.keys.crouch) {
+                    this.state = 'AIR';
+                }
+                break;
+
             case 'GLIDE':
-                if (grounded || this.input.keys.jump || this.exhausted) {
+                if (!this.input.keys.jump) this.hasReleasedJump = true;
+
+                if (grounded || (this.input.keys.jump && this.hasReleasedJump) || this.exhausted) {
                     this.state = grounded ? 'IDLE' : 'AIR';
                     this.lastJumpTime = Date.now();
+                    this.hasReleasedJump = false;
+                } else if (this.input.keys.crouch) {
+                    this.state = 'DIVE';
                 }
                 break;
 
@@ -613,6 +634,8 @@ export class Player {
     updatePhysics(dt) {
         if (!this.mesh || !this.body) return;
 
+        this.body.wakeUp(); // Prevent sleeping (stuck in air fix)
+
         // 1. Combat Lock
         if (this.combat && this.combat.isAttacking) {
             this.body.velocity.x = 0;
@@ -632,6 +655,28 @@ export class Player {
         this.body.angularDamping = 0.9;
 
         switch (this.state) {
+            case 'AIR':
+                // Extra Gravity for heavier feel
+                this.body.velocity.y -= 20 * dt;
+
+                // Air Control
+                if (inputLen > 0) {
+                    this.body.velocity.x += input.x * dt * 5;
+                    this.body.velocity.z += input.z * dt * 5;
+                }
+                break;
+
+            case 'DIVE':
+                // Fast Fall
+                this.body.velocity.y = -50; // Force constant fast fall
+                this.body.linearDamping = 0.0;
+
+                // Reduced Air Control
+                if (inputLen > 0) {
+                    this.body.velocity.x += input.x * dt * 10; // Slightly more control to aim landing
+                    this.body.velocity.z += input.z * dt * 10;
+                }
+                break;
             case 'GLIDE':
                 this.body.velocity.y -= 5.0 * dt; // Gravity (prevent infinite flight)
                 const glideSpeed = 12;
@@ -747,26 +792,6 @@ export class Player {
                     this.body.velocity.z = moveDir.z * this.currentSpeed;
                 } else if (grounded) {
                     this.body.linearDamping = 0.9;
-                    this.body.velocity.x *= 0.5;
-                    this.body.velocity.z *= 0.5;
-                }
-
-                if (!grounded) this.body.velocity.y -= 30 * dt; // Gravity if briefly airborne
-                break;
-
-            case 'AIR':
-                this.body.velocity.y -= 20 * dt; // Gravity
-                if (inputLen > 0.1) {
-                    this.body.velocity.x += moveDir.x * dt * 20;
-                    this.body.velocity.z += moveDir.z * dt * 20;
-
-                    // Clamp Air Speed
-                    const hVel = new THREE.Vector2(this.body.velocity.x, this.body.velocity.z);
-                    if (hVel.length() > 15) {
-                        hVel.normalize().multiplyScalar(15);
-                        this.body.velocity.x = hVel.x;
-                        this.body.velocity.z = hVel.y;
-                    }
                 }
                 break;
         }
@@ -827,6 +852,21 @@ export class Player {
                 }
 
                 if (this.gliderMesh) this.gliderMesh.visible = true;
+                break;
+
+            case 'DIVE':
+                // Head Down
+                targetRotX = -Math.PI / 2;
+                targetPosY = 0.0;
+
+                // Arms along body
+                leftHandPos.set(-0.4, 0.5, 0);
+                rightHandPos.set(0.4, 0.5, 0);
+
+                // Trail Effect (Simple particles)
+                if (Math.random() > 0.5) {
+                    this.spawnHitParticles(this.mesh.position.clone().add(new THREE.Vector3(0, 1, 0)), 0x00ffff); // Cyan
+                }
                 break;
 
             case 'SURF':
@@ -1020,14 +1060,15 @@ export class Player {
 
     /**
      * @param {THREE.Vector3} position
+     * @param {string|number} color
      */
-    spawnHitParticles(position) {
+    spawnHitParticles(position, color = 0xffff00) {
         if (!this.world) return;
         const world = this.world; // Capture for closure
 
         const particleCount = 8;
         const geo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
-        const mat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const mat = new THREE.MeshBasicMaterial({ color: color });
 
         for (let i = 0; i < particleCount; i++) {
             const mesh = new THREE.Mesh(geo, mat);
@@ -1172,6 +1213,10 @@ export class Player {
 
         return v;
     }
+
+
+
+
 
     getForwardVector() {
         if (!this.mesh) return new THREE.Vector3(0, 0, -1);
