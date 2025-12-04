@@ -61,6 +61,11 @@ export class MapManager {
         this.iconLayer.id = 'map-layer-icons';
         this.content.appendChild(this.iconLayer);
 
+        // Enforce Z-Index
+        this.terrainLayer.style.zIndex = '1';
+        this.fogCanvas.style.zIndex = '2';
+        this.iconLayer.style.zIndex = '3';
+
         // 4. Setup Fog
         this.fogCtx = this.fogCanvas.getContext('2d');
         this.fogCtx.fillStyle = 'black';
@@ -282,8 +287,8 @@ export class MapManager {
             return { x: mx, y: my };
         };
 
-        // 1. Base Ground (Dirt/Darker Green)
-        ctx.fillStyle = '#2d4a2d';
+        // 1. Base Ground (Brighter Green for visibility)
+        ctx.fillStyle = '#4a6b4a';
         ctx.fillRect(0, 0, this.mapSize, this.mapSize);
 
         // 2. Grid Lines (Faint)
@@ -366,7 +371,7 @@ export class MapManager {
         }
     }
 
-    update() {
+    update(dt) {
         if (!this.game.player || !this.game.player.mesh || !this.container || !this.content) return;
 
         // Update Icons
@@ -375,7 +380,7 @@ export class MapManager {
 
         // Handle Reveal Animation
         if (this.revealAnimation) {
-            this.updateRevealAnimation();
+            this.updateRevealAnimation(dt);
         }
 
         // Smooth Zoom
@@ -427,28 +432,22 @@ export class MapManager {
         }
     }
 
-    animateReveal(worldX, worldZ, targetRadius, duration = 1.0) {
+    animateReveal(worldX, worldZ, targetRadius, duration = 1.0, onComplete) {
         this.revealAnimation = {
             x: worldX,
             z: worldZ,
             currentRadius: 0,
             targetRadius: targetRadius,
-            speed: targetRadius / duration // units per second
+            speed: targetRadius / duration,
+            onComplete: onComplete
         };
     }
 
-    updateRevealAnimation() {
+    updateRevealAnimation(dt) {
         if (!this.revealAnimation) return;
 
-        const dt = this.game.clock.getDelta(); // Use clock delta
-        // Note: If game is paused, dt might be 0 or main loop might not pass dt to ui.update?
-        // main.js calls ui.update() but doesn't pass dt. 
-        // We should use a fixed timestep or get dt from game.clock if accessible.
-        // But wait, if game.isPaused, main.js skips world.update but runs ui.update.
-        // game.clock.getDelta() is called in main.js BEFORE the pause check.
-        // So we can't call it again here or we mess up the time.
-        // Let's assume 1/60s for UI animation if we can't get real dt, or use a small fixed value.
-        const animDt = 0.016;
+        // Use passed dt
+        const animDt = dt || 0.016;
 
         const anim = this.revealAnimation;
         anim.currentRadius += anim.speed * animDt * 60; // Speed up a bit for visual flair
@@ -456,6 +455,8 @@ export class MapManager {
         if (anim.currentRadius >= anim.targetRadius) {
             anim.currentRadius = anim.targetRadius;
             this.revealZone(anim.x, anim.z, anim.currentRadius);
+
+            if (anim.onComplete) anim.onComplete();
             this.revealAnimation = null; // Done
         } else {
             // Draw partial reveal
@@ -545,12 +546,12 @@ export class MapManager {
         const mapRadius = radius * this.scale;
 
         // Cut out the fog using destination-out
+        this.fogCtx.save();
         this.fogCtx.globalCompositeOperation = 'destination-out';
-
-        // Use RECTANGLE (Square)
-        this.fogCtx.fillRect(pos.x - mapRadius, pos.y - mapRadius, mapRadius * 2, mapRadius * 2);
-
-        this.fogCtx.globalCompositeOperation = 'source-over';
+        this.fogCtx.beginPath();
+        this.fogCtx.arc(pos.x, pos.y, mapRadius, 0, Math.PI * 2);
+        this.fogCtx.fill();
+        this.fogCtx.restore();
 
         console.log(`MapManager: Revealed zone at ${worldX}, ${worldZ} with radius ${radius}`);
     }
@@ -583,9 +584,10 @@ export class MapManager {
     unlockTower(tower) {
         if (tower.icon) {
             tower.icon.style.backgroundColor = '#00ccff'; // Unlocked color
+            tower.icon.style.boxShadow = '0 0 10px #00ccff';
         }
-        // Reveal a large area around the tower
-        this.revealZone(tower.position.x, tower.position.z, 300);
+        // Reveal is now handled by animation usually, but we ensure it here just in case
+        // this.revealZone(tower.position.x, tower.position.z, 300); 
     }
 
     toggleMap(forceState) {

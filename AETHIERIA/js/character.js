@@ -1,8 +1,8 @@
 // File: js/character.js
 export const BASE = {
     archetypes: [
-        { name: "Windblade Ranger", stats: { hp: [800, 1100], atk: [16, 24], def: [45, 65], mastery: [20, 40], stamina: [90, 120] }, element: "anemo" },
-        { name: "Skylit Duelist", stats: { hp: [860, 1080], atk: [20, 28], def: [40, 58], mastery: [16, 36], stamina: [95, 115] }, element: "anemo" }
+        { name: "Windblade Ranger", stats: { hp: [60, 80], atk: [16, 24], def: [45, 65], mastery: [20, 40], stamina: [90, 120] }, element: "anemo" },
+        { name: "Skylit Duelist", stats: { hp: [60, 80], atk: [20, 28], def: [40, 58], mastery: [16, 36], stamina: [95, 115] }, element: "anemo" }
     ],
     palettes: [
         ["#87D7FF", "#2E4057", "#3CF2B2", "#FFE88A", "#1A1A1A"], // Classic Anemo

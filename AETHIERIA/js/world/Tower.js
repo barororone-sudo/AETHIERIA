@@ -166,8 +166,10 @@ export class Tower {
             this.game.ui.mapManager.show(); // Ensure visible
 
             // Trigger Animation (1.5s duration)
-            this.game.ui.mapManager.animateReveal(this.position.x, this.position.z, 60, 1.5);
-            this.game.ui.mapManager.unlockTower(this);
+            // Animate to FULL radius (300)
+            this.game.ui.mapManager.animateReveal(this.position.x, this.position.z, 300, 1.5, () => {
+                this.game.ui.mapManager.unlockTower(this);
+            });
         }
 
         // Visual Change

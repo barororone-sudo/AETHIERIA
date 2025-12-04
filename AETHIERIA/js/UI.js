@@ -269,44 +269,69 @@ export class UIManager {
         });
     }
 
+    initStaminaWheel() {
+        this.staminaContainer = document.createElement('div');
+        this.staminaContainer.id = 'stamina-wheel-container';
+        this.staminaContainer.style.position = 'absolute';
+        this.staminaContainer.style.pointerEvents = 'none';
+        this.staminaContainer.style.display = 'none'; // Hidden by default
+        this.staminaContainer.style.zIndex = '1000';
+
+        // SVG Wheel
+        this.staminaContainer.innerHTML = `
+            <svg width="60" height="60" viewBox="0 0 60 60">
+                <!-- Background Circle -->
+                <circle cx="30" cy="30" r="20" fill="rgba(0,0,0,0.5)" stroke="none" />
+                <!-- Progress Circle (Green) -->
+                <circle id="stamina-progress" cx="30" cy="30" r="18" fill="none" stroke="#00ff00" stroke-width="4" 
+                        stroke-dasharray="113" stroke-dashoffset="0" transform="rotate(-90 30 30)" />
+                <!-- Dividers (3 segments) -->
+                <line x1="30" y1="10" x2="30" y2="14" stroke="black" stroke-width="2" transform="rotate(0 30 30)" />
+                <line x1="30" y1="10" x2="30" y2="14" stroke="black" stroke-width="2" transform="rotate(120 30 30)" />
+                <line x1="30" y1="10" x2="30" y2="14" stroke="black" stroke-width="2" transform="rotate(240 30 30)" />
+            </svg>
+        `;
+
+        document.body.appendChild(this.staminaContainer);
+    }
+
     updateStamina(current, max) {
-        if (!this.staminaContainer) {
-            // Create if missing (or find existing)
-            this.staminaContainer = document.getElementById('stamina-container');
-            if (!this.staminaContainer) {
-                // Inject if totally missing
-                this.staminaContainer = document.createElement('div');
-                this.staminaContainer.id = 'stamina-container';
-                this.staminaContainer.style.position = 'absolute';
-                this.staminaContainer.style.top = '50px';
-                this.staminaContainer.style.left = '50px';
-                this.staminaContainer.style.width = '200px';
-                this.staminaContainer.style.height = '20px';
-                this.staminaContainer.style.background = '#333';
-                this.staminaContainer.style.border = '2px solid white';
-                this.staminaContainer.style.borderRadius = '10px';
-                this.staminaContainer.style.overflow = 'hidden';
+        if (!this.staminaContainer) this.initStaminaWheel();
 
-                const bar = document.createElement('div');
-                bar.id = 'stamina-bar';
-                bar.style.width = '100%';
-                bar.style.height = '100%';
-                bar.style.background = '#00ff00';
-                bar.style.transition = 'width 0.1s';
-                this.staminaContainer.appendChild(bar);
+        const pct = Math.max(0, current / max);
+        const circle = this.staminaContainer.querySelector('#stamina-progress');
 
-                document.body.appendChild(this.staminaContainer);
-            }
+        // Circumference = 2 * PI * r (18) ≈ 113
+        const circumference = 113;
+        const offset = circumference * (1 - pct);
+
+        if (circle) {
+            circle.style.strokeDashoffset = offset;
+
+            // Color Logic
+            if (pct < 0.2) circle.style.stroke = '#ff3333'; // Red when low
+            else circle.style.stroke = '#00ff00'; // Green normal
         }
 
-        const bar = this.staminaContainer.querySelector('#stamina-bar') || this.staminaContainer.children[0];
-        if (bar) {
-            const pct = Math.max(0, (current / max) * 100);
-            bar.style.width = `${pct}%`;
+        // Visibility Logic
+        if (pct >= 1.0) {
+            this.staminaContainer.style.opacity = '0';
+        } else {
+            this.staminaContainer.style.display = 'block';
+            this.staminaContainer.style.opacity = '1';
+        }
 
-            // Color change on low stamina
-            if (pct < 20) bar.style.background = '#ff0000';
-            else bar.style.background = '#00ff00';
+        // Position Logic (Follow Player)
+        if (this.game.player && this.game.player.mesh) {
+            const pos = this.game.player.mesh.position.clone();
+            pos.y += 2.0; // Above head
+            pos.project(this.game.camera);
+
+            const x = (pos.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-(pos.y * 0.5) + 0.5) * window.innerHeight;
+
+            this.staminaContainer.style.left = `${x - 30}px`; // Center (60px width)
+            this.staminaContainer.style.top = `${y - 30}px`;
         }
     }
 
@@ -328,39 +353,39 @@ export class UIManager {
         }
         if (!this.heartsContainer) return;
 
-        // Rebuild if count mismatch (or empty)
-        const heartCount = Math.ceil(max / 20); // 20 HP per heart? Or 100 HP = 5 hearts?
-        // Let's assume 1 Heart = 20 HP.
+        // Logic: 1 Heart = 20 HP
+        const totalHearts = Math.ceil(max / 20);
+        const currentHearts = Math.ceil(current / 20);
 
-        if (this.heartsContainer.children.length !== heartCount) {
-            this.heartsContainer.innerHTML = '';
-            for (let i = 0; i < heartCount; i++) {
-                const heart = document.createElement('div');
-                heart.className = 'heart-icon';
-                heart.style.width = '30px';
-                heart.style.height = '30px';
-                heart.style.backgroundImage = 'url("./assets/ui/heart_full.png")'; // Placeholder
-                heart.style.backgroundSize = 'contain';
-                heart.style.display = 'inline-block';
-                heart.style.marginRight = '5px';
-                this.heartsContainer.appendChild(heart);
-            }
-        }
+        // Clear and Rebuild (as requested)
+        this.heartsContainer.innerHTML = '';
 
-        // Update State (Full/Half/Empty)
-        const hearts = this.heartsContainer.children;
-        for (let i = 0; i < hearts.length; i++) {
-            const heartValue = (i + 1) * 20;
-            if (current >= heartValue) {
-                hearts[i].style.opacity = '1.0';
-                hearts[i].style.filter = 'none';
-            } else if (current >= heartValue - 10) {
-                hearts[i].style.opacity = '1.0';
-                hearts[i].style.filter = 'grayscale(0.5)'; // Half heart visual hack
+        for (let i = 0; i < totalHearts; i++) {
+            const heart = document.createElement('div');
+            heart.className = 'heart';
+
+            // Calculate state for this heart
+            // Heart i represents HP from (i*20) to ((i+1)*20)
+            const heartMin = i * 20;
+            const heartMax = (i + 1) * 20;
+
+            if (current >= heartMax) {
+                // Full Heart
+                heart.style.opacity = '1.0';
+                heart.style.filter = 'none';
+            } else if (current > heartMin) {
+                // Partial Heart (e.g. 10/20)
+                // For simplicity, just show it but maybe grayscale or opacity?
+                // User suggested: "dernier cœur visuellement différent"
+                heart.style.opacity = '1.0';
+                heart.style.filter = 'grayscale(0.5) brightness(0.8)';
             } else {
-                hearts[i].style.opacity = '0.5';
-                hearts[i].style.filter = 'grayscale(1.0)';
+                // Empty Heart
+                heart.style.opacity = '0.3'; // Dimmed
+                heart.style.filter = 'grayscale(1.0)';
             }
+
+            this.heartsContainer.appendChild(heart);
         }
     }
     initCrosshair() {
@@ -422,14 +447,14 @@ export class UIManager {
         }
     }
 
-    update() {
+    update(dt) {
         // Update Crosshair Visibility
         if (this.game.player.combat) {
             this.crosshair.style.display = this.game.player.combat.isAiming ? 'block' : 'none';
         }
 
         // Update Minimap
-        this.updateMinimap();
+        this.updateMinimap(dt);
     }
 
     revealRegion(x, z, radius) {
@@ -468,9 +493,9 @@ export class UIManager {
         }
     }
 
-    updateMinimap() {
+    updateMinimap(dt) {
         if (this.mapManager) {
-            this.mapManager.update();
+            this.mapManager.update(dt);
         }
     }
 

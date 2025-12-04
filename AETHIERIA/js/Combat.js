@@ -238,10 +238,32 @@ export class Combat {
             if (!this.player.body) return;
             const dist = this.player.body.position.distanceTo(enemy.body.position);
             if (dist < 3) {
+                // Calculate Knockback Direction (Player -> Enemy)
+                const direction = new THREE.Vector3().subVectors(enemy.body.position, this.player.body.position).normalize();
+
+                // Force depends on combo step
+                const force = (this.comboStep === 2) ? 15 : 8;
+
+                // Apply Knockback
+                if (enemy.applyKnockback) {
+                    enemy.applyKnockback(direction, force);
+                }
+
+                // Apply Damage
                 enemy.takeDamage(10, Elements.NONE);
-                // Hit Feedback
+
+                // VFX: Particles
+                if (this.player.spawnHitParticles) {
+                    // Hit point is roughly between player and enemy
+                    // Convert Cannon Vec3 to Three Vector3
+                    const playerPos = new THREE.Vector3(this.player.body.position.x, this.player.body.position.y, this.player.body.position.z);
+                    const hitPos = playerPos.add(direction.multiplyScalar(1.0));
+                    this.player.spawnHitParticles(hitPos);
+                }
+
+                // Hit Feedback (Juice)
                 if (this.player.hitStop) this.player.hitStop(0.05); // 50ms
-                if (this.player.screenShake) this.player.screenShake(0.5, 0.2); // Stronger shake for melee
+                if (this.player.screenShake) this.player.screenShake(0.3, 0.2); // Stronger shake for melee
             }
         });
     }

@@ -50,6 +50,22 @@ export class Enemy {
         this.patrolPoint = position.clone();
     }
 
+    applyKnockback(direction, force) {
+        if (!this.body) return;
+        // Normalize direction (keep Y component 0 for horizontal push, or allow slight lift)
+        const impulse = direction.clone().normalize().multiplyScalar(force);
+        impulse.y = 2.0; // Slight lift for arcade feel
+
+        // Apply Impulse (Cannon.js uses applyImpulse at a point, usually center)
+        // We can also just modify velocity for immediate "snap" feel
+        this.body.velocity.x += impulse.x;
+        this.body.velocity.z += impulse.z;
+        this.body.velocity.y += impulse.y;
+
+        // Flash Red
+        this.takeDamage(0, Elements.NONE, false); // Hack to trigger flash without damage if needed, or just rely on damage call
+    }
+
     update(dt, playerPosition) {
         if (!playerPosition) return;
         if (this.isFrozen) return;

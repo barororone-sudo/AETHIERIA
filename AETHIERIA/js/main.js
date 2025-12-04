@@ -241,7 +241,7 @@ export class Game {
         this.updatePhysicsDebug();
 
         try {
-            if (this.ui) this.ui.update();
+            if (this.ui) this.ui.update(dt);
         } catch (e) {
             console.warn("Erreur UI:", e);
         }
