@@ -84,23 +84,8 @@ export class Player {
 
         // Visuals (Initialized in initVisuals)
         /** @type {THREE.Group|null} */ this.mesh = null;
-        /** @type {THREE.Group|null} */ this.bodyGroup = null; // Root of visuals
-        /** @type {THREE.Group|null} */ this.torso = null; // Upper body (can twist)
-        /** @type {THREE.Group|null} */ this.rightArmPivot = null; // Shoulder
-        /** @type {THREE.Group|null} */ this.rightArm = null; // Arm
-        /** @type {THREE.Group|null} */ this.hand = null; // Hand
         /** @type {THREE.Group|null} */ this.weaponSlot = null; // Weapon Attachment
-
-        /** @type {THREE.Mesh|null} */ this.torsoMesh = null;
-        /** @type {THREE.Mesh|null} */ this.headMesh = null;
-        /** @type {THREE.Group|null} */ this.hairGroup = null;
-        /** @type {Limb|null} */ this.armL = null; // Left arm (simple)
-        /** @type {Limb|null} */ this.legL = null;
-        /** @type {Limb|null} */ this.legR = null;
-
-        /** @type {THREE.Group|null} */ this.shieldGroup = null;
-        /** @type {THREE.Group|null} */ this.scarf = null;
-        /** @type {THREE.Mesh|null} */ this.scarfTail1 = null;
+        /** @type {THREE.Group|null} */ this.shieldGroup = null; // Shield Attachment
 
         /** @type {SwordTrail|null} */ this.swordTrail = null;
 
@@ -186,124 +171,15 @@ export class Player {
         // Load GLB
         this.loadGLB();
 
-        // Materials
-        const toonGradient = this.world.toonGradientMap || null;
-        const matToon = (color) => new THREE.MeshToonMaterial({
-            color: color,
-            gradientMap: toonGradient
-        });
-
-        const cSkin = 0xFFCCAA;
-        const cTunic = 0x00AAFF;
-        const cHair = 0xFFD700;
-        const cPants = 0xF5F5DC;
-        const cBoots = 0x4A3C31;
-        const cScarf = 0xFF4400;
-        const cDark = 0x333333;
-
-        // 1. Body Group (Main Container)
-        this.bodyGroup = new THREE.Group();
-        this.bodyGroup.position.y = 0.9;
-        this.mesh.add(this.bodyGroup);
-
-        // 2. Legs
-        const createLimb = (w, h, d, color, x, y, z, parent) => {
-            const g = new THREE.Group();
-            g.position.set(x, y, z);
-            parent.add(g);
-            const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), matToon(color));
-            m.position.y = -h / 2;
-            m.castShadow = true;
-            g.add(m);
-            return { group: g, mesh: m };
-        };
-
-        this.legL = createLimb(0.1, 0.45, 0.1, cPants, -0.12, -0.25, 0, this.bodyGroup);
-        this.legR = createLimb(0.1, 0.45, 0.1, cPants, 0.12, -0.25, 0, this.bodyGroup);
-
-        // Boots
-        const bootGeo = new THREE.BoxGeometry(0.11, 0.15, 0.15);
-        const bootMat = matToon(cBoots);
-        const bootL = new THREE.Mesh(bootGeo, bootMat); bootL.position.y = -0.3; this.legL.group.add(bootL);
-        const bootR = new THREE.Mesh(bootGeo, bootMat); bootR.position.y = -0.3; this.legR.group.add(bootR);
-
-        // 3. Torso
-        this.torso = new THREE.Group();
-        this.bodyGroup.add(this.torso);
-
-        // Tunic
-        const tunicGeo = new THREE.CylinderGeometry(0.15, 0.25, 0.5, 8);
-        this.torsoMesh = new THREE.Mesh(tunicGeo, matToon(cTunic));
-        this.torsoMesh.castShadow = true;
-        this.torso.add(this.torsoMesh);
-
-        // Head
-        this.head = new THREE.Group();
-        this.head.position.y = 0.35;
-        this.torso.add(this.head);
-        this.headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), matToon(cSkin));
-        this.head.add(this.headMesh);
-
-        // Hair
-        this.hairGroup = new THREE.Group();
-        this.head.add(this.hairGroup);
-        const spikeGeo = new THREE.ConeGeometry(0.04, 0.15, 4);
-        const spikeMat = matToon(cHair);
-        for (let i = 0; i < 8; i++) {
-            const spike = new THREE.Mesh(spikeGeo, spikeMat);
-            const angle = (i / 8) * Math.PI * 2;
-            spike.position.set(Math.cos(angle) * 0.1, 0.05, Math.sin(angle) * 0.1);
-            spike.rotation.x = -0.5; spike.rotation.y = angle;
-            this.hairGroup.add(spike);
-        }
-        const topSpike = new THREE.Mesh(spikeGeo, spikeMat);
-        topSpike.position.y = 0.1; topSpike.scale.set(1.5, 1.5, 1.5);
-        this.hairGroup.add(topSpike);
-
-        // Scarf
-        this.scarf = new THREE.Group();
-        this.scarf.position.set(0, 0.2, -0.1);
-        this.torso.add(this.scarf);
-        this.scarfTail1 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.3), matToon(cScarf));
-        this.scarfTail1.rotation.x = -0.5;
-        this.scarf.add(this.scarfTail1);
-
-        // 4. Arms
-        this.armL = createLimb(0.08, 0.35, 0.08, cSkin, -0.22, 0.15, 0, this.torso);
-
-        // RIGHT ARM (COMPLEX RIG)
-        this.rightArmPivot = new THREE.Group();
-        this.rightArmPivot.position.set(0.22, 0.15, 0);
-        this.torso.add(this.rightArmPivot);
-
-        this.rightArm = new THREE.Group();
-        this.rightArmPivot.add(this.rightArm);
-
-        const armMesh = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.35, 0.08), matToon(cSkin));
-        armMesh.position.y = -0.175;
-        armMesh.castShadow = true;
-        this.rightArm.add(armMesh);
-
-        // Hand
-        this.hand = new THREE.Group();
-        this.hand.position.y = -0.35;
-        this.rightArm.add(this.hand);
-
-        const handMesh = new THREE.Mesh(new THREE.SphereGeometry(0.06), matToon(cSkin));
-        this.hand.add(handMesh);
-
-        // Weapon Slot
+        // Initialize Weapon Slot (Placeholder until bone attachment)
         this.weaponSlot = new THREE.Group();
-        this.hand.add(this.weaponSlot);
+        this.weaponSlot.position.set(0.2, 1.0, 0.3); // Approximate hand position
+        this.mesh.add(this.weaponSlot);
 
-        // 5. Shield
+        // Initialize Shield Group
         this.shieldGroup = new THREE.Group();
-        const shieldMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.2, 0.05, 6), new THREE.MeshStandardMaterial({ color: cDark, emissive: 0x00FF00, emissiveIntensity: 0.2 }));
-        shieldMesh.rotation.x = Math.PI / 2;
-        this.shieldGroup.add(shieldMesh);
-        this.shieldGroup.position.set(0, 0, -0.15);
-        this.shieldGroup.rotation.z = 0.2;
-        this.torso.add(this.shieldGroup);
+        this.shieldGroup.position.set(0, 1.0, -0.3); // Approximate back position
+        this.mesh.add(this.shieldGroup);
 
         // Initialize Camera Lag
         this.cameraLagPos.copy(this.mesh.position);
@@ -313,91 +189,114 @@ export class Player {
     }
 
     loadGLB() {
-        // Load GLB Model
         const loader = new GLTFLoader();
         /** @type {Object<string, THREE.AnimationClip>} */
-        this.animations = {}; // Store clips: { 'IDLE': clip, 'RUN': clip, ... }
+        this.animations = {};
         this.currentAction = null;
+        /** @type {string|null} */
+        this.currentAnimName = null;
 
-        // 1. Load Main Model (Using Bow Animation GLB as base since Steampunk is missing)
-        loader.load('assets/videoplayback (3)_default.glb', (gltf) => {
+        // 1. Load Main Model
+        loader.load('assets/hero.glb', (/** @type {any} */ gltf) => {
             console.log("Main GLB Loaded!", gltf);
             const model = gltf.scene;
             model.scale.set(1.0, 1.0, 1.0);
-            model.position.y = 0;
 
             // Shadows
-            model.traverse((child) => {
-                if (child.isMesh) {
+            model.traverse((/** @type {THREE.Object3D} */ child) => {
+                if (/** @type {THREE.Mesh} */(child).isMesh) {
                     child.castShadow = true;
                     child.receiveShadow = true;
                 }
             });
 
-            // Hide Procedural
-            if (this.bodyGroup) this.bodyGroup.visible = false;
-            this.mesh.add(model);
+            if (this.mesh) this.mesh.add(model);
             this.glbModel = model;
 
             // Mixer Setup
             this.mixer = new THREE.AnimationMixer(model);
 
-            // Assign Animation from Base Model (BOW)
+            // 2. Load Extra Animations in Parallel
+            const anims = {
+                RUN: 'assets/déplacement.glb',
+                ATTACK: 'assets/sword_attack.glb',
+                CLIMB: 'assets/grimper.glb',
+                JUMP: 'assets/Jumping.glb'
+            };
+
+            const promises = Object.entries(anims).map(([name, path]) => {
+                return new Promise((resolve) => {
+                    loader.load(path, (/** @type {any} */ animGltf) => {
+                        if (animGltf.animations.length > 0) {
+                            if (this.animations) this.animations[name] = animGltf.animations[0];
+                        }
+                        resolve(null);
+                    }, undefined, (/** @type {any} */ err) => {
+                        console.warn(`Failed to load animation ${name} at ${path}`, err);
+                        resolve(null); // Resolve anyway to not block others
+                    });
+                });
+            });
+
+            // Also check if the main model has animations (e.g. default BOW)
             if (gltf.animations.length > 0) {
-                this.animations['BOW'] = gltf.animations[0];
-                // Use BOW as temporary IDLE to prevent T-Pose, or just don't play anything
-                // this.animations['IDLE'] = gltf.animations[0]; 
-                // this.playAnimation('IDLE');
+                if (this.animations) {
+                    this.animations['BOW'] = gltf.animations[0];
+                }
             }
 
-            // 2. Load Extra Animations
-            this.loadAnimation(loader, 'assets/déplacement.glb', 'RUN');
-            this.loadAnimation(loader, 'assets/grimper.glb', 'CLIMB');
-            this.loadAnimation(loader, 'assets/sword_attack.glb', 'ATTACK');
-            // BOW is already loaded as base
+            Promise.all(promises).then(() => {
+                if (this.animations) {
+                    console.log("All animations loaded:", Object.keys(this.animations));
+                    // Start Idle
+                    this.playAnimation('IDLE');
+                }
+            });
 
         }, undefined, (error) => {
             console.error('An error happened loading the GLB:', error);
         });
     }
 
-    loadAnimation(loader, path, name) {
-        loader.load(path, (gltf) => {
-            if (gltf.animations.length > 0) {
-                console.log(`Loaded Animation: ${name}`);
-                const clip = gltf.animations[0];
-                this.animations[name] = clip;
-            }
-        });
-    }
+    /**
+     * @param {string} name 
+     * @param {boolean} loop 
+     * @param {number} duration Crossfade duration in seconds
+     */
+    playAnimation(name, loop = true, duration = 0.2) {
+        if (!this.mixer || !this.animations || !this.animations[name]) return;
+        if (this.currentAnimName === name) return;
 
-    playAnimation(name, loop = true) {
-        if (!this.mixer || !this.animations[name]) return;
-        if (this.currentAnimName === name) return; // Already playing
-
-        const clip = this.animations[name];
-        const action = this.mixer.clipAction(clip);
+        const newClip = this.animations[name];
+        const newAction = this.mixer.clipAction(newClip);
 
         if (this.currentAction) {
-            this.currentAction.fadeOut(0.2);
+            // Crossfade
+            newAction.reset();
+            newAction.play();
+            this.currentAction.crossFadeTo(newAction, duration, true);
+        } else {
+            newAction.play();
         }
-
-        action.reset();
-        action.fadeIn(0.2);
-        action.play();
 
         if (!loop) {
-            action.setLoop(THREE.LoopOnce);
-            action.clampWhenFinished = true;
-            this.mixer.addEventListener('finished', () => {
-                // Return to Idle after one-shot
-                if (this.currentAnimName === name) {
-                    this.playAnimation('IDLE');
+            newAction.setLoop(THREE.LoopOnce, 1);
+            newAction.clampWhenFinished = true;
+
+            const onFinished = (/** @type {any} */ e) => {
+                if (e.action === newAction) {
+                    if (this.mixer) this.mixer.removeEventListener('finished', onFinished);
+                    // Return to Idle
+                    this.playAnimation('IDLE', true, 0.2);
                 }
-            });
+            };
+            if (this.mixer) this.mixer.addEventListener('finished', onFinished);
+        } else {
+            newAction.setLoop(THREE.LoopRepeat, Infinity);
+            newAction.clampWhenFinished = false;
         }
 
-        this.currentAction = action;
+        this.currentAction = newAction;
         this.currentAnimName = name;
     }
 
@@ -547,10 +446,10 @@ export class Player {
 
     exitSurf() {
         // Move shield to back
-        if (this.shieldGroup && this.torso) {
-            this.torso.attach(this.shieldGroup);
-            this.shieldGroup.position.set(0, 0, -0.2);
-            this.shieldGroup.rotation.set(Math.PI / 2, 0, 0);
+        if (this.shieldGroup && this.mesh) {
+            this.mesh.attach(this.shieldGroup);
+            this.shieldGroup.position.set(0, 1.0, -0.3);
+            this.shieldGroup.rotation.set(Math.PI / 2, 0, 0); // Adjust rotation if needed
         }
     }
 
@@ -647,22 +546,29 @@ export class Player {
                     this.body.velocity.z = hVel.y;
                 }
             }
+        }
 
-            // Rotation
-            if (speed > 0.1 && this.state !== 'SURF') {
-                const targetRotation = Math.atan2(moveDir.x, moveDir.z);
-                const currentRotation = this.mesh.rotation.y;
-                let diff = targetRotation - currentRotation;
-                while (diff > Math.PI) diff -= Math.PI * 2;
-                while (diff < -Math.PI) diff += Math.PI * 2;
-                this.mesh.rotation.y += diff * dt * 10;
-                this.rotationVelocity = diff;
-            }
+        // Rotation (Follow Velocity)
+        const velocity = new THREE.Vector2(this.body.velocity.x, this.body.velocity.z);
+        if (velocity.length() > 0.1) {
+            const targetRotation = Math.atan2(velocity.x, velocity.y); // Note: atan2(x, y) for Three.js Y-rotation
+            const currentRotation = this.mesh.rotation.y;
+
+            // Shortest path interpolation
+            let diff = targetRotation - currentRotation;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+
+            // Smooth lerp
+            this.mesh.rotation.y += diff * dt * 10;
+            this.rotationVelocity = diff;
         }
 
         // Sync Mesh
+        const physicsHeight = 1.8;
+        const physicsOffset = physicsHeight / 2;
         this.mesh.position.copy(this.body.position);
-        this.mesh.position.y -= 0.9;
+        this.mesh.position.y -= physicsOffset; // Pivot at feet
     }
     /**
      * @param {number} dt
@@ -682,6 +588,8 @@ export class Player {
 
             if (this.combat && this.combat.isAttacking) {
                 this.playAnimation('ATTACK', false);
+            } else if (this.state === 'AIR' || this.state === 'GLIDE') {
+                this.playAnimation('JUMP', false);
             } else if (this.state === 'RUN' || this.state === 'WALK') {
                 this.playAnimation('RUN');
                 // Adjust speed based on movement
