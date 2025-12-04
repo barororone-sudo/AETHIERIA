@@ -9,7 +9,8 @@ export class Input {
             right: false,
             jump: false,
             crouch: false, // Ctrl
-            sprint: false  // Shift
+            sprint: false,  // Shift
+            interact: false
         };
 
         this.init();

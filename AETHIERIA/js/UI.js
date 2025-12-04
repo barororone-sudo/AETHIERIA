@@ -275,8 +275,52 @@ export class UIManager {
             <p><strong>HP:</strong> ${Math.floor(p.hp)} / ${p.maxHp}</p>
             <p><strong>Stamina:</strong> ${Math.floor(p.stamina)} / ${p.maxStamina}</p>
             <p><strong>ATK:</strong> ${p.stats.attack}</p>
+            <p><strong>ATK:</strong> ${p.stats.attack}</p>
             <p><strong>DEF:</strong> ${p.stats.defense}</p>
         `;
+        this.updateHearts(p.hp, p.maxHp);
+    }
+
+    updateHearts(current, max) {
+        if (!this.heartsContainer) {
+            this.heartsContainer = document.getElementById('hearts-container');
+        }
+        if (!this.heartsContainer) return;
+
+        // Rebuild if count mismatch (or empty)
+        const heartCount = Math.ceil(max / 20); // 20 HP per heart? Or 100 HP = 5 hearts?
+        // Let's assume 1 Heart = 20 HP.
+
+        if (this.heartsContainer.children.length !== heartCount) {
+            this.heartsContainer.innerHTML = '';
+            for (let i = 0; i < heartCount; i++) {
+                const heart = document.createElement('div');
+                heart.className = 'heart-icon';
+                heart.style.width = '30px';
+                heart.style.height = '30px';
+                heart.style.backgroundImage = 'url("./assets/ui/heart_full.png")'; // Placeholder
+                heart.style.backgroundSize = 'contain';
+                heart.style.display = 'inline-block';
+                heart.style.marginRight = '5px';
+                this.heartsContainer.appendChild(heart);
+            }
+        }
+
+        // Update State (Full/Half/Empty)
+        const hearts = this.heartsContainer.children;
+        for (let i = 0; i < hearts.length; i++) {
+            const heartValue = (i + 1) * 20;
+            if (current >= heartValue) {
+                hearts[i].style.opacity = '1.0';
+                hearts[i].style.filter = 'none';
+            } else if (current >= heartValue - 10) {
+                hearts[i].style.opacity = '1.0';
+                hearts[i].style.filter = 'grayscale(0.5)'; // Half heart visual hack
+            } else {
+                hearts[i].style.opacity = '0.5';
+                hearts[i].style.filter = 'grayscale(1.0)';
+            }
+        }
     }
     initCrosshair() {
         this.crosshair = document.createElement('div');

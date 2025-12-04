@@ -10,7 +10,7 @@ export class Enemy {
         this.maxHp = 100;
         this.element = element;
         this.isFrozen = false;
-        this.VISUAL_OFFSET_Y = 0.5;
+        this.VISUAL_OFFSET_Y = 0.0;
 
         // Visuals
         if (mesh) {

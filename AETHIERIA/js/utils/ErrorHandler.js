@@ -7,6 +7,11 @@ export class ErrorHandler {
         };
 
         window.onunhandledrejection = (event) => {
+            // Ignore benign PointerLock errors
+            if (event.reason && event.reason.name === 'SecurityError' && event.reason.message.includes('lock')) {
+                console.warn("Ignored SecurityError (PointerLock):", event.reason);
+                return;
+            }
             ErrorHandler.showError("Unhandled Promise Rejection", "", 0, 0, event.reason);
         };
     }

@@ -15,6 +15,7 @@ export class Combat {
         this.comboResetTime = 1000; // ms
         /** @type {any[]} */ this.projectiles = [];
         /** @type {THREE.Mesh|null} */ this.weapon = null;
+        /** @type {THREE.Group|null} */ this.bow = null;
         this.attackProgress = 0;
         this.isAttacking = false;
 
@@ -56,16 +57,20 @@ export class Combat {
     }
 
     initWeapon() {
-        if (!this.player.mesh) return;
+        if (!this.player.weaponSlot) return;
 
-        const geo = new THREE.BoxGeometry(0.1, 1.5, 0.3);
+        const geo = new THREE.BoxGeometry(0.1, 1.5, 0.3); // Width, Length, Thickness
         const mat = new THREE.MeshStandardMaterial({ color: 0x888888 });
         this.weapon = new THREE.Mesh(geo, mat);
-        this.weapon.position.set(0.5, 0.5, 0.5);
+
+        // Align sword in hand
+        // Box is Y-up. Rotate X-90 to point Z-forward.
         this.weapon.rotation.x = Math.PI / 2;
+        this.weapon.position.set(0, 0, 0.75); // Offset so handle is in hand (half length)
+
         this.weapon.visible = false;
 
-        this.player.mesh.add(this.weapon);
+        this.player.weaponSlot.add(this.weapon);
     }
 
     /**
@@ -101,7 +106,7 @@ export class Combat {
 
                 p.life -= dt;
                 if (p.life <= 0) {
-                    this.pool.return('arrow', p.mesh);
+                    if (this.pool) this.pool.return('arrow', p.mesh);
                     this.projectiles.splice(i, 1);
                     continue;
                 }
@@ -153,11 +158,14 @@ export class Combat {
                     const enemy = enemies.find(e => e.mesh === root);
                     if (enemy) {
                         enemy.takeDamage(15, Elements.NONE, isWeakPoint);
+                        // Hit Feedback
+                        if (this.player.hitStop) this.player.hitStop(0.05);
+                        if (this.player.screenShake) this.player.screenShake(0.2, 0.1);
                     }
 
                     // Stick arrow logic removed for pooling simplicity (or we can attach a clone?)
                     // For now, just destroy on hit
-                    this.pool.return('arrow', p.mesh);
+                    if (this.pool) this.pool.return('arrow', p.mesh);
                     this.projectiles.splice(i, 1);
                     continue;
                 }
@@ -165,7 +173,7 @@ export class Combat {
                 // Check Walls/Floor
                 // TODO: Add environment collision
                 if (nextPos.y < 0) { // Floor
-                    this.pool.return('arrow', p.mesh);
+                    if (this.pool) this.pool.return('arrow', p.mesh);
                     this.projectiles.splice(i, 1);
                     continue;
                 }
@@ -180,6 +188,12 @@ export class Combat {
     attack() {
         if (this.isAttacking) return; // No spamming
 
+        // Branch: Shooting vs Melee
+        if (this.isAiming) {
+            this.shootArrow();
+            return;
+        }
+
         const now = performance.now();
         this.comboStep = (this.comboStep % 3) + 1;
         this.lastAttackTime = now;
@@ -193,8 +207,10 @@ export class Combat {
 
         // Lunge (Forward Impulse)
         const forward = this.player.getForwardVector();
-        this.player.body.velocity.x += forward.x * 5;
-        this.player.body.velocity.z += forward.z * 5;
+        if (this.player.body) {
+            this.player.body.velocity.x += forward.x * 5;
+            this.player.body.velocity.z += forward.z * 5;
+        }
     }
 
     checkHit() {
@@ -202,9 +218,13 @@ export class Combat {
         if (!this.player.world) return;
         const enemies = this.player.world.enemies || [];
         enemies.forEach(enemy => {
+            if (!this.player.body) return;
             const dist = this.player.body.position.distanceTo(enemy.body.position);
             if (dist < 3) {
                 enemy.takeDamage(10, Elements.NONE);
+                // Hit Feedback
+                if (this.player.hitStop) this.player.hitStop(0.05); // 50ms
+                if (this.player.screenShake) this.player.screenShake(0.5, 0.2); // Stronger shake for melee
             }
         });
     }
@@ -212,6 +232,14 @@ export class Combat {
     toggleAim() {
         this.isAiming = !this.isAiming;
         console.log(`Aiming: ${this.isAiming}`);
+
+        if (this.isAiming) {
+            if (this.weapon) this.weapon.visible = false;
+            if (this.bow) this.bow.visible = true;
+        } else {
+            if (this.weapon) this.weapon.visible = false; // Hide sword too (idle)
+            if (this.bow) this.bow.visible = false;
+        }
     }
 
     useSkill() {
@@ -242,10 +270,13 @@ export class Combat {
             }
 
             // Enemy Check
-            const enemies = this.player.world.enemies || [];
+            const enemies = (this.player.world && this.player.world.enemies) ? this.player.world.enemies : [];
             for (const enemy of enemies) {
                 if (projectile.position.distanceTo(enemy.body.position) < 1) {
                     enemy.takeDamage(20, Elements.PYRO);
+                    if (this.player.hitStop) this.player.hitStop(0.1); // 100ms for heavy hit
+                    if (this.player.screenShake) this.player.screenShake(0.4, 0.2);
+
                     if (this.pool) this.pool.return('fireball', projectile);
                     return;
                 }

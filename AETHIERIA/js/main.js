@@ -2,9 +2,13 @@
 import * as THREE from 'three';
 // @ts-ignore
 import * as CANNON from 'cannon-es';
+// @ts-ignore
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+// @ts-ignore
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+// @ts-ignore
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+// @ts-ignore
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { ErrorHandler } from './utils/ErrorHandler.js';
@@ -56,6 +60,7 @@ export class Game {
         this.isRunning = false;
         this.isPaused = false; // Pause Flag
         this.isDebugMode = false;
+        /** @type {THREE.Mesh[]} */
         this.debugMeshes = [];
         this.animate = this.animate.bind(this);
 
@@ -75,7 +80,9 @@ export class Game {
                 if (!this.isDebugMode) {
                     // Clear debug meshes
                     if (this.debugMeshes) {
-                        this.debugMeshes.forEach(m => this.world.scene.remove(m));
+                        this.debugMeshes.forEach(m => {
+                            if (this.world) this.world.scene.remove(m);
+                        });
                         this.debugMeshes = [];
                     }
                 }
@@ -113,6 +120,9 @@ export class Game {
         }
     }
 
+    /**
+     * @param {boolean} continueSave
+     */
     startGame(continueSave) {
         if (continueSave) {
             if (!this.saveManager.load()) {

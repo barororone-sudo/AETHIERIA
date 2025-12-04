@@ -11,7 +11,7 @@ export class NPC {
         this.interactionRadius = 3.0;
 
         this.interactionRadius = 3.0;
-        this.VISUAL_OFFSET_Y = 1.0;
+        this.VISUAL_OFFSET_Y = 0.0;
 
         this.initVisuals();
     }
@@ -80,6 +80,15 @@ export class NPC {
 
     update(dt) {
         if (!this.game.player || !this.game.player.body) return;
+
+        // Snap to Ground (Continuous)
+        if (this.world.getGroundHeight) {
+            const groundY = this.world.getGroundHeight(this.position.x, this.position.z);
+            if (groundY !== null) {
+                this.mesh.position.y = groundY + this.VISUAL_OFFSET_Y;
+                this.position.y = groundY + this.VISUAL_OFFSET_Y;
+            }
+        }
 
         // Look at player
         this.mesh.lookAt(this.game.player.body.position.x, this.mesh.position.y, this.game.player.body.position.z);

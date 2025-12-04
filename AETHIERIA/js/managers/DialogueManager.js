@@ -274,18 +274,7 @@ export class DialogueManager {
             this.updateChoiceVisuals(); // Highlight initial
         } else {
             this.ui.nextBtn.style.display = 'block';
-            // Click handler is now managed by handleInput mostly, but keep click for mouse users
-            this.ui.container.onclick = () => {
-                if (!this.isTyping) {
-                    this.showNode(node.next || null);
-                } else {
-                    // Instant finish logic for click
-                    clearInterval(this.textTimer);
-                    this.ui.text.textContent = this.fullText;
-                    this.isTyping = false;
-                    this.showChoices(this.currentNode);
-                }
-            };
+            // Click handler is managed by container.onclick -> advance()
         }
     }
 
@@ -312,5 +301,23 @@ export class DialogueManager {
         // Reset Camera
         this.game.camera.fov = 75;
         this.game.camera.updateProjectionMatrix();
+    }
+
+    advance() {
+        if (!this.isActive) return;
+
+        // If choices are active, do not advance by clicking container
+        if (this.currentChoices && this.currentChoices.length > 0) return;
+
+        if (this.isTyping) {
+            // Instant finish
+            clearInterval(this.textTimer);
+            this.ui.text.textContent = this.fullText;
+            this.isTyping = false;
+            this.showChoices(this.currentNode);
+        } else {
+            // Next Node
+            this.showNode(this.currentNode.next || null);
+        }
     }
 }

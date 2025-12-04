@@ -1,0 +1,14 @@
+{
+  "name": "aetheria",
+  "version": "1.0.0",
+  "description": "Project Aetheria",
+  "scripts": {
+    "start": "http-server . -p 3001 -c-1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "http-server": "^14.1.1"
+  }
+}

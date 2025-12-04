@@ -40,17 +40,25 @@ export class Player {
         this.state = 'IDLE';
         this.stamina = 100;
         this.maxStamina = 100;
+        this.isSprinting = false;
+
+        // Game Feel Variables
+        this.currentSpeed = 0;
+        this.targetSpeed = 0;
+        this.rotationVelocity = 0; // For tilt
+        this.cameraLagPos = new THREE.Vector3(); // Virtual target
+        this.baseFov = 75;
+        this.targetFov = 75;
 
         this.lastJumpTime = 0;
         this.stepTimer = 0;
 
         // Camera State
         this.cameraState = {
-            distance: 10,
-            phi: Math.PI / 6,
-            theta: 0,
-            target: new THREE.Vector3(),
-            fov: 75
+            distance: 5,
+            theta: Math.PI, // Behind player
+            phi: Math.PI / 3, // 60 degrees down
+            target: new THREE.Vector3()
         };
 
         // Combat System
@@ -70,32 +78,29 @@ export class Player {
         /** @type {boolean} */ this.canGlide = true;
         /** @type {boolean} */ this.canSurf = true;
 
-        /** @type {number} */ this.VISUAL_OFFSET_Y = 1.2;
+        /** @type {number} */ this.VISUAL_OFFSET_Y = 0.0;
 
         // Visuals (Initialized in initVisuals)
         /** @type {THREE.Group|null} */ this.mesh = null;
-        /** @type {THREE.Group|null} */ this.torso = null;
+        /** @type {THREE.Group|null} */ this.bodyGroup = null; // Root of visuals
+        /** @type {THREE.Group|null} */ this.torso = null; // Upper body (can twist)
+        /** @type {THREE.Group|null} */ this.rightArmPivot = null; // Shoulder
+        /** @type {THREE.Group|null} */ this.rightArm = null; // Arm
+        /** @type {THREE.Group|null} */ this.hand = null; // Hand
+        /** @type {THREE.Group|null} */ this.weaponSlot = null; // Weapon Attachment
+
         /** @type {THREE.Mesh|null} */ this.torsoMesh = null;
-        /** @type {THREE.Mesh|null} */ this.skirtMesh = null;
-        /** @type {THREE.Group|null} */ this.head = null;
         /** @type {THREE.Mesh|null} */ this.headMesh = null;
         /** @type {THREE.Group|null} */ this.hairGroup = null;
-        /** @type {Limb|null} */ this.armL = null;
-        /** @type {Limb|null} */ this.armR = null;
+        /** @type {Limb|null} */ this.armL = null; // Left arm (simple)
         /** @type {Limb|null} */ this.legL = null;
         /** @type {Limb|null} */ this.legR = null;
-        /** @type {Limb|null} */ this.forearmL = null;
-        /** @type {Limb|null} */ this.forearmR = null;
-        /** @type {Limb|null} */ this.shinL = null;
-        /** @type {Limb|null} */ this.shinR = null;
-        /** @type {THREE.Mesh|null} */ this.backpack = null;
-        /** @type {THREE.Group|null} */ this.weaponHolder = null;
-        /** @type {THREE.Mesh|null} */ this.gliderMesh = null;
-        /** @type {THREE.Mesh|null} */ this.surfMesh = null;
-        /** @type {THREE.Mesh|null} */ this.halo = null;
+
+        /** @type {THREE.Group|null} */ this.shieldGroup = null;
+        /** @type {THREE.Group|null} */ this.scarf = null;
         /** @type {THREE.Mesh|null} */ this.scarfTail1 = null;
-        /** @type {THREE.Mesh|null} */ this.scarfTail2 = null;
-        /** @type {THREE.Group|null} */ this.bowGroup = null;
+
+        /** @type {SwordTrail|null} */ this.swordTrail = null;
 
         // Give starter items
         this.inventory.addItem('sword_iron', 1);
@@ -112,6 +117,199 @@ export class Player {
         this.initUI();
         this.initPhysics();
         this.initVisuals();
+
+        // Initialize Combat (after visuals)
+        if (this.combat) this.combat.init();
+    }
+
+    initInput() {
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement === document.body) {
+                this.cameraState.theta -= e.movementX * 0.002;
+                this.cameraState.phi -= e.movementY * 0.002;
+                // Clamp phi to avoid flipping
+                this.cameraState.phi = Math.max(0.1, Math.min(Math.PI - 0.1, this.cameraState.phi));
+            }
+        });
+
+        document.addEventListener('mousedown', (e) => {
+            if (document.pointerLockElement !== document.body) {
+                document.body.requestPointerLock().catch(e => {
+                    if (e.name === 'SecurityError') return; // Ignore benign security errors (fast toggle)
+                    console.warn("Pointer Lock failed/cancelled:", e);
+                });
+            } else {
+                if (e.button === 0) { // Left Click
+                    this.combat.attack();
+                } else if (e.button === 2) { // Right Click
+                    this.combat.toggleAim();
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (document.pointerLockElement === document.body) {
+                if (e.button === 2) { // Right Click Release
+                    if (this.combat.isAiming) this.combat.toggleAim();
+                }
+            }
+        });
+    }
+
+    initPhysics() {
+        if (!this.world) return;
+        // Capsule-like shape (Cylinder)
+        const radius = 0.4;
+        const height = 1.8;
+        const shape = new CANNON.Cylinder(radius, radius, height, 8);
+
+        // Material
+        const material = this.world.slipperyMaterial || new CANNON.Material('player');
+
+        this.body = new CANNON.Body({
+            mass: 60, // kg
+            material: material,
+            shape: shape,
+            linearDamping: 0.9, // High damping for ground control
+            angularDamping: 0.9,
+            fixedRotation: true // Prevent tipping over
+        });
+
+        this.body.position.set(0, 10, 0); // Start in air
+        this.world.physicsWorld.addBody(this.body);
+    }
+
+    initVisuals() {
+        if (!this.world) return;
+        this.mesh = new THREE.Group();
+        this.world.scene.add(this.mesh);
+
+        // Materials
+        const toonGradient = this.world.toonGradientMap || null;
+        const matToon = (color) => new THREE.MeshToonMaterial({
+            color: color,
+            gradientMap: toonGradient
+        });
+
+        const cSkin = 0xFFCCAA;
+        const cTunic = 0x00AAFF;
+        const cHair = 0xFFD700;
+        const cPants = 0xF5F5DC;
+        const cBoots = 0x4A3C31;
+        const cScarf = 0xFF4400;
+        const cWhite = 0xFFFFFF;
+        const cDark = 0x333333;
+
+        // 1. Body Group (Main Container)
+        this.bodyGroup = new THREE.Group();
+        this.bodyGroup.position.y = 0.9;
+        this.mesh.add(this.bodyGroup);
+
+        // 2. Legs (Attached to BodyGroup, independent of Torso twist)
+        const createLimb = (w, h, d, color, x, y, z, parent) => {
+            const g = new THREE.Group();
+            g.position.set(x, y, z);
+            parent.add(g);
+            const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), matToon(color));
+            m.position.y = -h / 2;
+            m.castShadow = true;
+            g.add(m);
+            return { group: g, mesh: m };
+        };
+
+        this.legL = createLimb(0.1, 0.45, 0.1, cPants, -0.12, -0.25, 0, this.bodyGroup);
+        this.legR = createLimb(0.1, 0.45, 0.1, cPants, 0.12, -0.25, 0, this.bodyGroup);
+
+        // Boots
+        const bootGeo = new THREE.BoxGeometry(0.11, 0.15, 0.15);
+        const bootMat = matToon(cBoots);
+        const bootL = new THREE.Mesh(bootGeo, bootMat); bootL.position.y = -0.3; this.legL.group.add(bootL);
+        const bootR = new THREE.Mesh(bootGeo, bootMat); bootR.position.y = -0.3; this.legR.group.add(bootR);
+
+        // 3. Torso (Upper Body - Can Twist)
+        this.torso = new THREE.Group();
+        this.bodyGroup.add(this.torso);
+
+        // Tunic
+        const tunicGeo = new THREE.CylinderGeometry(0.15, 0.25, 0.5, 8);
+        this.torsoMesh = new THREE.Mesh(tunicGeo, matToon(cTunic));
+        this.torsoMesh.castShadow = true;
+        this.torso.add(this.torsoMesh);
+
+        // Head
+        this.head = new THREE.Group();
+        this.head.position.y = 0.35;
+        this.torso.add(this.head);
+        this.headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), matToon(cSkin));
+        this.head.add(this.headMesh);
+
+        // Hair
+        this.hairGroup = new THREE.Group();
+        this.head.add(this.hairGroup);
+        const spikeGeo = new THREE.ConeGeometry(0.04, 0.15, 4);
+        const spikeMat = matToon(cHair);
+        for (let i = 0; i < 8; i++) {
+            const spike = new THREE.Mesh(spikeGeo, spikeMat);
+            const angle = (i / 8) * Math.PI * 2;
+            spike.position.set(Math.cos(angle) * 0.1, 0.05, Math.sin(angle) * 0.1);
+            spike.rotation.x = -0.5; spike.rotation.y = angle;
+            this.hairGroup.add(spike);
+        }
+        const topSpike = new THREE.Mesh(spikeGeo, spikeMat);
+        topSpike.position.y = 0.1; topSpike.scale.set(1.5, 1.5, 1.5);
+        this.hairGroup.add(topSpike);
+
+        // Scarf
+        this.scarf = new THREE.Group();
+        this.scarf.position.set(0, 0.2, -0.1);
+        this.torso.add(this.scarf);
+        this.scarfTail1 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.3), matToon(cScarf));
+        this.scarfTail1.rotation.x = -0.5;
+        this.scarf.add(this.scarfTail1);
+
+        // 4. Arms
+        // Left Arm (Simple)
+        this.armL = createLimb(0.08, 0.35, 0.08, cSkin, -0.22, 0.15, 0, this.torso);
+
+        // RIGHT ARM (COMPLEX RIG)
+        this.rightArmPivot = new THREE.Group();
+        this.rightArmPivot.position.set(0.22, 0.15, 0); // Shoulder position
+        this.torso.add(this.rightArmPivot);
+
+        this.rightArm = new THREE.Group();
+        this.rightArmPivot.add(this.rightArm);
+
+        const armMesh = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.35, 0.08), matToon(cSkin));
+        armMesh.position.y = -0.175; // Center of arm
+        armMesh.castShadow = true;
+        this.rightArm.add(armMesh);
+
+        // Hand
+        this.hand = new THREE.Group();
+        this.hand.position.y = -0.35; // End of arm
+        this.rightArm.add(this.hand);
+
+        const handMesh = new THREE.Mesh(new THREE.SphereGeometry(0.06), matToon(cSkin));
+        this.hand.add(handMesh);
+
+        // Weapon Slot
+        this.weaponSlot = new THREE.Group();
+        this.hand.add(this.weaponSlot);
+
+        // 5. Shield
+        this.shieldGroup = new THREE.Group();
+        const shieldMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.2, 0.05, 6), new THREE.MeshStandardMaterial({ color: cDark, emissive: 0x00FF00, emissiveIntensity: 0.2 }));
+        shieldMesh.rotation.x = Math.PI / 2;
+        this.shieldGroup.add(shieldMesh);
+        this.shieldGroup.position.set(0, 0, -0.15);
+        this.shieldGroup.rotation.z = 0.2;
+        this.torso.add(this.shieldGroup);
+
+        // Initialize Camera Lag
+        this.cameraLagPos.copy(this.mesh.position);
+
+        // Initialize Sword Trail
+        this.swordTrail = new SwordTrail(this.world.scene, 0x00FFFF, 20);
     }
 
     initUI() {
@@ -122,444 +320,425 @@ export class Player {
         this.iconSurf = document.getElementById('icon-surf');
     }
 
-    initInput() {
-        document.addEventListener('click', () => {
-            // Only request lock if menu is NOT open and we are not already locked
-            if (this.game && this.game.ui && !this.game.ui.isOpen && document.pointerLockElement !== document.body) {
-                if (document.body.requestPointerLock) {
-                    document.body.requestPointerLock().catch(e => {
-                        // Suppress expected security errors (e.g. user exited quickly)
-                        if (e.name !== 'SecurityError') {
-                            console.warn("Pointer Lock failed:", e);
-                        }
-                    });
+    /**
+     * @param {number} dt
+     */
+    update(dt) {
+        if (!this.mesh || !this.body) return 1;
+
+        // Interaction (F Key)
+        if (this.input.keys.interact) {
+            // Find closest interactable
+            if (this.world) {
+                const target = this.world.getClosestInteractable(this.mesh.position);
+                if (target) {
+                    target.interact();
                 }
             }
-        });
+            this.input.keys.interact = false; // Reset immediate
+        }
 
-        document.addEventListener('mousedown', /** @param {MouseEvent} e */(e) => {
-            if (document.pointerLockElement === document.body) {
-                if (e.button === 0) { // Left Click
-                    if (this.combat && this.combat.isAiming) {
-                        this.combat.shootArrow();
-                    } else if (this.combat) {
-                        this.combat.attack();
+        // Hit Stop
+        if (this.hitStopTimer > 0) {
+            this.hitStopTimer -= dt;
+            return 0.01; // Slow motion
+        }
+
+        // Screen Shake Decay
+        if (this.shakeTimer > 0) {
+            this.shakeTimer -= dt;
+            if (this.shakeTimer <= 0) this.shakeIntensity = 0;
+        }
+
+        this.checkGround();
+        this.handleState(dt);
+        this.updatePhysics(dt);
+        this.updateVisuals(dt);
+        this.updateCamera(dt);
+        this.updateUI();
+
+        if (this.combat) this.combat.update(dt);
+
+        // Bullet Time (Aiming in Air)
+        if (this.state === 'AIR' && this.combat && this.combat.isAiming) {
+            this.stamina -= dt * 10;
+            if (this.stamina <= 0) {
+                this.stamina = 0;
+                this.combat.isAiming = false;
+                return 1.0;
+            }
+            return 0.05; // SLOW MOTION
+        }
+
+        return 1;
+    }
+
+    /**
+     * @param {number} dt
+     */
+    handleState(dt) {
+        const grounded = this.checkGround();
+        const input = this.getInputVector();
+        const speed = input.length();
+
+        // State Transitions
+        switch (this.state) {
+            case 'IDLE':
+            case 'WALK':
+            case 'RUN':
+                if (!grounded) {
+                    this.state = 'AIR';
+                } else if (this.input.keys.jump) {
+                    this.body.velocity.y = 8; // Jump impulse
+                    this.state = 'AIR';
+                    this.lastJumpTime = Date.now();
+                } else if (this.input.keys.crouch && this.canSurf && speed > 0.1) {
+                    this.state = 'SURF';
+                    this.enterSurf();
+                } else {
+                    if (speed > 0.1) {
+                        this.state = this.input.keys.sprint ? 'RUN' : 'WALK';
+                    } else {
+                        this.state = 'IDLE';
                     }
-                } else if (e.button === 2) { // Right Click
-                    if (this.combat) this.combat.toggleAim();
                 }
-            }
-        });
+                break;
 
-        document.addEventListener('keydown', /** @param {KeyboardEvent} e */(e) => {
-            if (this.game.ui && this.game.ui.isOpen) return; // Block if menu open
-
-            // Forward input to DialogueManager if active
-            if (this.game.dialogueManager && this.game.dialogueManager.isActive) {
-                this.game.dialogueManager.handleInput(e.code);
-                return;
-            }
-
-            if (Date.now() - (this.lastInteractionTime || 0) < 500) return;
-
-            if (e.code === 'KeyF') {
-                if (this.tryInteract()) {
-                    this.lastInteractionTime = Date.now();
+            case 'AIR':
+                if (grounded && this.body.velocity.y <= 0) {
+                    this.state = 'IDLE';
+                } else if (this.input.keys.jump && this.canGlide && (Date.now() - this.lastJumpTime > 500)) {
+                    this.state = 'GLIDE';
+                    this.lastJumpTime = Date.now(); // Cooldown
                 }
-            }
-            if (e.code === 'KeyE' && this.combat) this.combat.useSkill();
-            if (e.code === 'KeyA' && this.combat) this.combat.useUltimate();
-            if (e.code === 'KeyP') {
-                this.inventory.useItemById('potion_health');
-                // Update UI if menu is open
-                if (this.world && this.world.game && this.world.game.ui && this.world.game.ui.isOpen) {
-                    this.world.game.ui.renderInventory();
-                    this.world.game.ui.renderStats();
+                break;
+
+            case 'GLIDE':
+                if (grounded || this.input.keys.jump) { // Toggle off
+                    this.state = grounded ? 'IDLE' : 'AIR';
+                    this.lastJumpTime = Date.now();
                 }
-            }
-        });
+                break;
 
-        document.addEventListener('mousemove', /** @param {MouseEvent} e */(e) => {
-            if (document.pointerLockElement === document.body) {
-                this.onMouseMove(e);
-            }
-        });
-    }
-
-    /**
-     * @returns {boolean}
-     */
-    tryInteract() {
-        if (!this.world || !this.world.interactables) return false;
-
-        // Find closest interactable
-        let closest = null;
-        let minDist = 2.0; // Interaction range
-
-        for (const obj of this.world.interactables) {
-            if (!obj.mesh) continue;
-            const dist = this.mesh ? this.mesh.position.distanceTo(obj.mesh.position) : Infinity;
-            if (dist < minDist) {
-                minDist = dist;
-                closest = obj;
-            }
-        }
-
-        if (closest) {
-            console.log("Interacting with:", closest);
-            if (closest.interact) {
-                closest.interact(this);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * @param {number} amount
-     */
-    heal(amount) {
-        this.hp = Math.min(this.hp + amount, this.maxHp);
-        console.log(`Healed ${amount} HP. Current: ${this.hp}`);
-
-        // Visual Feedback (Green Flash)
-        if (this.torsoMesh && this.torsoMesh.material) {
-            const mat = Array.isArray(this.torsoMesh.material) ? this.torsoMesh.material[0] : this.torsoMesh.material;
-            // @ts-ignore
-            const oldColor = mat.color.getHex();
-            // @ts-ignore
-            mat.color.setHex(0x00FF00);
-            setTimeout(() => {
-                if (this.torsoMesh && this.torsoMesh.material) {
-                    // @ts-ignore
-                    mat.color.setHex(oldColor);
+            case 'SURF':
+                if (!this.input.keys.crouch || speed < 0.1) {
+                    this.state = grounded ? 'IDLE' : 'AIR';
+                    this.exitSurf();
                 }
-            }, 200);
-        }
-
-        this.updateUI();
-    }
-
-    /**
-     * @param {number} amount
-     */
-    takeDamage(amount) {
-        this.hp = Math.max(this.hp - amount, 0);
-        console.log(`Took ${amount} damage. HP: ${this.hp}`);
-
-        // Visual Feedback (Red Flash)
-        if (this.torsoMesh && this.torsoMesh.material) {
-            const mat = Array.isArray(this.torsoMesh.material) ? this.torsoMesh.material[0] : this.torsoMesh.material;
-            // @ts-ignore
-            const oldColor = mat.color.getHex();
-            // @ts-ignore
-            mat.color.setHex(0xFF0000);
-            setTimeout(() => {
-                if (this.torsoMesh && this.torsoMesh.material) {
-                    // @ts-ignore
-                    mat.color.setHex(oldColor);
-                }
-            }, 200);
-        }
-
-        this.updateUI();
-
-        if (this.hp <= 0) {
-            this.die();
+                break;
         }
     }
 
-    die() {
-        console.log("Player Died!");
-        // TODO: Game Over Logic
-        if (this.game && this.game.ui) {
-            this.game.ui.showToast("YOU DIED");
+    enterSurf() {
+        // Move shield to feet
+        if (this.shieldGroup && this.mesh) {
+            this.mesh.attach(this.shieldGroup); // Parent to root
+            this.shieldGroup.position.set(0, 0.1, 0);
+            this.shieldGroup.rotation.set(0, 0, 0);
+        }
+    }
+
+    exitSurf() {
+        // Move shield to back
+        if (this.shieldGroup && this.torso) {
+            this.torso.attach(this.shieldGroup);
+            this.shieldGroup.position.set(0, 0, -0.2);
+            this.shieldGroup.rotation.set(Math.PI / 2, 0, 0);
         }
     }
 
     /**
-     * @param {string} itemId
+     * @param {number} dt
      */
-    equip(itemId) {
-        console.log(`Equipping ${itemId}...`);
-        // Logic to switch weapon mesh would go here
-    }
+    updatePhysics(dt) {
+        if (!this.mesh || !this.body) return;
+        const input = this.getInputVector();
+        const speed = input.length();
+        const grounded = this.checkGround();
 
-    initPhysics() {
-        const world = this.world;
-        if (!world) return;
-        const radius = 0.5;
-        const height = 1.8;
-
-        const shape = new CANNON.Sphere(radius);
-
-        // Use Slippery Material from World
-        this.playerMaterial = world.slipperyMaterial || new CANNON.Material('player');
-
-        this.contactMaterial = new CANNON.ContactMaterial(this.playerMaterial, world.defaultMaterial, {
-            friction: 0.0,
-            restitution: 0.0
-        });
-        // If world already has this contact material (via defaultSlipperyContact), this might be redundant but safe.
-        // Actually, we should rely on World's contact materials if possible, but keeping this for safety.
-        world.physicsWorld.addContactMaterial(this.contactMaterial);
-
-        this.body = new CANNON.Body({
-            mass: 5,
-            shape: shape,
-            position: new CANNON.Vec3(0, 50, 0),
-            material: this.playerMaterial
-        });
-
-        this.body.linearDamping = 0.9;
-        this.body.angularDamping = 1.0;
-        this.body.fixedRotation = true;
-
-        world.physicsWorld.addBody(this.body);
-    }
-
-    initVisuals() {
-        if (!this.world) return;
-        // --- ANIME AVATAR COMPOSITE MODEL (1:7 Proportions) ---
-        this.mesh = new THREE.Group();
-        this.mesh.castShadow = true;
-        this.mesh.receiveShadow = true;
-
-        const textures = this.game.loader.assets.textures;
-        // @ts-ignore
-        const faceTexture = textures['hero_face'];
-        // @ts-ignore
-        const outfitTexture = textures['hero_outfit'];
-
-        // Materials
-        const skinMat = new THREE.MeshToonMaterial({ color: 0xffdfc4 }); // Beige
-
-        const faceMat = new THREE.MeshToonMaterial({ map: faceTexture, transparent: true });
-
-        const tunicMat = new THREE.MeshToonMaterial({
-            color: 0xffffff,
-            map: outfitTexture,
-            side: THREE.DoubleSide
-        });
-
-        const hairMat = new THREE.MeshToonMaterial({ color: 0xffeba1 }); // Blonde
-        const pantsMat = new THREE.MeshToonMaterial({ color: 0x333333 });
-        const accessoryMat = new THREE.MeshToonMaterial({ color: 0x8b4513 });
-        const rauraMat = new THREE.MeshStandardMaterial({
-            color: 0x0a1a1a, // Dark Green/Black
-            metalness: 0.8,
-            roughness: 0.4,
-            emissive: 0x00ffcc, // Teal Glow
-            emissiveIntensity: 0.5
-        });
-        const goldMat = new THREE.MeshStandardMaterial({
-            color: 0xffd700,
-            metalness: 1.0,
-            roughness: 0.2
-        });
-
-        /**
-         * @param {THREE.Mesh} mesh
-         * @param {THREE.BufferGeometry} geometry
-         * @param {number} thickness
-         * @param {number} color
-         */
-        const addOutline = (mesh, geometry, thickness = 0.02, color = 0x000000) => {
-            const outline = Utils.createOutlineMesh(geometry, thickness, color);
-            mesh.add(outline);
-        };
-
-        // 1. TORSO GROUP (Pivot at Hips)
-        this.torso = new THREE.Group();
-        this.torso.position.y = 1.0; // Hip height
-        this.mesh.add(this.torso);
-
-        // Body Core
-        const torsoGeo = new THREE.CylinderGeometry(0.18, 0.22, 0.5, 8);
-        this.torsoMesh = new THREE.Mesh(torsoGeo, tunicMat);
-        this.torsoMesh.position.y = 0.25;
-        this.torsoMesh.castShadow = true;
-        this.torsoMesh.receiveShadow = true;
-        addOutline(this.torsoMesh, torsoGeo, 0.02);
-        this.torso.add(this.torsoMesh);
-
-        // Physics Skirt (4 Planes)
-        this.skirtGroup = new THREE.Group();
-        this.torso.add(this.skirtGroup);
-        const skirtW = 0.3;
-        const skirtH = 0.4;
-        const skirtGeo = new THREE.PlaneGeometry(skirtW, skirtH);
-
-        /** @type {THREE.Group[]} */
-        this.skirtPlanes = [];
-        for (let i = 0; i < 4; i++) {
-            const skirtPanel = new THREE.Mesh(skirtGeo, tunicMat);
-            const angle = (i / 4) * Math.PI * 2;
-            const radius = 0.15;
-
-            const pivot = new THREE.Group();
-            pivot.position.set(Math.sin(angle) * radius, 0.0, Math.cos(angle) * radius);
-            pivot.rotation.y = angle;
-
-            skirtPanel.position.y = -skirtH / 2;
-            skirtPanel.position.z = 0.05;
-
-            pivot.add(skirtPanel);
-            this.skirtGroup.add(pivot);
-            this.skirtPlanes.push(pivot);
+        // Friction Control (Anti-Slide)
+        if (this.state === 'SURF') {
+            // Slippery
+            this.body.material = this.world.slipperyMaterial || null;
+            this.body.linearDamping = 0.1;
+        } else {
+            // Grippy
+            this.body.material = null; // Default friction
+            this.body.linearDamping = 0.9;
         }
 
-        // 2. HEAD GROUP
-        this.head = new THREE.Group();
-        this.head.position.set(0, 0.55, 0); // Neck position
-        this.torso.add(this.head);
-
-        // Head Mesh (Sphere)
-        const headGeo = new THREE.SphereGeometry(0.28, 32, 32);
-        this.headMesh = new THREE.Mesh(headGeo, skinMat);
-        this.headMesh.castShadow = true;
-        this.headMesh.receiveShadow = true;
-        addOutline(this.headMesh, headGeo, 0.02, 0x5c3a21);
-        this.head.add(this.headMesh);
-
-        // Face Decal
-        if (faceTexture) {
-            const faceDecalGeo = new THREE.PlaneGeometry(0.4, 0.4);
-            const faceDecal = new THREE.Mesh(faceDecalGeo, new THREE.MeshBasicMaterial({
-                map: faceTexture,
-                transparent: true,
-                depthTest: true,
-                depthWrite: false
-            }));
-            faceDecal.position.set(0, 0, 0.29);
-            this.head.add(faceDecal);
+        // Anti-Slide on Slopes (Force Stop)
+        if (grounded && speed < 0.1 && this.state !== 'SURF') {
+            this.body.velocity.set(0, 0, 0);
+            this.body.angularVelocity.set(0, 0, 0);
+            this.currentSpeed = 0;
         }
 
-        // Dynamic Hair (Shonen Style)
-        this.hairGroup = new THREE.Group();
-        this.head.add(this.hairGroup);
-
-        const hairSpikeGeo = new THREE.ConeGeometry(0.08, 0.5, 4);
-        const hairPositions = [
-            { x: 0, y: 0.3, z: -0.2, rx: -0.8, ry: 0, s: 1.2 },
-            { x: 0.2, y: 0.25, z: -0.15, rx: -0.6, ry: 0.5, s: 1.1 },
-            { x: -0.2, y: 0.25, z: -0.15, rx: -0.6, ry: -0.5, s: 1.1 },
-            { x: 0, y: 0.45, z: 0, rx: 0, ry: 0, s: 1.0 },
-            { x: 0.15, y: 0.4, z: 0.1, rx: 0.3, ry: 0.5, s: 0.9 },
-            { x: -0.15, y: 0.4, z: 0.1, rx: 0.3, ry: -0.5, s: 0.9 },
-            { x: 0, y: 0.35, z: 0.25, rx: 1.2, ry: 0.2, s: 0.8 }
-        ];
-
-        hairPositions.forEach(pos => {
-            const spike = new THREE.Mesh(hairSpikeGeo, hairMat);
-            spike.position.set(pos.x, pos.y, pos.z);
-            spike.rotation.set(pos.rx, pos.ry, 0);
-            spike.scale.setScalar(pos.s);
-            addOutline(spike, hairSpikeGeo, 0.02, 0x8b4513);
-            if (this.hairGroup) this.hairGroup.add(spike);
-        });
-
-        // Scarf
-        this.scarfGroup = new THREE.Group();
-        this.scarfGroup.position.set(0, 0.4, -0.15);
-        this.torso.add(this.scarfGroup);
-
-        /** @type {{group: THREE.Group, mesh: THREE.Mesh}[]} */
-        this.scarfSegments = [];
-        const scarfGeo = new THREE.BoxGeometry(0.25, 0.05, 0.4);
-        const scarfMat = new THREE.MeshToonMaterial({ color: 0xff0000 });
-
-        for (let i = 0; i < 3; i++) {
-            const seg = new THREE.Mesh(scarfGeo, scarfMat);
-            seg.position.z = -0.3;
-            const pivot = new THREE.Group();
-            pivot.position.z = (i === 0) ? 0 : -0.3;
-            pivot.add(seg);
-
-            if (i === 0) this.scarfGroup.add(pivot);
-            else this.scarfSegments[i - 1].mesh.add(pivot);
-
-            this.scarfSegments.push({ group: pivot, mesh: seg });
+        // Artificial Gravity/Downforce
+        if (grounded && this.state !== 'AIR') {
+            this.body.velocity.y -= 10 * dt; // Stick to ground
         }
 
-        // 3. LIMBS
-        /**
-         * @param {number} width
-         * @param {number} length
-         * @param {THREE.Material} mat
-         * @param {number} x
-         * @param {number} y
-         * @param {number} z
-         * @param {boolean} [isRaura]
-         */
-        const createLimb = (width, length, mat, x, y, z, isRaura = false) => {
-            const group = new THREE.Group();
-            group.position.set(x, y, z);
-            const geo = new THREE.CylinderGeometry(width, width * 0.8, length, 8);
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.y = -length / 2;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            if (!isRaura) addOutline(mesh, geo, 0.02);
-            group.add(mesh);
-            const jointGeo = new THREE.SphereGeometry(width * 1.2, 8, 8);
-            const joint = new THREE.Mesh(jointGeo, mat);
-            group.add(joint);
+        // Target Speed
+        let targetSpeed = 0;
+        if (this.state === 'WALK') targetSpeed = 5;
+        if (this.state === 'RUN') targetSpeed = 10;
+        if (this.state === 'AIR') targetSpeed = 4;
+        if (this.state === 'GLIDE') targetSpeed = 8;
+        if (this.state === 'SURF') targetSpeed = 15;
 
-            if (isRaura) {
-                const bandGeo = new THREE.TorusGeometry(width * 0.9, 0.01, 4, 16);
-                const bandMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
-                for (let i = 1; i < 4; i++) {
-                    const band = new THREE.Mesh(bandGeo, bandMat);
-                    band.position.y = -length * (i / 4);
-                    band.rotation.x = Math.PI / 2;
-                    group.add(band);
+        // Inertia
+        const accel = (this.state === 'IDLE') ? 10.0 : 2.0;
+        this.currentSpeed = THREE.MathUtils.lerp(this.currentSpeed, targetSpeed * speed, dt * accel);
+
+        // Apply Velocity
+        if (speed > 0.1 || this.currentSpeed > 0.1) {
+            const moveDir = input.clone().normalize();
+
+            // Movement Logic
+            if (this.state === 'GLIDE') {
+                this.body.velocity.x = moveDir.x * this.currentSpeed;
+                this.body.velocity.z = moveDir.z * this.currentSpeed;
+                this.body.velocity.y = Math.max(this.body.velocity.y, -2);
+            } else if (this.state === 'SURF') {
+                // Physics-based sliding + input influence
+                this.body.velocity.x += moveDir.x * dt * 5;
+                this.body.velocity.z += moveDir.z * dt * 5;
+            } else if (grounded) {
+                // Direct control on ground
+                this.body.velocity.x = moveDir.x * this.currentSpeed;
+                this.body.velocity.z = moveDir.z * this.currentSpeed;
+            } else {
+                // Air control (limited)
+                this.body.velocity.x += moveDir.x * dt * 5;
+                this.body.velocity.z += moveDir.z * dt * 5;
+                // Clamp air speed
+                const hVel = new THREE.Vector2(this.body.velocity.x, this.body.velocity.z);
+                if (hVel.length() > targetSpeed) {
+                    hVel.normalize().multiplyScalar(targetSpeed);
+                    this.body.velocity.x = hVel.x;
+                    this.body.velocity.z = hVel.y;
                 }
             }
-            return { group, mesh };
-        };
 
-        this.armL = createLimb(0.06, 0.5, skinMat, -0.32, 0.45, 0);
-        this.torso.add(this.armL.group);
-        this.forearmL = createLimb(0.05, 0.5, skinMat, 0, -0.5, 0);
-        this.armL.group.add(this.forearmL.group);
+            // Rotation
+            if (speed > 0.1 && this.state !== 'SURF') {
+                const targetRotation = Math.atan2(moveDir.x, moveDir.z);
+                const currentRotation = this.mesh.rotation.y;
+                let diff = targetRotation - currentRotation;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                this.mesh.rotation.y += diff * dt * 10;
+                this.rotationVelocity = diff;
+            }
+        }
 
-        this.armR = createLimb(0.06, 0.5, rauraMat, 0.32, 0.45, 0, true);
-        this.torso.add(this.armR.group);
-        this.forearmR = createLimb(0.05, 0.5, rauraMat, 0, -0.5, 0, true);
-        this.armR.group.add(this.forearmR.group);
-
-        this.legL = createLimb(0.08, 0.7, pantsMat, -0.12, 0, 0);
-        this.torso.add(this.legL.group);
-        this.shinL = createLimb(0.07, 0.7, pantsMat, 0, -0.7, 0);
-        this.legL.group.add(this.shinL.group);
-
-        this.legR = createLimb(0.08, 0.7, pantsMat, 0.12, 0, 0);
-        this.torso.add(this.legR.group);
-        this.shinR = createLimb(0.07, 0.7, pantsMat, 0, -0.7, 0);
-        this.legR.group.add(this.shinR.group);
-
-        this.weaponHolder = new THREE.Group();
-        this.weaponHolder.position.set(0, -0.4, 0);
-        this.forearmR.group.add(this.weaponHolder);
-
-        this.armL.group.rotation.z = Math.PI / 8;
-        this.armR.group.rotation.z = -Math.PI / 8;
-
-        this.world.scene.add(this.mesh);
-        this.swordTrail = new SwordTrail(this.world.scene, 0x00FFFF, 20);
+        // Sync Mesh
+        this.mesh.position.copy(this.body.position);
+        this.mesh.position.y -= 0.9;
     }
 
     /**
-     * @param {MouseEvent} e
+     * @param {number} dt
      */
-    onMouseMove(e) {
-        const sensitivity = 0.002;
-        this.cameraState.theta -= e.movementX * sensitivity;
-        this.cameraState.phi -= e.movementY * sensitivity;
-        const minPhi = 0.1;
-        const maxPhi = Math.PI / 2 - 0.1;
-        this.cameraState.phi = Utils.clamp(this.cameraState.phi, minPhi, maxPhi);
+    updateVisuals(dt) {
+        if (!this.bodyGroup || !this.torso || !this.rightArmPivot) return;
+
+        const time = Date.now() * 0.005;
+
+        // --- 1. RESET POSE ---
+        // Torso
+        this.torso.rotation.set(0, 0, 0);
+        this.bodyGroup.rotation.x = 0;
+
+        // Arms
+        if (this.armL) this.armL.group.rotation.set(0, 0, 0);
+        this.rightArmPivot.rotation.set(0, 0, 0);
+        this.rightArm.rotation.set(0, 0, 0);
+        this.hand.rotation.set(0, 0, 0);
+
+        // Legs
+        if (this.legL) this.legL.group.rotation.set(0, 0, 0);
+        if (this.legR) this.legR.group.rotation.set(0, 0, 0);
+
+        // --- 2. IDLE / MOVE ANIMATION ---
+        if (this.state === 'IDLE') {
+            // Breathing
+            this.bodyGroup.scale.y = 1 + Math.sin(time * 2) * 0.02;
+            this.bodyGroup.position.y = 0.9 + Math.sin(time * 2) * 0.01;
+
+            // Combat Ready Pose (Right Arm)
+            this.rightArmPivot.rotation.z = Math.PI / 4; // 45 deg out
+            this.rightArmPivot.rotation.x = 0.2;
+            this.rightArm.rotation.z = 0.2;
+
+            // Left Arm Idle
+            if (this.armL) this.armL.group.rotation.z = 0.1 + Math.sin(time) * 0.05;
+
+        } else if (this.state === 'WALK' || this.state === 'RUN') {
+            const isRun = this.state === 'RUN';
+            const freq = isRun ? 15 : 10;
+            const amp = isRun ? 0.8 : 0.5;
+
+            // Lean Forward
+            this.bodyGroup.rotation.x = isRun ? 0.3 : 0.1;
+
+            // Legs
+            if (this.legL) this.legL.group.rotation.x = Math.sin(time * freq) * amp;
+            if (this.legR) this.legR.group.rotation.x = Math.sin(time * freq + Math.PI) * amp;
+
+            // Arms
+            if (this.armL) this.armL.group.rotation.x = Math.sin(time * freq + Math.PI) * amp;
+            // Right arm swings but keeps weapon ready
+            this.rightArmPivot.rotation.x = Math.sin(time * freq) * amp;
+            this.rightArmPivot.rotation.z = 0.5;
+        }
+
+        // --- 3. COMBAT OVERRIDES (PROCEDURAL) ---
+        if (this.combat && this.combat.isAttacking) {
+            const progress = this.combat.attackProgress;
+            const combo = this.combat.comboStep;
+
+            // Update Sword Trail
+            if (this.swordTrail && this.combat && this.combat.weapon) {
+                const tipPos = new THREE.Vector3(0, 0.75, 0); // Tip (Local Y-up of sword mesh)
+                const basePos = new THREE.Vector3(0, -0.75, 0); // Base
+                tipPos.applyMatrix4(this.combat.weapon.matrixWorld);
+                basePos.applyMatrix4(this.combat.weapon.matrixWorld);
+                this.swordTrail.update(basePos, tipPos);
+            }
+
+            if (combo === 1) {
+                // HORIZONTAL SLASH
+                // Phase 1: Windup (0.0 - 0.2)
+                // Phase 2: Slash (0.2 - 0.4)
+                // Phase 3: Recover (0.4 - 1.0)
+
+                if (progress < 0.2) {
+                    // Windup: Twist Left, Arm Back
+                    const t = progress / 0.2;
+                    this.torso.rotation.y = THREE.MathUtils.lerp(0, 1.0, t); // Twist Right (Screen Left)
+                    this.rightArmPivot.rotation.y = THREE.MathUtils.lerp(0, 1.5, t); // Arm Back
+                    this.rightArmPivot.rotation.z = 1.5;
+                } else if (progress < 0.4) {
+                    // Slash: Twist Right, Arm Sweep
+                    const t = (progress - 0.2) / 0.2;
+                    this.torso.rotation.y = THREE.MathUtils.lerp(1.0, -1.5, t); // Twist Left (Screen Right)
+                    this.rightArmPivot.rotation.y = THREE.MathUtils.lerp(1.5, -1.0, t); // Sweep
+                    this.rightArmPivot.rotation.z = 1.5;
+                    this.rightArm.rotation.x = -0.5; // Blade alignment
+                } else {
+                    // Recover
+                    const t = (progress - 0.4) / 0.6;
+                    this.torso.rotation.y = THREE.MathUtils.lerp(-1.5, 0, t);
+                    this.rightArmPivot.rotation.y = THREE.MathUtils.lerp(-1.0, 0, t);
+                    this.rightArmPivot.rotation.z = THREE.MathUtils.lerp(1.5, 0.8, t);
+                }
+            } else if (combo === 2) {
+                // VERTICAL SMASH
+                if (progress < 0.3) {
+                    // Windup: Arm Up
+                    const t = progress / 0.3;
+                    this.rightArmPivot.rotation.z = THREE.MathUtils.lerp(0.5, 3.0, t); // High up
+                    this.torso.rotation.x = -0.5; // Arch back
+                } else if (progress < 0.5) {
+                    // Smash
+                    const t = (progress - 0.3) / 0.2;
+                    this.rightArmPivot.rotation.z = THREE.MathUtils.lerp(3.0, 0.5, t);
+                    this.rightArmPivot.rotation.x = 1.5; // Forward
+                    this.torso.rotation.x = 0.5; // Crunch forward
+                } else {
+                    // Recover
+                    const t = (progress - 0.5) / 0.5;
+                    this.rightArmPivot.rotation.z = THREE.MathUtils.lerp(0.5, 0.8, t);
+                    this.torso.rotation.x = THREE.MathUtils.lerp(0.5, 0, t);
+                }
+            } else {
+                // THRUST
+                if (progress < 0.3) {
+                    // Pull Back
+                    const t = progress / 0.3;
+                    this.rightArmPivot.position.z = THREE.MathUtils.lerp(0, 0.3, t); // Pull shoulder back
+                    this.rightArmPivot.rotation.x = -0.5;
+                } else if (progress < 0.5) {
+                    // Thrust
+                    const t = (progress - 0.3) / 0.2;
+                    this.rightArmPivot.position.z = THREE.MathUtils.lerp(0.3, -0.5, t); // Push forward
+                    this.torso.position.z = 0.2; // Lunge body
+                    this.rightArmPivot.rotation.x = 0;
+                } else {
+                    // Recover
+                    const t = (progress - 0.5) / 0.5;
+                    this.rightArmPivot.position.z = THREE.MathUtils.lerp(-0.5, 0, t);
+                    this.torso.position.z = THREE.MathUtils.lerp(0.2, 0, t);
+                }
+            }
+        } else if (this.combat && this.combat.isAiming) {
+            // Aiming Pose
+            // Torso follows camera pitch (approximate)
+            const pitch = this.cameraState.phi - Math.PI / 2; // 0 is horizon
+            this.torso.rotation.x = pitch;
+            this.torso.rotation.y = -0.5; // Slight turn
+
+            // Arms holding bow
+            // Right Arm (Holds Bow)
+            this.rightArmPivot.rotation.set(0, 0, 0);
+            this.rightArmPivot.rotation.z = Math.PI / 2; // Raise arm
+            this.rightArmPivot.rotation.y = -Math.PI / 2; // Point forward
+
+            // Left Arm (Fake Pull String)
+            if (this.armL) {
+                this.armL.group.rotation.set(0, 0, 0);
+                this.armL.group.rotation.z = Math.PI / 2; // Raise arm
+                this.armL.group.rotation.y = 0.5; // Pull string
+            }
+        } else {
+            // Reset Trail
+            if (this.swordTrail) this.swordTrail.reset();
+        }
+
+        // Scarf Physics
+        if (this.scarf) {
+            this.scarf.rotation.x = THREE.MathUtils.lerp(this.scarf.rotation.x, -0.5 + this.currentSpeed * 0.1, dt * 5);
+            this.scarf.rotation.y = THREE.MathUtils.lerp(this.scarf.rotation.y, -this.rotationVelocity, dt * 5);
+        }
+    }
+
+    /**
+     * @param {number} dt
+     */
+    updateCamera(dt) {
+        if (!this.mesh) return;
+        // Camera Target (Player Head)
+        const targetPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+
+        // Camera Lag
+        this.cameraLagPos.lerp(targetPos, dt * 5); // Smooth follow
+
+        // Orbit
+        const dist = this.cameraState.distance;
+        const theta = this.cameraState.theta;
+        const phi = this.cameraState.phi;
+
+        const x = this.cameraLagPos.x + dist * Math.sin(phi) * Math.sin(theta);
+        const y = this.cameraLagPos.y + dist * Math.cos(phi);
+        const z = this.cameraLagPos.z + dist * Math.sin(phi) * Math.cos(theta);
+
+        this.camera.position.set(x, y, z);
+        this.camera.lookAt(this.cameraLagPos);
+
+        // Screen Shake
+        if (this.shakeIntensity > 0) {
+            const rx = (Math.random() - 0.5) * this.shakeIntensity;
+            const ry = (Math.random() - 0.5) * this.shakeIntensity;
+            this.camera.position.x += rx;
+            this.camera.position.y += ry;
+        }
+
+        // Dynamic FOV
+        this.targetFov = (this.state === 'RUN') ? 85 : 75;
+        this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, this.targetFov, dt * 2);
+        this.camera.updateProjectionMatrix();
     }
 
     /**
@@ -576,557 +755,6 @@ export class Player {
     screenShake(intensity, duration) {
         this.shakeIntensity = intensity;
         this.shakeTimer = duration;
-    }
-
-    /**
-     * @param {number} dt
-     */
-    update(dt) {
-        // Hitstop Logic
-        let timeScale = 1.0;
-        if (this.hitStopTimer > 0) {
-            this.hitStopTimer -= dt;
-            timeScale = 0.01; // Almost frozen
-        } else if (this.state === 'AIR' && this.combat && this.combat.isAiming) {
-            timeScale = 0.1; // Matrix Mode
-        }
-
-        const scaledDt = dt * timeScale;
-
-        this.handleState(scaledDt);
-        this.updatePhysics(scaledDt);
-        this.updateVisuals();
-
-        this.updateAnimations(dt);
-        if (!this.inputLocked) {
-            this.updateCamera(dt); // Camera moves at normal speed (mostly)
-        }
-        this.updateUI();
-
-        if (this.combat) this.combat.update(scaledDt);
-
-        // Check Interaction Prompt
-        this.checkInteractionPrompt();
-
-        if (this.game.clock.getElapsedTime() % 1.0 < dt) {
-            if (this.mesh) console.log(`Player Pos: ${this.mesh.position.x.toFixed(2)}, ${this.mesh.position.y.toFixed(2)}, ${this.mesh.position.z.toFixed(2)} | State: ${this.state}`);
-        }
-
-        // Kill Z (Safety Net)
-        if (this.mesh && this.mesh.position.y < -50) {
-            console.warn("Player fell out of world! Resetting...");
-            this.body.position.set(0, 50, 0);
-            this.body.velocity.set(0, 0, 0);
-            this.body.angularVelocity.set(0, 0, 0);
-        }
-
-        return timeScale;
-    }
-
-    checkInteractionPrompt() {
-        if (!this.world || !this.world.interactables || !this.mesh) return;
-
-        let found = false;
-        // Check Towers/Chests
-        if (this.world.interactables) {
-            for (const obj of this.world.interactables) {
-                const pos = obj.mesh ? obj.mesh.position : obj.position;
-                if (!pos) continue;
-
-                // Ignore Y axis for easier interaction (2D distance)
-                const dx = this.mesh.position.x - pos.x;
-                const dz = this.mesh.position.z - pos.z;
-                const dist = Math.sqrt(dx * dx + dz * dz);
-
-                if (dist < 8) {
-                    if (obj.type === 'tower' && !obj.isUnlocked) {
-                        if (this.game.ui.showInteractionPrompt) {
-                            this.game.ui.showInteractionPrompt("[F] Unlock Tower");
-                        }
-                        found = true;
-                    }
-                }
-            }
-        }
-
-        // Check NPCs
-        if (!found && this.world.npcs) {
-            for (const npc of this.world.npcs) {
-                // Use 2D Distance for NPCs too
-                const dx = this.mesh.position.x - npc.mesh.position.x;
-                const dz = this.mesh.position.z - npc.mesh.position.z;
-                const dist = Math.sqrt(dx * dx + dz * dz);
-
-                if (dist < 3) {
-                    if (this.game.ui.showInteractionPrompt) {
-                        this.game.ui.showInteractionPrompt(`[F] Talk to ${npc.name}`);
-                    }
-                    found = true;
-                }
-            }
-        }
-
-        if (!found) {
-            if (this.game.ui.hideInteractionPrompt) {
-                this.game.ui.hideInteractionPrompt();
-            }
-        }
-    }
-
-    /**
-     * @param {number} dt
-     */
-    handleState(dt) {
-        const onGround = this.checkGround();
-        const inputVec = this.getInputVector();
-        let speed = inputVec.length();
-
-        // Sprint Logic
-        if (this.input.keys.sprint && this.stamina > 0 && speed > 0) {
-            this.isSprinting = true;
-            speed *= 1.5; // 50% faster
-            this.stamina -= 10 * dt; // Drain stamina
-        } else {
-            this.isSprinting = false;
-            if (this.stamina < this.maxStamina) {
-                this.stamina += 5 * dt; // Regen
-            }
-        }
-        this.stamina = Utils.clamp(this.stamina, 0, this.maxStamina);
-        const now = performance.now();
-
-        // Handle Jump / Double Tap Surf
-        if (this.input.keys.jump) {
-            const timeSinceLastJump = now - this.lastJumpTime;
-
-            if (timeSinceLastJump < 300 && this.canSurf) {
-                // Double Tap -> SURF
-                this.state = 'SURF';
-                this.body.velocity.y = 5;
-                this.body.velocity.addScaledVector(this.getForwardVector(), 10);
-                if (this.audio) this.audio.playSFX('jump');
-            } else {
-                // Single Tap
-                if (this.state === 'SURF') {
-                    this.state = 'AIR'; // Toggle Off Surf
-                    this.body.velocity.y = 6;
-                } else if (onGround) {
-                    this.body.velocity.y = 6;
-                    this.state = 'AIR';
-                    if (this.audio) this.audio.playSFX('jump');
-                } else if (this.state === 'AIR' && this.stamina > 10 && this.canGlide) {
-                    this.state = 'GLIDE';
-                } else if (this.state === 'GLIDE') {
-                    this.state = 'AIR'; // Toggle Off
-                } else if (this.state === 'CLIMB') {
-                    this.body.velocity.y = 6;
-                    this.body.velocity.addScaledVector(this.getForwardVector(), -5);
-                    this.state = 'AIR';
-                    this.stamina -= 10;
-                }
-            }
-
-            this.lastJumpTime = now;
-            this.input.keys.jump = false;
-        }
-
-        switch (this.state) {
-            case 'IDLE':
-            case 'WALK':
-                if (!onGround) {
-                    this.state = 'AIR';
-                } else if (speed > 0) {
-                    this.state = 'WALK';
-                    // Footsteps
-                    this.stepTimer += dt;
-                    if (this.stepTimer > 0.4) { // Every 400ms
-                        if (this.audio) this.audio.playSFX('step');
-                        this.stepTimer = 0;
-                    }
-                } else {
-                    this.state = 'IDLE';
-                    this.stepTimer = 0;
-                }
-
-                if (this.checkWall() && this.input.keys.forward && this.stamina > 10) {
-                    this.state = 'CLIMB';
-                }
-                break;
-
-            case 'AIR':
-                if (onGround) {
-                    this.state = 'IDLE';
-                    if (this.gliderMesh) this.gliderMesh.visible = false;
-                } else if (this.checkWall() && this.input.keys.forward && this.stamina > 10) {
-                    this.state = 'CLIMB';
-                }
-                break;
-
-            case 'CLIMB':
-                if (this.stamina <= 0 || !this.input.keys.forward) {
-                    this.state = 'AIR';
-                }
-                break;
-
-            case 'GLIDE':
-                if (onGround || this.stamina <= 0) {
-                    this.state = 'AIR';
-                    if (this.gliderMesh) this.gliderMesh.visible = false;
-                }
-                break;
-
-            case 'SURF':
-                if (onGround) {
-                    // Slide
-                }
-                // Exit logic if needed
-                break;
-        }
-
-        if (this.state === 'CLIMB' || this.state === 'GLIDE') {
-            this.stamina -= 10 * dt;
-        } else {
-            this.stamina += 20 * dt;
-        }
-        this.stamina = Utils.clamp(this.stamina, 0, this.maxStamina);
-        this.stamina = Utils.clamp(this.stamina, 0, this.maxStamina);
-    }
-
-    /**
-     * @param {number} dt
-     */
-    updatePhysics(dt) {
-        const body = this.body;
-        const world = this.world;
-        if (!body || !world) return;
-
-        const inputVec = this.getInputVector();
-        const moveSpeed = 5;
-
-        body.linearDamping = 0.9;
-        world.physicsWorld.gravity.set(0, -9.82, 0);
-
-        if (this.state === 'SURF') {
-            this.contactMaterial.friction = 0.0;
-            body.linearDamping = 0.1;
-        } else {
-            this.contactMaterial.friction = 0.0;
-            body.linearDamping = 0.9;
-        }
-
-        switch (this.state) {
-            case 'WALK':
-            case 'IDLE':
-            case 'AIR':
-                if (inputVec.length() > 0) {
-                    body.velocity.x = inputVec.x * moveSpeed;
-                    body.velocity.z = inputVec.z * moveSpeed;
-                } else {
-                    if (this.state !== 'AIR') {
-                        body.velocity.x = 0;
-                        body.velocity.z = 0;
-                    }
-                }
-                break;
-
-            case 'CLIMB':
-                world.physicsWorld.gravity.set(0, 0, 0);
-                body.velocity.set(0, 2, 0);
-                break;
-
-            case 'GLIDE':
-                body.linearDamping = 0.5;
-                world.physicsWorld.gravity.set(0, -1, 0);
-                const forward = this.getForwardVector();
-                body.velocity.x = forward.x * 8;
-                body.velocity.z = forward.z * 8;
-                body.velocity.y = Math.max(body.velocity.y, -2);
-                break;
-
-            case 'SURF':
-                if (inputVec.length() > 0) {
-                    body.applyForce(new CANNON.Vec3(inputVec.x * 10, 0, inputVec.z * 10), body.position);
-                }
-                break;
-        }
-    }
-
-    // ...
-
-    updateVisuals() {
-        const mesh = this.mesh;
-        const body = this.body;
-
-        // Sync Position
-        if (mesh && body) {
-            mesh.position.copy(body.position);
-            // Physics Body is Sphere(0.5). Center is at 0.5m above ground.
-            // Mesh pivot is at feet.
-            // So Mesh Y should be Body Y - 0.5.
-            // We add VISUAL_OFFSET_Y to pull it out of the ground.
-            mesh.position.y -= 0.5;
-            mesh.position.y += this.VISUAL_OFFSET_Y;
-        } else {
-            return;
-        }
-
-        const now = performance.now() * 0.001;
-        const floatOffset = Math.sin(now * 2) * 0.05;
-        if (this.torso) this.torso.position.y = 1.0 + floatOffset;
-
-        // Halo Rotation
-        if (this.halo) {
-            this.halo.rotation.z = now; // Spin
-            this.halo.rotation.x = (Math.PI / 2 + 0.2) + Math.sin(now) * 0.1; // Wobble
-        }
-
-        // Scarf Animation (Wind)
-        if (this.scarfSegments) {
-            const wind = Math.sin(now * 5) * 0.2;
-            this.scarfSegments.forEach((seg, i) => {
-                // Simple sway
-                seg.group.rotation.x = wind * ((i + 1) * 0.5);
-            });
-        }
-
-        // Skirt Animation (Physics-ish)
-        if (this.skirtPlanes) {
-            const speed = this.getInputVector().length();
-            const runFlare = speed * 0.5;
-            this.skirtPlanes.forEach((pivot, i) => {
-                pivot.rotation.x = runFlare + Math.sin(now * 10 + i) * 0.1 * speed;
-            });
-        }
-
-        // Bow Animation
-        if (this.bowGroup) {
-            if (this.combat && this.combat.isAiming) {
-                this.bowGroup.visible = true;
-                this.bowGroup.rotation.y = -Math.PI / 2;
-                this.bowGroup.rotation.x = -this.cameraState.phi + Math.PI / 2;
-
-                if (this.torso && this.mesh) {
-                    this.torso.rotation.y = this.cameraState.theta - this.mesh.rotation.y + Math.PI / 4;
-                }
-
-                if (this.armL) {
-                    this.armL.group.rotation.z = Math.PI / 2;
-                    this.armL.group.rotation.y = Math.PI / 4;
-                }
-                if (this.armR) {
-                    this.armR.group.rotation.z = Math.PI / 2;
-                    this.armR.group.rotation.y = -Math.PI / 4;
-                }
-
-            } else {
-                this.bowGroup.visible = false;
-            }
-        }
-
-        // Sword Trail Update
-        if (this.swordTrail && this.combat && this.combat.isAttacking) {
-            const base = new THREE.Vector3(0, 0, 0);
-            const tip = new THREE.Vector3(0, 1.2, 0);
-            if (this.weaponHolder) {
-                this.weaponHolder.localToWorld(base);
-                this.weaponHolder.localToWorld(tip);
-                this.swordTrail.update(base, tip);
-            }
-        } else if (this.swordTrail) {
-            this.swordTrail.updateGeometry();
-        }
-    }
-
-    /**
-     * @param {number} dt
-     */
-    updateAnimations(dt) {
-        const time = performance.now() * 0.005;
-        const speed = this.getInputVector().length();
-        const isRunning = this.isSprinting && speed > 0.1;
-
-        // Guard Clause for missing visuals
-        if (!this.mesh || !this.torso || !this.armL || !this.armR || !this.legL || !this.legR) {
-            return;
-        }
-
-        // Reset Rotations (T-Pose / Relaxed)
-        if (this.armL && this.armL.group && this.armR && this.armR.group &&
-            this.legL && this.legL.group && this.legR && this.legR.group) {
-
-            this.armL.group.rotation.z = Math.PI / 8;
-            this.armR.group.rotation.z = -Math.PI / 8;
-            this.armL.group.rotation.x = 0;
-            this.armR.group.rotation.x = 0;
-            this.legL.group.rotation.x = 0;
-            this.legR.group.rotation.x = 0;
-
-            if (this.forearmL) this.forearmL.group.rotation.x = 0;
-            if (this.forearmR) this.forearmR.group.rotation.x = 0;
-            if (this.shinL) this.shinL.group.rotation.x = 0;
-            if (this.shinR) this.shinR.group.rotation.x = 0;
-
-            // Reset Lean
-            this.mesh.rotation.x = 0;
-            this.torso.rotation.x = 0;
-            this.torso.rotation.y = 0;
-            this.torso.scale.set(1, 1, 1);
-        }
-
-        // IDLE BREATHING
-        if (this.state === 'IDLE' && speed < 0.1 && !this.combat.isAttacking) {
-            const breath = 1 + Math.sin(time * 2) * 0.02;
-            if (this.torso) this.torso.scale.y = breath;
-        }
-
-        // LOCOMOTION (WALK / RUN)
-        if ((this.state === 'WALK' || (this.state === 'IDLE' && speed > 0.1)) && !this.combat.isAttacking) {
-            const freq = isRunning ? 15 : 8;
-            const amp = isRunning ? 1.2 : 0.6;
-            const walkCycle = time * freq;
-
-            // Naruto Run Lean
-            if (isRunning && this.mesh) {
-                this.mesh.rotation.x = 0.5; // ~30 degrees forward
-                if (this.head) this.head.rotation.x = -0.4; // Look up
-
-                // Arms back
-                if (this.armL) {
-                    this.armL.group.rotation.x = 1.5;
-                    this.armL.group.rotation.z = 0.5;
-                }
-                if (this.armR) {
-                    this.armR.group.rotation.x = 1.5;
-                    this.armR.group.rotation.z = -0.5;
-                }
-            } else {
-                // Normal Walk Arms
-                if (this.armL) this.armL.group.rotation.x = Math.sin(walkCycle + Math.PI) * amp;
-                if (this.armR) this.armR.group.rotation.x = Math.sin(walkCycle) * amp;
-                if (this.head) this.head.rotation.x = 0;
-            }
-
-            // Torso Bounce
-            const bounce = Math.abs(Math.cos(walkCycle)) * 0.1;
-            if (this.torso) this.torso.position.y = 1.0 + bounce;
-
-            // Legs (Swing)
-            const legL_Rot = Math.sin(walkCycle) * amp;
-            const legR_Rot = Math.sin(walkCycle + Math.PI) * amp;
-
-            if (this.legL) this.legL.group.rotation.x = legL_Rot;
-            if (this.legR) this.legR.group.rotation.x = legR_Rot;
-
-            // Knees
-            const kneeLiftL = Math.max(0, Math.cos(walkCycle)) * 1.5;
-            const kneeLiftR = Math.max(0, Math.cos(walkCycle + Math.PI)) * 1.5;
-
-            if (this.shinL) this.shinL.group.rotation.x = -kneeLiftL * (isRunning ? 1.5 : 1.0);
-            if (this.shinR) this.shinR.group.rotation.x = -kneeLiftR * (isRunning ? 1.5 : 1.0);
-        }
-
-        // COMBAT ANIMATIONS
-        if (this.combat && this.combat.isAttacking) {
-            const progress = this.combat.attackProgress || 0;
-            const combo = this.combat.comboStep;
-
-            if (combo === 1) {
-                // Horizontal Slash
-                const p = Utils.easeOutBack(progress);
-                if (this.torso) this.torso.rotation.y = THREE.MathUtils.lerp(-1.0, 1.0, p);
-                if (this.armR) {
-                    this.armR.group.rotation.y = THREE.MathUtils.lerp(-1.5, 1.5, p);
-                    this.armR.group.rotation.x = -Math.PI / 2;
-                }
-            } else if (combo === 2) {
-                // Vertical Smash
-                if (progress < 0.3) {
-                    const windup = progress / 0.3;
-                    if (this.armR) this.armR.group.rotation.x = THREE.MathUtils.lerp(0, -Math.PI, windup);
-                } else {
-                    const smash = (progress - 0.3) / 0.7;
-                    const smashP = Utils.easeOutElastic(smash);
-                    if (this.armR) this.armR.group.rotation.x = THREE.MathUtils.lerp(-Math.PI, 0.5, smashP);
-                }
-            } else if (combo === 3) {
-                // Spin
-                const p = Utils.easeInOutQuad(progress);
-                if (this.mesh) this.mesh.rotation.y += p * Math.PI * 2;
-                if (this.armR) this.armR.group.rotation.z = -Math.PI / 2;
-                if (this.armL) this.armL.group.rotation.z = Math.PI / 2;
-            }
-        }
-    }
-
-    /**
-     * @param {number} dt
-     */
-    updateCamera(dt) {
-        if (!this.mesh) return;
-        const targetFov = this.combat.isAiming ? 40 : 75;
-        this.camera.fov = Utils.lerp(this.camera.fov, targetFov, dt * 10);
-        this.camera.updateProjectionMatrix();
-
-        // Clamp Vertical Angle (Anti-Underground)
-        const minPhi = 0.1;
-        const maxPhi = Math.PI / 2 - 0.2; // Don't go below horizon
-        this.cameraState.phi = Utils.clamp(this.cameraState.phi, minPhi, maxPhi);
-
-        const x = this.cameraState.distance * Math.sin(this.cameraState.phi) * Math.sin(this.cameraState.theta);
-        const y = this.cameraState.distance * Math.cos(this.cameraState.phi);
-        const z = this.cameraState.distance * Math.sin(this.cameraState.phi) * Math.cos(this.cameraState.theta);
-
-        const offset = new THREE.Vector3(0, 0, 0);
-
-        // Screen Shake
-        if (this.shakeTimer > 0) {
-            this.shakeTimer -= dt;
-            const shake = this.shakeIntensity * (this.shakeTimer > 0 ? 1 : 0);
-            offset.x += (Math.random() - 0.5) * shake;
-            offset.y += (Math.random() - 0.5) * shake;
-            offset.z += (Math.random() - 0.5) * shake;
-        }
-
-        const targetPos = new THREE.Vector3(
-            this.mesh.position.x + x + offset.x,
-            this.mesh.position.y + y + offset.y,
-            this.mesh.position.z + z + offset.z
-        );
-
-        // Smart Camera (Anti-Clipping)
-        // Raycast from Player Head to Camera Target
-        const headPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0)); // Approx head height
-        const dir = new THREE.Vector3().subVectors(targetPos, headPos).normalize();
-        const dist = headPos.distanceTo(targetPos);
-
-        const raycaster = new THREE.Raycaster(headPos, dir, 0, dist);
-
-        // Check against terrain and walls
-        /** @type {THREE.Object3D[]} */
-        let collisionObjects = [];
-        if (this.world.terrainManager && this.world.terrainManager.group) {
-            collisionObjects = [...this.world.terrainManager.group.children];
-        }
-        if (this.world.interactables) {
-            const meshes = this.world.interactables.map(i => i.mesh || i).filter(i => i.isObject3D);
-            collisionObjects = [...collisionObjects, ...meshes];
-        }
-
-        const intersects = raycaster.intersectObjects(collisionObjects, false);
-
-        if (intersects.length > 0) {
-            // Hit something! Move camera to hit point (plus a little buffer)
-            const hit = intersects[0];
-            if (hit.distance < dist) {
-                this.camera.position.copy(hit.point).addScaledVector(dir, -0.5); // Buffer
-            } else {
-                this.camera.position.copy(targetPos);
-            }
-        } else {
-            this.camera.position.copy(targetPos);
-        }
-
-        this.camera.lookAt(this.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0))); // Look at torso/head
     }
 
     updateUI() {
@@ -1182,7 +810,6 @@ export class Player {
         if (this.input.keys.right) inputVector.x += 1;
 
         if (inputVector.length() > 0) {
-            // console.log("Input Vector:", inputVector);
             inputVector.normalize();
             const rotation = new THREE.Euler(0, this.cameraState.theta, 0);
             inputVector.applyEuler(rotation);
@@ -1204,41 +831,10 @@ export class Player {
         // 1. Check Terrain (The Truth)
         if (world.terrainManager) {
             const groundH = world.terrainManager.getGlobalHeight(mesh.position.x, mesh.position.z);
-            // Player origin is at feet. If y is close to groundH, we are grounded.
-            // Tolerance: 0.2
-            if (Math.abs(mesh.position.y - groundH) < 0.3) {
+            if (Math.abs(mesh.position.y - groundH) < 0.5) { // Increased tolerance
                 return true;
             }
         }
-
-        // 2. Check Objects (Bridges, Platforms) via Raycast
-        const raycaster = new THREE.Raycaster(mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0)), new THREE.Vector3(0, -1, 0), 0, 2.0);
-
-        const interactables = world.interactables || [];
-        const interactableMeshes = interactables.map(i => i.mesh || i).filter(i => i.isObject3D);
-
-        // Only check interactables/structures, not terrain chunks (already checked above)
-        const objects = [...interactableMeshes].filter(o => o);
-
-        if (objects.length > 0) {
-            const intersects = raycaster.intersectObjects(objects, true);
-            return intersects.length > 0;
-        }
-
         return false;
-    }
-
-    checkWall() {
-        const mesh = this.mesh;
-        const world = this.world;
-        if (!mesh || !world) return false;
-        const forward = this.getForwardVector();
-        const raycaster = new THREE.Raycaster(mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0)), forward, 0, 1.0);
-
-        const interactables = world.interactables || [];
-        const interactableMeshes = interactables.map(i => i.mesh || i).filter(i => i.isObject3D);
-
-        const intersects = raycaster.intersectObjects(interactableMeshes);
-        return intersects.length > 0;
     }
 }

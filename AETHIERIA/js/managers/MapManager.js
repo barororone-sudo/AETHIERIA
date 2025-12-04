@@ -16,6 +16,14 @@ export class MapManager {
 
         this.icons = new Map(); // Map of object ID -> DOM Element
         this.isBigMap = false;
+
+        // Interactive State
+        this.zoom = 1.0;
+        this.targetZoom = 1.0;
+        this.mapOffset = { x: 0, y: 0 };
+        this.isDragging = false;
+        this.dragStart = { x: 0, y: 0 };
+        this.currentMapCenter = { x: 0, y: 0 }; // Center in Map Coords
     }
 
     init() {
@@ -58,7 +66,207 @@ export class MapManager {
         this.fogCtx.fillStyle = 'black';
         this.fogCtx.fillRect(0, 0, this.mapSize, this.mapSize);
 
+        // 5. Event Listeners for Interaction
+        this.setupInteractions();
+
         console.log("MapManager: DOM Injected.");
+    }
+
+    setupInteractions() {
+        this.container.addEventListener('mousedown', (e) => this.onMouseDown(e));
+        window.addEventListener('mousemove', (e) => this.onMouseMove(e));
+        window.addEventListener('mouseup', (e) => this.onMouseUp(e));
+        this.container.addEventListener('wheel', (e) => this.onWheel(e));
+        this.container.addEventListener('contextmenu', (e) => this.onContextMenu(e));
+    }
+
+    onMouseDown(e) {
+        if (!this.isBigMap || e.button !== 0) return; // Left click only
+        this.isDragging = true;
+        this.dragStart.x = e.clientX;
+        this.dragStart.y = e.clientY;
+        this.container.style.cursor = 'grabbing';
+    }
+
+    onMouseMove(e) {
+        if (!this.isDragging || !this.isBigMap) return;
+
+        const dx = e.clientX - this.dragStart.x;
+        const dy = e.clientY - this.dragStart.y;
+
+        this.dragStart.x = e.clientX;
+        this.dragStart.y = e.clientY;
+
+        // Pan is inverted relative to camera, but direct for map drag
+        // We are moving the offset
+        this.mapOffset.x += dx;
+        this.mapOffset.y += dy;
+    }
+
+    onMouseUp(e) {
+        this.isDragging = false;
+        if (this.isBigMap) this.container.style.cursor = 'default';
+    }
+
+    onWheel(e) {
+        if (!this.isBigMap) return;
+        e.preventDefault();
+        const zoomSpeed = 0.001;
+        this.targetZoom -= e.deltaY * zoomSpeed;
+        this.targetZoom = Math.max(0.5, Math.min(this.targetZoom, 5.0));
+    }
+
+    onContextMenu(e) {
+        if (!this.isBigMap) return;
+        e.preventDefault();
+
+        // Calculate Map Coordinates
+        // Transform screen (clientX, clientY) to Map Coords
+        // Center of screen is (cw/2, ch/2)
+        // Map Transform is: translate(tx, ty) scale(z)
+        // tx = cx - center.x * z + offset.x
+        // ty = cy - center.y * z + offset.y
+
+        // Inverse:
+        // mapX = (screenX - tx) / z
+
+        // Let's rely on getBoundingClientRect for simplicity if possible, 
+        // but transform makes it tricky.
+        // Let's use the update logic variables.
+
+        const rect = this.container.getBoundingClientRect();
+        const cx = rect.width / 2;
+        const cy = rect.height / 2;
+
+        // Current Transform values (approx)
+        // We need exact values. Let's recalculate what they ARE currently.
+        // Actually, we can just use the visual offset we set in update()
+        // But better to reverse the logic we use in update.
+
+        // Center of map in pixels (relative to top-left of map image)
+        // We want to find this.
+
+        // Screen Click relative to center
+        const relX = e.clientX - rect.left - cx;
+        const relY = e.clientY - rect.top - cy;
+
+        // Adjust for Offset and Zoom
+        // screen = (map - center) * zoom + offset
+        // (screen - offset) / zoom + center = map
+
+        // Wait, my update logic is:
+        // tx = cx - (mapPos.x * zoom) + offset.x
+        // So: screenX = cx - mapX * zoom + offset.x
+        // mapX * zoom = cx + offset.x - screenX
+        // mapX = (cx + offset.x - screenX) / zoom  <-- Wait signs are tricky
+
+        // Let's look at update():
+        // tx = cx - (mapPos.x * zoom) + this.mapOffset.x;
+        // screenX (relative to container left) = tx + mapPixelX * zoom? No.
+        // The content div is moved by tx, ty.
+        // Inside content div, map image is at 0,0.
+        // So click on content div (local) is map coordinate?
+        // Yes, if we get click relative to content div.
+
+        // But content div is transformed.
+        // Easier way:
+        const mapX = (e.clientX - rect.left - (cx + this.mapOffset.x)) / -this.targetZoom;
+        // Let's re-derive:
+        // tx = cx - mapX * z + offX
+        // screenX = tx + mapX_in_div * z  (if scale was on content)
+        // Actually scale is on content.
+        // So screenX = tx + click_in_content * z
+        // click_in_content = (screenX - tx) / z
+
+        // Let's use the computed transform variables from update()
+        // We need to store them or recompute.
+
+        // Let's just use the logic:
+        // We want to place a marker at World Coordinates.
+
+        // 1. Get Map Coordinates
+        // We know the map center is at (this.currentMapCenter.x, this.currentMapCenter.y)
+        // Screen Center corresponds to Map Center + Offset/Zoom?
+        // No, in update() we set the transform such that the player (or center) is at screen center.
+
+        // Let's simplify:
+        // We have mapOffset which shifts the view.
+        // We have zoom.
+
+        // MapX = (e.clientX - rect.left - cx - this.mapOffset.x) / this.targetZoom + this.currentMapCenter.x
+        // Wait, signs.
+        // If I move map RIGHT (positive offset), I see LEFT part of map.
+        // So map coords should decrease.
+        // Correct.
+
+        // Let's try:
+        // MapPixelX = (e.clientX - rect.left - cx - this.mapOffset.x) / this.targetZoom + this.currentMapCenter.x;
+        // MapPixelY = (e.clientY - rect.top - cy - this.mapOffset.y) / this.targetZoom + this.currentMapCenter.y;
+
+        // Actually, let's just use the player position as reference if we haven't panned?
+        // But we have panned.
+
+        // Let's use the inverse of the transform we apply in update.
+        // In update: transform = translate(tx, ty) scale(z)
+        // tx = cx - center.x * z + offset.x
+
+        // clickX = tx + mapPixelX * z
+        // mapPixelX = (clickX - tx) / z
+
+        // We need tx.
+        // tx = cx - this.currentMapCenter.x * this.targetZoom + this.mapOffset.x;
+
+        const z = this.targetZoom;
+        const tx = cx - this.currentMapCenter.x * z + this.mapOffset.x;
+        const ty = cy - this.currentMapCenter.y * z + this.mapOffset.y;
+
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
+
+        const mapPixelX = (clickX - tx) / z;
+        const mapPixelY = (clickY - ty) / z;
+
+        // Convert Map Pixel to World
+        // mapX = (worldX + worldSize/2) * scale
+        // worldX = (mapX / scale) - worldSize/2
+
+        const worldX = (mapPixelX / this.scale) - this.worldSize / 2;
+        const worldZ = (mapPixelY / this.scale) - this.worldSize / 2;
+
+        console.log(`Right Click at Map: ${mapPixelX}, ${mapPixelY} -> World: ${worldX}, ${worldZ}`);
+
+        this.addWaypoint(worldX, worldZ);
+    }
+
+    addWaypoint(x, z) {
+        // Remove existing waypoint? Or allow multiple? User said "sélection un point". Singular?
+        if (this.waypointIcon) {
+            this.waypointIcon.remove();
+        }
+
+        const icon = document.createElement('div');
+        Object.assign(icon.style, {
+            width: '0',
+            height: '0',
+            borderLeft: '10px solid transparent',
+            borderRight: '10px solid transparent',
+            borderTop: '15px solid red',
+            position: 'absolute',
+            transform: 'translate(-50%, -100%)', // Tip at point
+            zIndex: '20',
+            filter: 'drop-shadow(0 2px 2px rgba(0,0,0,0.5))'
+        });
+
+        this.iconLayer.appendChild(icon);
+        this.waypointIcon = icon;
+        this.waypointPos = { x, z }; // World Coords
+
+        // Update position immediately
+        const pos = this.worldToMap(x, z);
+        icon.style.left = `${pos.x}px`;
+        icon.style.top = `${pos.y}px`;
+
+        console.log("Waypoint added at", x, z);
     }
 
     generateMapTexture() {
@@ -180,18 +388,41 @@ export class MapManager {
         const cy = ch / 2;
 
         const p = this.game.player.mesh.position;
-        const mapPos = this.worldToMap(p.x, p.z);
-
-        let tx = cx - mapPos.x;
-        let ty = cy - mapPos.y;
+        const playerMapPos = this.worldToMap(p.x, p.z);
 
         if (this.isBigMap) {
-            // Use dynamic zoom
-            tx = cx - (mapPos.x * this.zoom);
-            ty = cy - (mapPos.y * this.zoom);
+            // If dragging, we are offsetting from the center
+            // Center is Player Position initially, but we can pan away.
+            // Let's say currentMapCenter IS the player position, but we add mapOffset.
+
+            this.currentMapCenter = playerMapPos; // Base center is player
+
+            // Calculate Transform
+            // We want the point (center.x, center.y) to be at screen center (cx, cy) + offset
+            // And scaled by zoom.
+
+            // Transform Origin is usually top-left (0,0).
+            // So we translate the content such that the target point is at the desired screen location.
+
+            // Target Screen X = cx + this.mapOffset.x
+            // Target Screen Y = cy + this.mapOffset.y
+
+            // Content X = Target Screen X - (MapCenter X * Zoom)
+            // Content Y = Target Screen Y - (MapCenter Y * Zoom)
+
+            let tx = (cx + this.mapOffset.x) - (this.currentMapCenter.x * this.zoom);
+            let ty = (cy + this.mapOffset.y) - (this.currentMapCenter.y * this.zoom);
+
             this.content.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${this.zoom})`;
+
+            // Update Waypoint if exists (it's in icon layer, which scales with content? 
+            // Yes, iconLayer is child of content. So we just set local pos.)
+            // No need to update waypoint pos here if it's absolute in content.
+
         } else {
-            // Minimap fixed zoom (1.0)
+            // Minimap fixed zoom (1.0), centered on player, no offset
+            let tx = cx - playerMapPos.x;
+            let ty = cy - playerMapPos.y;
             this.content.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
         }
     }
@@ -363,6 +594,10 @@ export class MapManager {
         if (this.isBigMap) {
             // OPEN BIG MAP
             this.container.classList.add('big-map-active');
+
+            // Reset Offset to center on player
+            this.mapOffset = { x: 0, y: 0 };
+            this.targetZoom = 1.0;
 
             // PAUSE GAME
             if (this.game) {

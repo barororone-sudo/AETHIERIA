@@ -93,10 +93,44 @@ export class World {
      */
     getGroundHeight(x, z) {
         // Use the Truth from TerrainManager
-        if (this.terrain) {
-            return this.terrain.getGlobalHeight(x, z);
+        if (this.terrainManager) {
+            return this.terrainManager.getGlobalHeight(x, z);
         }
         return 0;
+    }
+
+    /**
+     * @param {THREE.Vector3} position 
+     * @param {number} radius 
+     */
+    getClosestInteractable(position, radius) {
+        let closest = null;
+        let minDist = radius;
+
+        // Check Interactables (Chests, Towers, etc.)
+        if (this.interactables) {
+            for (const obj of this.interactables) {
+                const pos = obj.position || obj.mesh.position;
+                const dist = position.distanceTo(pos);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = obj;
+                }
+            }
+        }
+
+        // Check NPCs
+        if (this.npcs) {
+            for (const npc of this.npcs) {
+                const dist = position.distanceTo(npc.mesh.position);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = npc;
+                }
+            }
+        }
+
+        return closest;
     }
 
     init() {
@@ -708,6 +742,26 @@ export class World {
         // Update Ambient Light
         const ambient = this.scene.children.find(c => c.isAmbientLight);
         if (ambient) ambient.intensity = ambientIntensity;
+    }
+
+    createUpdraft(position) {
+        const geometry = new THREE.CylinderGeometry(1, 1, 5, 8);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.3,
+            wireframe: true
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.copy(position);
+        mesh.position.y += 2.5; // Center it
+        this.scene.add(mesh);
+
+        this.updrafts.push({
+            mesh: mesh,
+            position: position.clone(),
+            life: 5.0
+        });
     }
 
     updateUpdrafts(dt, playerBody) {
