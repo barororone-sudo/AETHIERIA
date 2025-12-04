@@ -297,6 +297,12 @@ export class Combat {
 
         console.log("Shooting Arrow!");
         if (!this.player.mesh) return;
+
+        // Trigger Animation
+        if (this.player.playAnimation) {
+            this.player.playAnimation('BOW', false);
+        }
+
         const spawnPos = this.player.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
         const forward = this.player.getForwardVector();
 

@@ -57,6 +57,7 @@ export class Chunk {
         geometry.translate(this.size / 2, -this.size / 2, 0);
 
         const posAttribute = geometry.attributes.position;
+        const colors = [];
 
         for (let i = 0; i < posAttribute.count; i++) {
             const localX = posAttribute.getX(i);
@@ -75,12 +76,31 @@ export class Chunk {
             // Rot(-90 X) maps Local Z -> World Y.
             // So we set Local Z = height.
             posAttribute.setZ(i, height);
+
+            // Biome Coloring
+            const color = new THREE.Color();
+            if (height < 2) {
+                color.setHex(0xe6c288); // Sand
+            } else if (height < 15) {
+                // Grass with variation
+                const variation = (Math.random() - 0.5) * 0.1;
+                color.setHex(0x55aa55);
+                color.r += variation;
+                color.g += variation;
+                color.b += variation;
+            } else if (height < 25) {
+                color.setHex(0x666666); // Rock
+            } else {
+                color.setHex(0xffffff); // Snow
+            }
+            colors.push(color.r, color.g, color.b);
         }
 
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.computeVertexNormals();
 
         const material = new THREE.MeshStandardMaterial({
-            color: 0x55aa55,
+            vertexColors: true,
             roughness: 0.8,
             flatShading: true,
             side: THREE.DoubleSide

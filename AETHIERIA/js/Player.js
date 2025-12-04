@@ -8,6 +8,8 @@ import { Input } from './Input.js';
 import { Combat } from './Combat.js';
 import { InventoryManager } from './managers/InventoryManager.js';
 import { SwordTrail } from './VFX.js';
+// @ts-ignore
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 /**
  * @typedef {Object} Limb
@@ -107,11 +109,8 @@ export class Player {
         this.inventory.addItem('potion_health', 5);
 
         // UI Elements
-        /** @type {HTMLElement|null} */ this.staminaContainer = null;
-        /** @type {HTMLElement|null} */ this.staminaRing = null;
-        /** @type {HTMLElement|null} */ this.heartsContainer = null;
-        /** @type {HTMLElement|null} */ this.iconGlide = null;
-        /** @type {HTMLElement|null} */ this.iconSurf = null;
+        // UI Elements
+        // Decoupled: Managed by UIManager via this.game.ui
 
         this.initInput();
         this.initUI();
@@ -184,6 +183,9 @@ export class Player {
         this.mesh = new THREE.Group();
         this.world.scene.add(this.mesh);
 
+        // Load GLB
+        this.loadGLB();
+
         // Materials
         const toonGradient = this.world.toonGradientMap || null;
         const matToon = (color) => new THREE.MeshToonMaterial({
@@ -197,7 +199,6 @@ export class Player {
         const cPants = 0xF5F5DC;
         const cBoots = 0x4A3C31;
         const cScarf = 0xFF4400;
-        const cWhite = 0xFFFFFF;
         const cDark = 0x333333;
 
         // 1. Body Group (Main Container)
@@ -205,7 +206,7 @@ export class Player {
         this.bodyGroup.position.y = 0.9;
         this.mesh.add(this.bodyGroup);
 
-        // 2. Legs (Attached to BodyGroup, independent of Torso twist)
+        // 2. Legs
         const createLimb = (w, h, d, color, x, y, z, parent) => {
             const g = new THREE.Group();
             g.position.set(x, y, z);
@@ -226,7 +227,7 @@ export class Player {
         const bootL = new THREE.Mesh(bootGeo, bootMat); bootL.position.y = -0.3; this.legL.group.add(bootL);
         const bootR = new THREE.Mesh(bootGeo, bootMat); bootR.position.y = -0.3; this.legR.group.add(bootR);
 
-        // 3. Torso (Upper Body - Can Twist)
+        // 3. Torso
         this.torso = new THREE.Group();
         this.bodyGroup.add(this.torso);
 
@@ -268,25 +269,24 @@ export class Player {
         this.scarf.add(this.scarfTail1);
 
         // 4. Arms
-        // Left Arm (Simple)
         this.armL = createLimb(0.08, 0.35, 0.08, cSkin, -0.22, 0.15, 0, this.torso);
 
         // RIGHT ARM (COMPLEX RIG)
         this.rightArmPivot = new THREE.Group();
-        this.rightArmPivot.position.set(0.22, 0.15, 0); // Shoulder position
+        this.rightArmPivot.position.set(0.22, 0.15, 0);
         this.torso.add(this.rightArmPivot);
 
         this.rightArm = new THREE.Group();
         this.rightArmPivot.add(this.rightArm);
 
         const armMesh = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.35, 0.08), matToon(cSkin));
-        armMesh.position.y = -0.175; // Center of arm
+        armMesh.position.y = -0.175;
         armMesh.castShadow = true;
         this.rightArm.add(armMesh);
 
         // Hand
         this.hand = new THREE.Group();
-        this.hand.position.y = -0.35; // End of arm
+        this.hand.position.y = -0.35;
         this.rightArm.add(this.hand);
 
         const handMesh = new THREE.Mesh(new THREE.SphereGeometry(0.06), matToon(cSkin));
@@ -312,12 +312,97 @@ export class Player {
         this.swordTrail = new SwordTrail(this.world.scene, 0x00FFFF, 20);
     }
 
+    loadGLB() {
+        // Load GLB Model
+        const loader = new GLTFLoader();
+        /** @type {Object<string, THREE.AnimationClip>} */
+        this.animations = {}; // Store clips: { 'IDLE': clip, 'RUN': clip, ... }
+        this.currentAction = null;
+
+        // 1. Load Main Model (Using Bow Animation GLB as base since Steampunk is missing)
+        loader.load('assets/videoplayback (3)_default.glb', (gltf) => {
+            console.log("Main GLB Loaded!", gltf);
+            const model = gltf.scene;
+            model.scale.set(1.0, 1.0, 1.0);
+            model.position.y = 0;
+
+            // Shadows
+            model.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+
+            // Hide Procedural
+            if (this.bodyGroup) this.bodyGroup.visible = false;
+            this.mesh.add(model);
+            this.glbModel = model;
+
+            // Mixer Setup
+            this.mixer = new THREE.AnimationMixer(model);
+
+            // Assign Animation from Base Model (BOW)
+            if (gltf.animations.length > 0) {
+                this.animations['BOW'] = gltf.animations[0];
+                // Use BOW as temporary IDLE to prevent T-Pose, or just don't play anything
+                // this.animations['IDLE'] = gltf.animations[0]; 
+                // this.playAnimation('IDLE');
+            }
+
+            // 2. Load Extra Animations
+            this.loadAnimation(loader, 'assets/déplacement.glb', 'RUN');
+            this.loadAnimation(loader, 'assets/grimper.glb', 'CLIMB');
+            this.loadAnimation(loader, 'assets/sword_attack.glb', 'ATTACK');
+            // BOW is already loaded as base
+
+        }, undefined, (error) => {
+            console.error('An error happened loading the GLB:', error);
+        });
+    }
+
+    loadAnimation(loader, path, name) {
+        loader.load(path, (gltf) => {
+            if (gltf.animations.length > 0) {
+                console.log(`Loaded Animation: ${name}`);
+                const clip = gltf.animations[0];
+                this.animations[name] = clip;
+            }
+        });
+    }
+
+    playAnimation(name, loop = true) {
+        if (!this.mixer || !this.animations[name]) return;
+        if (this.currentAnimName === name) return; // Already playing
+
+        const clip = this.animations[name];
+        const action = this.mixer.clipAction(clip);
+
+        if (this.currentAction) {
+            this.currentAction.fadeOut(0.2);
+        }
+
+        action.reset();
+        action.fadeIn(0.2);
+        action.play();
+
+        if (!loop) {
+            action.setLoop(THREE.LoopOnce);
+            action.clampWhenFinished = true;
+            this.mixer.addEventListener('finished', () => {
+                // Return to Idle after one-shot
+                if (this.currentAnimName === name) {
+                    this.playAnimation('IDLE');
+                }
+            });
+        }
+
+        this.currentAction = action;
+        this.currentAnimName = name;
+    }
+
     initUI() {
-        this.staminaContainer = document.getElementById('stamina-container');
-        this.staminaRing = document.getElementById('stamina-ring');
-        this.heartsContainer = document.getElementById('hearts-container');
-        this.iconGlide = document.getElementById('icon-glide');
-        this.iconSurf = document.getElementById('icon-surf');
+        // Deprecated: UI is managed by UIManager
     }
 
     /**
@@ -328,14 +413,17 @@ export class Player {
 
         // Interaction (F Key)
         if (this.input.keys.interact) {
-            // Find closest interactable
             if (this.world) {
-                const target = this.world.getClosestInteractable(this.mesh.position);
+                const target = this.world.getClosestInteractable(this.mesh.position, 3.0);
                 if (target) {
-                    target.interact();
+                    if (typeof target.interact === 'function') {
+                        target.interact();
+                    } else if (target.userData && typeof target.userData.interact === 'function') {
+                        target.userData.interact();
+                    }
                 }
             }
-            this.input.keys.interact = false; // Reset immediate
+            this.input.keys.interact = false; // Debounce
         }
 
         // Hit Stop
@@ -386,6 +474,12 @@ export class Player {
             case 'IDLE':
             case 'WALK':
             case 'RUN':
+                // Water Check
+                if (this.mesh.position.y < 1.3 && !grounded) {
+                    this.state = 'SWIM';
+                    break;
+                }
+
                 if (!grounded) {
                     this.state = 'AIR';
                 } else if (this.input.keys.jump) {
@@ -400,6 +494,19 @@ export class Player {
                         this.state = this.input.keys.sprint ? 'RUN' : 'WALK';
                     } else {
                         this.state = 'IDLE';
+                    }
+                }
+                break;
+
+            case 'SWIM':
+                if (this.mesh.position.y >= 1.3) { // Surface
+                    // Check if can stand
+                    if (grounded && this.mesh.position.y >= 1.5) {
+                        this.state = 'IDLE';
+                    } else if (this.input.keys.jump) {
+                        // Try to jump out?
+                        this.body.velocity.y = 5;
+                        this.state = 'AIR';
                     }
                 }
                 break;
@@ -461,6 +568,10 @@ export class Player {
             // Slippery
             this.body.material = this.world.slipperyMaterial || null;
             this.body.linearDamping = 0.1;
+        } else if (this.state === 'SWIM') {
+            // Water Drag
+            this.body.material = null;
+            this.body.linearDamping = 0.5; // High drag
         } else {
             // Grippy
             this.body.material = null; // Default friction
@@ -469,23 +580,35 @@ export class Player {
 
         // Anti-Slide on Slopes (Force Stop)
         if (grounded && speed < 0.1 && this.state !== 'SURF') {
-            this.body.velocity.set(0, 0, 0);
+            // Manual Friction to stop sliding
+            this.body.velocity.x *= 0.5;
+            this.body.velocity.z *= 0.5;
             this.body.angularVelocity.set(0, 0, 0);
             this.currentSpeed = 0;
         }
 
         // Artificial Gravity/Downforce
-        if (grounded && this.state !== 'AIR') {
+        if (grounded && this.state !== 'AIR' && this.state !== 'SWIM') {
             this.body.velocity.y -= 10 * dt; // Stick to ground
+        }
+
+        // Buoyancy (Swim)
+        if (this.state === 'SWIM') {
+            if (this.mesh.position.y < 1.5) {
+                this.body.velocity.y += 15 * dt; // Float up
+            }
+            // Cap vertical speed
+            if (this.body.velocity.y > 2) this.body.velocity.y = 2;
         }
 
         // Target Speed
         let targetSpeed = 0;
-        if (this.state === 'WALK') targetSpeed = 5;
-        if (this.state === 'RUN') targetSpeed = 10;
-        if (this.state === 'AIR') targetSpeed = 4;
-        if (this.state === 'GLIDE') targetSpeed = 8;
-        if (this.state === 'SURF') targetSpeed = 15;
+        if (this.state === 'WALK') targetSpeed = 6;
+        if (this.state === 'RUN') targetSpeed = 12;
+        if (this.state === 'SWIM') targetSpeed = 4;
+        if (this.state === 'AIR') targetSpeed = 6; // Better air control
+        if (this.state === 'GLIDE') targetSpeed = 10; // Faster glide
+        if (this.state === 'SURF') targetSpeed = 20; // FAST SURF
 
         // Inertia
         const accel = (this.state === 'IDLE') ? 10.0 : 2.0;
@@ -504,6 +627,10 @@ export class Player {
                 // Physics-based sliding + input influence
                 this.body.velocity.x += moveDir.x * dt * 5;
                 this.body.velocity.z += moveDir.z * dt * 5;
+            } else if (this.state === 'SWIM') {
+                // Swimming movement
+                this.body.velocity.x += moveDir.x * dt * 10;
+                this.body.velocity.z += moveDir.z * dt * 10;
             } else if (grounded) {
                 // Direct control on ground
                 this.body.velocity.x = moveDir.x * this.currentSpeed;
@@ -537,170 +664,37 @@ export class Player {
         this.mesh.position.copy(this.body.position);
         this.mesh.position.y -= 0.9;
     }
-
     /**
      * @param {number} dt
      */
     updateVisuals(dt) {
-        if (!this.bodyGroup || !this.torso || !this.rightArmPivot) return;
-
-        const time = Date.now() * 0.005;
-
-        // --- 1. RESET POSE ---
-        // Torso
-        this.torso.rotation.set(0, 0, 0);
-        this.bodyGroup.rotation.x = 0;
-
-        // Arms
-        if (this.armL) this.armL.group.rotation.set(0, 0, 0);
-        this.rightArmPivot.rotation.set(0, 0, 0);
-        this.rightArm.rotation.set(0, 0, 0);
-        this.hand.rotation.set(0, 0, 0);
-
-        // Legs
-        if (this.legL) this.legL.group.rotation.set(0, 0, 0);
-        if (this.legR) this.legR.group.rotation.set(0, 0, 0);
-
-        // --- 2. IDLE / MOVE ANIMATION ---
-        if (this.state === 'IDLE') {
-            // Breathing
-            this.bodyGroup.scale.y = 1 + Math.sin(time * 2) * 0.02;
-            this.bodyGroup.position.y = 0.9 + Math.sin(time * 2) * 0.01;
-
-            // Combat Ready Pose (Right Arm)
-            this.rightArmPivot.rotation.z = Math.PI / 4; // 45 deg out
-            this.rightArmPivot.rotation.x = 0.2;
-            this.rightArm.rotation.z = 0.2;
-
-            // Left Arm Idle
-            if (this.armL) this.armL.group.rotation.z = 0.1 + Math.sin(time) * 0.05;
-
-        } else if (this.state === 'WALK' || this.state === 'RUN') {
-            const isRun = this.state === 'RUN';
-            const freq = isRun ? 15 : 10;
-            const amp = isRun ? 0.8 : 0.5;
-
-            // Lean Forward
-            this.bodyGroup.rotation.x = isRun ? 0.3 : 0.1;
-
-            // Legs
-            if (this.legL) this.legL.group.rotation.x = Math.sin(time * freq) * amp;
-            if (this.legR) this.legR.group.rotation.x = Math.sin(time * freq + Math.PI) * amp;
-
-            // Arms
-            if (this.armL) this.armL.group.rotation.x = Math.sin(time * freq + Math.PI) * amp;
-            // Right arm swings but keeps weapon ready
-            this.rightArmPivot.rotation.x = Math.sin(time * freq) * amp;
-            this.rightArmPivot.rotation.z = 0.5;
-        }
-
-        // --- 3. COMBAT OVERRIDES (PROCEDURAL) ---
-        if (this.combat && this.combat.isAttacking) {
-            const progress = this.combat.attackProgress;
-            const combo = this.combat.comboStep;
-
-            // Update Sword Trail
-            if (this.swordTrail && this.combat && this.combat.weapon) {
-                const tipPos = new THREE.Vector3(0, 0.75, 0); // Tip (Local Y-up of sword mesh)
-                const basePos = new THREE.Vector3(0, -0.75, 0); // Base
-                tipPos.applyMatrix4(this.combat.weapon.matrixWorld);
-                basePos.applyMatrix4(this.combat.weapon.matrixWorld);
-                this.swordTrail.update(basePos, tipPos);
+        // --- GLB ANIMATION STATE MACHINE ---
+        if (this.mixer && this.animations) {
+            // Prevent overriding one-shot animations (like ATTACK or BOW)
+            if (this.currentAnimName === 'ATTACK' && this.currentAction && this.currentAction.isRunning()) {
+                this.mixer.update(dt);
+                return;
+            }
+            if (this.currentAnimName === 'BOW' && this.currentAction && this.currentAction.isRunning()) {
+                this.mixer.update(dt);
+                return;
             }
 
-            if (combo === 1) {
-                // HORIZONTAL SLASH
-                // Phase 1: Windup (0.0 - 0.2)
-                // Phase 2: Slash (0.2 - 0.4)
-                // Phase 3: Recover (0.4 - 1.0)
-
-                if (progress < 0.2) {
-                    // Windup: Twist Left, Arm Back
-                    const t = progress / 0.2;
-                    this.torso.rotation.y = THREE.MathUtils.lerp(0, 1.0, t); // Twist Right (Screen Left)
-                    this.rightArmPivot.rotation.y = THREE.MathUtils.lerp(0, 1.5, t); // Arm Back
-                    this.rightArmPivot.rotation.z = 1.5;
-                } else if (progress < 0.4) {
-                    // Slash: Twist Right, Arm Sweep
-                    const t = (progress - 0.2) / 0.2;
-                    this.torso.rotation.y = THREE.MathUtils.lerp(1.0, -1.5, t); // Twist Left (Screen Right)
-                    this.rightArmPivot.rotation.y = THREE.MathUtils.lerp(1.5, -1.0, t); // Sweep
-                    this.rightArmPivot.rotation.z = 1.5;
-                    this.rightArm.rotation.x = -0.5; // Blade alignment
-                } else {
-                    // Recover
-                    const t = (progress - 0.4) / 0.6;
-                    this.torso.rotation.y = THREE.MathUtils.lerp(-1.5, 0, t);
-                    this.rightArmPivot.rotation.y = THREE.MathUtils.lerp(-1.0, 0, t);
-                    this.rightArmPivot.rotation.z = THREE.MathUtils.lerp(1.5, 0.8, t);
+            if (this.combat && this.combat.isAttacking) {
+                this.playAnimation('ATTACK', false);
+            } else if (this.state === 'RUN' || this.state === 'WALK') {
+                this.playAnimation('RUN');
+                // Adjust speed based on movement
+                if (this.currentAction) {
+                    this.currentAction.timeScale = this.state === 'RUN' ? 1.5 : 1.0;
                 }
-            } else if (combo === 2) {
-                // VERTICAL SMASH
-                if (progress < 0.3) {
-                    // Windup: Arm Up
-                    const t = progress / 0.3;
-                    this.rightArmPivot.rotation.z = THREE.MathUtils.lerp(0.5, 3.0, t); // High up
-                    this.torso.rotation.x = -0.5; // Arch back
-                } else if (progress < 0.5) {
-                    // Smash
-                    const t = (progress - 0.3) / 0.2;
-                    this.rightArmPivot.rotation.z = THREE.MathUtils.lerp(3.0, 0.5, t);
-                    this.rightArmPivot.rotation.x = 1.5; // Forward
-                    this.torso.rotation.x = 0.5; // Crunch forward
-                } else {
-                    // Recover
-                    const t = (progress - 0.5) / 0.5;
-                    this.rightArmPivot.rotation.z = THREE.MathUtils.lerp(0.5, 0.8, t);
-                    this.torso.rotation.x = THREE.MathUtils.lerp(0.5, 0, t);
-                }
-            } else {
-                // THRUST
-                if (progress < 0.3) {
-                    // Pull Back
-                    const t = progress / 0.3;
-                    this.rightArmPivot.position.z = THREE.MathUtils.lerp(0, 0.3, t); // Pull shoulder back
-                    this.rightArmPivot.rotation.x = -0.5;
-                } else if (progress < 0.5) {
-                    // Thrust
-                    const t = (progress - 0.3) / 0.2;
-                    this.rightArmPivot.position.z = THREE.MathUtils.lerp(0.3, -0.5, t); // Push forward
-                    this.torso.position.z = 0.2; // Lunge body
-                    this.rightArmPivot.rotation.x = 0;
-                } else {
-                    // Recover
-                    const t = (progress - 0.5) / 0.5;
-                    this.rightArmPivot.position.z = THREE.MathUtils.lerp(-0.5, 0, t);
-                    this.torso.position.z = THREE.MathUtils.lerp(0.2, 0, t);
-                }
+            } else if (this.state === 'CLIMB') {
+                this.playAnimation('CLIMB');
+            } else if (this.state === 'IDLE') {
+                this.playAnimation('IDLE');
             }
-        } else if (this.combat && this.combat.isAiming) {
-            // Aiming Pose
-            // Torso follows camera pitch (approximate)
-            const pitch = this.cameraState.phi - Math.PI / 2; // 0 is horizon
-            this.torso.rotation.x = pitch;
-            this.torso.rotation.y = -0.5; // Slight turn
 
-            // Arms holding bow
-            // Right Arm (Holds Bow)
-            this.rightArmPivot.rotation.set(0, 0, 0);
-            this.rightArmPivot.rotation.z = Math.PI / 2; // Raise arm
-            this.rightArmPivot.rotation.y = -Math.PI / 2; // Point forward
-
-            // Left Arm (Fake Pull String)
-            if (this.armL) {
-                this.armL.group.rotation.set(0, 0, 0);
-                this.armL.group.rotation.z = Math.PI / 2; // Raise arm
-                this.armL.group.rotation.y = 0.5; // Pull string
-            }
-        } else {
-            // Reset Trail
-            if (this.swordTrail) this.swordTrail.reset();
-        }
-
-        // Scarf Physics
-        if (this.scarf) {
-            this.scarf.rotation.x = THREE.MathUtils.lerp(this.scarf.rotation.x, -0.5 + this.currentSpeed * 0.1, dt * 5);
-            this.scarf.rotation.y = THREE.MathUtils.lerp(this.scarf.rotation.y, -this.rotationVelocity, dt * 5);
+            this.mixer.update(dt);
         }
     }
 
@@ -758,48 +752,9 @@ export class Player {
     }
 
     updateUI() {
-        // Stamina
-        if (this.staminaContainer && this.staminaRing) {
-            if (this.stamina < this.maxStamina) {
-                this.staminaContainer.style.display = 'block';
-                const circumference = 2 * Math.PI * 40;
-                const offset = circumference - (this.stamina / this.maxStamina) * circumference;
-                this.staminaRing.style.strokeDashoffset = String(offset);
-            } else {
-                this.staminaContainer.style.display = 'none';
-            }
-        }
-
-        // Hearts (Zelda Style)
-        if (this.heartsContainer) {
-            const maxHearts = this.maxHp / 20; // 1 Heart = 20 HP
-            const currentHearts = Math.ceil(this.hp / 20);
-
-            // Only update if changed to avoid DOM thrashing
-            if (this.heartsContainer.childElementCount !== maxHearts || this.heartsContainer.dataset.hp != String(Math.ceil(this.hp))) {
-                this.heartsContainer.innerHTML = '';
-                this.heartsContainer.dataset.hp = String(Math.ceil(this.hp));
-
-                for (let i = 1; i <= maxHearts; i++) {
-                    const heart = document.createElement('div');
-                    heart.className = 'heart';
-                    if (i > currentHearts) {
-                        heart.classList.add('empty');
-                    }
-                    this.heartsContainer.appendChild(heart);
-                }
-            }
-        }
-
-        // Abilities UI
-        if (this.iconGlide) {
-            this.iconGlide.style.opacity = this.canGlide ? (this.state === 'GLIDE' ? '1.0' : '0.5') : '0.1';
-            this.iconGlide.style.border = this.state === 'GLIDE' ? '2px solid #00ff00' : '2px solid #fff';
-        }
-        if (this.iconSurf) {
-            this.iconSurf.style.opacity = this.canSurf ? (this.state === 'SURF' ? '1.0' : '0.5') : '0.1';
-            this.iconSurf.style.border = this.state === 'SURF' ? '2px solid #00ff00' : '2px solid #fff';
-        }
+        if (!this.game.ui) return;
+        this.game.ui.updateStamina(this.stamina, this.maxStamina);
+        this.game.ui.updateHearts(this.hp, this.maxHp);
     }
 
     getInputVector() {

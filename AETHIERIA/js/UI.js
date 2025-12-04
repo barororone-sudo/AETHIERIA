@@ -269,6 +269,47 @@ export class UIManager {
         });
     }
 
+    updateStamina(current, max) {
+        if (!this.staminaContainer) {
+            // Create if missing (or find existing)
+            this.staminaContainer = document.getElementById('stamina-container');
+            if (!this.staminaContainer) {
+                // Inject if totally missing
+                this.staminaContainer = document.createElement('div');
+                this.staminaContainer.id = 'stamina-container';
+                this.staminaContainer.style.position = 'absolute';
+                this.staminaContainer.style.top = '50px';
+                this.staminaContainer.style.left = '50px';
+                this.staminaContainer.style.width = '200px';
+                this.staminaContainer.style.height = '20px';
+                this.staminaContainer.style.background = '#333';
+                this.staminaContainer.style.border = '2px solid white';
+                this.staminaContainer.style.borderRadius = '10px';
+                this.staminaContainer.style.overflow = 'hidden';
+
+                const bar = document.createElement('div');
+                bar.id = 'stamina-bar';
+                bar.style.width = '100%';
+                bar.style.height = '100%';
+                bar.style.background = '#00ff00';
+                bar.style.transition = 'width 0.1s';
+                this.staminaContainer.appendChild(bar);
+
+                document.body.appendChild(this.staminaContainer);
+            }
+        }
+
+        const bar = this.staminaContainer.querySelector('#stamina-bar') || this.staminaContainer.children[0];
+        if (bar) {
+            const pct = Math.max(0, (current / max) * 100);
+            bar.style.width = `${pct}%`;
+
+            // Color change on low stamina
+            if (pct < 20) bar.style.background = '#ff0000';
+            else bar.style.background = '#00ff00';
+        }
+    }
+
     renderStats() {
         const p = this.game.player;
         this.stats.innerHTML = `

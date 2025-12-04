@@ -25,8 +25,8 @@ export class World {
         /** @type {CANNON.Material} */
         this.defaultMaterial = new CANNON.Material('default');
         const defaultContactMaterial = new CANNON.ContactMaterial(this.defaultMaterial, this.defaultMaterial, {
-            friction: 0.3,
-            restitution: 0.3,
+            friction: 0.9,
+            restitution: 0.0, // No bounce
         });
         this.physicsWorld.addContactMaterial(defaultContactMaterial);
 
@@ -58,6 +58,7 @@ export class World {
         this.createClouds();
         // this.createGrassField(); // Replaced by TerrainManager
         // this.createPhysicsFloor(this.defaultMaterial); // Replaced by TerrainManager
+        this.createWater();
 
         // --- GAMEPLAY OBJECTS ---
         this.interactables = [];
@@ -294,6 +295,22 @@ export class World {
             this.clouds.add(cloud);
         }
         this.scene.add(this.clouds);
+    }
+
+    createWater() {
+        const geometry = new THREE.PlaneGeometry(10000, 10000);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x0099ff,
+            transparent: true,
+            opacity: 0.6,
+            roughness: 0.1,
+            metalness: 0.1,
+            side: THREE.DoubleSide
+        });
+        this.water = new THREE.Mesh(geometry, material);
+        this.water.rotation.x = -Math.PI / 2;
+        this.water.position.y = 1.5; // Sea Level
+        this.scene.add(this.water);
     }
 
     createGrassField() {
