@@ -13,6 +13,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 // @ts-ignore
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { ToonMaterial } from './materials/ToonMaterial.js';
+import { generateCharacter } from './character.js';
 
 /**
  * @typedef {Object} Limb
@@ -33,9 +34,14 @@ export class Player {
 
         this.hp = 100;
         this.maxHp = 100;
+
+        // Procedural Character Data
+        this.characterData = generateCharacter();
+        this.applyCharacterData();
+
         this.stats = {
-            attack: 10,
-            defense: 5
+            attack: this.characterData.stats.atk,
+            defense: this.characterData.stats.def
         };
 
         // Inventory
@@ -57,6 +63,7 @@ export class Player {
 
         this.lastJumpTime = 0;
         this.stepTimer = 0;
+        this.lastGenTime = 0; // Debounce for scroll wheel
 
         // Camera State
         this.cameraState = {
@@ -103,7 +110,7 @@ export class Player {
         this.currentComboIndex = 0;
 
         this.initInput();
-        this.initUI();
+        this.initUI(); // Now binds character data
         this.initPhysics();
         this.initVisuals();
 
@@ -143,6 +150,19 @@ export class Player {
                 }
             }
         });
+
+        // Scroll Wheel to Generate Variant
+        document.addEventListener('wheel', (e) => {
+            if (Date.now() - this.lastGenTime < 200) return; // Debounce
+            this.lastGenTime = Date.now();
+
+            this.characterData = generateCharacter();
+            this.applyCharacterData();
+            this.initVisuals();
+
+            // Optional: Play sound or show small popup?
+            console.log("New Variant Generated:", this.characterData.name);
+        });
     }
 
     initPhysics() {
@@ -180,10 +200,10 @@ export class Player {
 
         // --- CYBER-BOT AVATAR ---
 
-        // 1. Body (Black Box)
+        // 1. Body (Black Box -> Palette[1])
         const bodyGeo = new THREE.BoxGeometry(0.6, 1.2, 0.4);
         const bodyMat = new THREE.MeshStandardMaterial({
-            color: 0x111111,
+            color: new THREE.Color(this.characterData.palette[1]),
             roughness: 0.7,
             metalness: 0.5
         });
@@ -193,22 +213,22 @@ export class Player {
         this.bodyMesh.receiveShadow = true;
         this.mesh.add(this.bodyMesh);
 
-        // 2. Visor (Neon Red Eye)
+        // 2. Visor (Neon Red Eye -> Palette[2])
         const visorGeo = new THREE.BoxGeometry(0.4, 0.1, 0.1);
         const visorMat = new THREE.MeshStandardMaterial({
-            color: 0xff0000,
-            emissive: 0xff0000,
+            color: new THREE.Color(this.characterData.palette[2]),
+            emissive: new THREE.Color(this.characterData.palette[2]),
             emissiveIntensity: 2.0
         });
         this.visor = new THREE.Mesh(visorGeo, visorMat);
         this.visor.position.set(0, 0.3, 0.2); // Front of face
         this.bodyMesh.add(this.visor);
 
-        // 3. Floating Hands (Rayman Style)
+        // 3. Floating Hands (Rayman Style -> Palette[0])
         const handGeo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
         const handMat = new THREE.MeshStandardMaterial({
-            color: 0x00ffff,
-            emissive: 0x00ffff,
+            color: new THREE.Color(this.characterData.palette[0]),
+            emissive: new THREE.Color(this.characterData.palette[0]),
             emissiveIntensity: 0.5
         });
 
@@ -229,7 +249,7 @@ export class Player {
         this.rightHand.add(this.weaponSlot);
 
         // 4. Ambient Glow (PointLight)
-        const light = new THREE.PointLight(0x00ffff, 2, 5);
+        const light = new THREE.PointLight(this.characterData.palette[2], 2, 5);
         light.position.set(0, 1, 0);
         this.mesh.add(light);
 
@@ -273,8 +293,16 @@ export class Player {
         });
     }
 
+    applyCharacterData() {
+        this.hp = this.characterData.stats.hp;
+        this.maxHp = this.characterData.stats.hp;
+        this.maxStamina = this.characterData.stats.stamina;
+        this.stamina = this.maxStamina;
+    }
+
     initUI() {
         // Deprecated: UI is managed by UIManager
+        // Character generation is now handled via Scroll Wheel
     }
 
     /**
@@ -543,7 +571,79 @@ export class Player {
     /**
      * @param {number} dt
      */
+    /**
+     * @param {number} dt
+     */
     updateVisuals(dt) {
+        if (!this.bodyMesh || !this.leftHand || !this.rightHand) return;
+
+        const time = Date.now() * 0.001;
+
+        // 1. Hover Effect (Idle)
+        const hoverY = Math.sin(time * 3) * 0.05;
+        this.bodyMesh.position.y = 0.6 + hoverY;
+
+        // 2. Run Tilt
+        const tiltAmount = Math.min(this.currentSpeed * 0.05, 0.5);
+        this.bodyMesh.rotation.x = tiltAmount;
+
+        // 3. Hand Animation
+        if (this.currentSpeed > 1.0) {
+            const swingSpeed = 10;
+            const swingAmp = 0.5;
+            this.leftHand.position.z = Math.sin(time * swingSpeed) * swingAmp;
+            this.rightHand.position.z = Math.cos(time * swingSpeed) * swingAmp;
+        } else {
+            this.leftHand.position.z = THREE.MathUtils.lerp(this.leftHand.position.z, 0, dt * 5);
+            this.rightHand.position.z = THREE.MathUtils.lerp(this.rightHand.position.z, 0, dt * 5);
+
+            this.leftHand.position.y = Math.sin(time * 2) * 0.02;
+            this.rightHand.position.y = Math.cos(time * 2) * 0.02;
+        }
+
+        // 4. Attack Animation Override (Procedural Combo)
+        if (this.isAttacking) {
+            this.attackTimer += dt;
+            const progress = Math.min(this.attackTimer / this.attackDuration, 1.0);
+
+            // Easing (EaseOutQuad)
+            const t = 1 - (1 - progress) * (1 - progress);
+
+            if (this.currentComboIndex === 0) {
+                this.rightHand.rotation.y = THREE.MathUtils.lerp(-Math.PI / 2, Math.PI / 2, t);
+                this.rightHand.position.z = 0.5 * Math.sin(t * Math.PI);
+            } else if (this.currentComboIndex === 1) {
+                this.rightHand.rotation.y = THREE.MathUtils.lerp(Math.PI / 2, -Math.PI / 2, t);
+                this.rightHand.position.z = 0.5 * Math.sin(t * Math.PI);
+            } else if (this.currentComboIndex === 2) {
+                this.rightHand.rotation.x = THREE.MathUtils.lerp(-Math.PI / 4, Math.PI / 2, t);
+                this.rightHand.position.y = 0.5 - t * 0.5;
+            }
+
+            if (progress >= 1.0) {
+                this.isAttacking = false;
+            }
+        } else {
+            this.rightHand.rotation.x = THREE.MathUtils.lerp(this.rightHand.rotation.x, 0, dt * 10);
+            this.rightHand.rotation.y = THREE.MathUtils.lerp(this.rightHand.rotation.y, 0, dt * 10);
+            this.rightHand.rotation.z = THREE.MathUtils.lerp(this.rightHand.rotation.z, 0, dt * 10);
+        }
+    }
+
+    /**
+     * @param {number} comboIndex
+     */
+    triggerAttackVisuals(comboIndex) {
+        this.isAttacking = true;
+        this.attackTimer = 0;
+        this.currentComboIndex = comboIndex;
+        this.attackDuration = (comboIndex === 2) ? 0.4 : 0.25;
+    }
+
+    /**
+     * @param {number} dt
+     */
+    updateCamera(dt) {
         if (!this.mesh) return;
         // Camera Target (Shoulders/Head)
         const targetPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.6, 0)); // Was 1.5
