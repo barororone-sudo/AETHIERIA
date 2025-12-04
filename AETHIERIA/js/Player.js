@@ -591,7 +591,14 @@ export class Player {
             this.body.linearDamping = 0.1; // Was 0.9, caused sluggishness
         }
 
-        // Anti-Slide on Slopes (Force Stop)
+        // Anti-Slide on Slopes (Force Stop) & Damping
+        if (speed < 0.1 && this.state !== 'SURF' && this.state !== 'AIR') {
+            // High damping to stop immediately
+            this.body.linearDamping = 0.9;
+        } else {
+            this.body.linearDamping = 0.1;
+        }
+
         if (grounded && speed < 0.1 && this.state !== 'SURF') {
             // Manual Friction to stop sliding
             this.body.velocity.x *= 0.5;
@@ -629,7 +636,28 @@ export class Player {
 
         // Apply Velocity
         if (speed > 0.1 || this.currentSpeed > 0.1) {
-            const moveDir = input.clone().normalize();
+            let moveDir = input.clone().normalize();
+
+            // Slope Physics: Project movement onto ground plane
+            if (grounded && this.world && this.world.terrainManager) {
+                const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+                const rayDir = new THREE.Vector3(0, -1, 0);
+                const raycaster = new THREE.Raycaster(rayOrigin, rayDir, 0, 2.0);
+                if (this.world.terrainManager.group) {
+                    const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
+                    if (intersects.length > 0 && intersects[0].face) {
+                        const normal = intersects[0].face.normal.clone();
+                        // Transform normal to world space if needed (usually local if terrain is static, but let's be safe)
+                        const object = intersects[0].object;
+                        if (object && /** @type {THREE.Mesh} */(object).isMesh) {
+                            normal.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(object.matrixWorld));
+                        }
+
+                        // Project and normalize
+                        moveDir.projectOnPlane(normal).normalize();
+                    }
+                }
+            }
 
             // Movement Logic
             if (this.state === 'GLIDE') {
@@ -648,6 +676,14 @@ export class Player {
                 // Direct control on ground
                 this.body.velocity.x = moveDir.x * this.currentSpeed;
                 this.body.velocity.z = moveDir.z * this.currentSpeed;
+                // Note: We don't set Y here, gravity/slope projection handles it
+                // Actually, for full slope support with direct velocity, we might want to apply the Y component of moveDir too if it's significant?
+                // The user asked to "Applique la vitesse sur ce nouveau vecteur".
+                // If we only set X and Z, we lose the slope climb capability.
+                // So we should add the Y component if we are on a slope.
+                if (moveDir.y !== 0) {
+                    this.body.velocity.y = moveDir.y * this.currentSpeed;
+                }
             } else {
                 // Air control (limited)
                 this.body.velocity.x += moveDir.x * dt * 5;
@@ -764,14 +800,14 @@ export class Player {
                 // Anti-Wall-Run: If trying to move but blocked (low velocity), play IDLE
                 // We check if input is active (implied by state RUN/WALK usually, but let's trust the state)
                 // If velocity is very low, we are likely pushing a wall.
-                if (velocity < 0.5) {
+                if (velocity < 0.1) {
                     this.playAnimation('IDLE');
                 } else {
                     this.playAnimation('RUN');
                     // Dynamic TimeScale for "No Skating"
                     if (this.currentAction) {
-                        // Base speed is ~5.0 for 1.0 scale. Adjust as needed.
-                        let scale = velocity / 5.0;
+                        // User requested velocity.length() / 7.0
+                        let scale = velocity / 7.0;
                         // Clamp to avoid super slow/fast animation
                         scale = Math.max(0.5, Math.min(scale, 2.0));
                         this.currentAction.timeScale = scale;
@@ -812,8 +848,9 @@ export class Player {
         // Camera Collision with Terrain
         if (this.world && this.world.terrainManager) {
             const camH = this.world.terrainManager.getGlobalHeight(this.camera.position.x, this.camera.position.z);
-            if (this.camera.position.y < camH + 0.5) {
-                this.camera.position.y = camH + 0.5;
+            if (this.camera.position.y < camH + 1.0) {
+                const targetY = camH + 1.0;
+                this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetY, dt * 10);
             }
         }
 
