@@ -12,6 +12,7 @@ import { SwordTrail } from './VFX.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 // @ts-ignore
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { ToonMaterial } from './materials/ToonMaterial.js';
 
 /**
  * @typedef {Object} Limb
@@ -188,11 +189,35 @@ export class Player {
             const model = gltf.scene;
             model.scale.set(1.0, 1.0, 1.0);
 
-            // Shadows
+            // Shadows & Toon Material
             model.traverse((/** @type {THREE.Object3D} */ child) => {
                 if (/** @type {THREE.Mesh} */(child).isMesh) {
                     child.castShadow = true;
                     child.receiveShadow = true;
+
+                    // Apply Toon Material
+                    const mesh = /** @type {THREE.Mesh} */(child);
+                    if (mesh.material) {
+                        const oldMat = /** @type {THREE.MeshStandardMaterial} */(mesh.material);
+
+                        // Handle Array of Materials (rare for GLB characters but possible)
+                        if (Array.isArray(oldMat)) {
+                            // Not supported yet for simplicity, keep original
+                        } else {
+                            const newMat = new ToonMaterial({
+                                map: oldMat.map || null,
+                                uColor: new THREE.Color(0xffffff),
+                                uRimColor: new THREE.Color(0xffffff),
+                                uRimAmount: 0.6,
+                                uRimThreshold: 0.4
+                            });
+
+                            // Dispose old material
+                            // oldMat.dispose(); // Good practice but maybe risky if shared
+
+                            mesh.material = newMat;
+                        }
+                    }
                 }
             });
 
@@ -552,143 +577,80 @@ export class Player {
     updatePhysics(dt) {
         if (!this.mesh || !this.body) return;
 
-        // Combat Lock: Stop movement/rotation during attack
+        // 1. Combat Lock
         if (this.combat && this.combat.isAttacking) {
             this.body.velocity.x = 0;
             this.body.velocity.z = 0;
-            this.currentSpeed = 0;
-
-            // Keep Gravity/Downforce
-            const grounded = this.checkGround();
-            if (grounded && this.state !== 'AIR' && this.state !== 'SWIM') {
-                this.body.velocity.y -= 10 * dt;
-            }
-
-            // Sync Mesh (Position only, NO rotation update)
-            const physicsOffset = 0.5;
+            // Sync visuel simple
             this.mesh.position.copy(this.body.position);
-            this.mesh.position.y -= physicsOffset;
-
-            return; // Skip rest of movement logic
+            this.mesh.position.y -= 0.5;
+            return;
         }
 
         const input = this.getInputVector();
-        const speed = input.length();
+        const inputLen = input.length();
         const grounded = this.checkGround();
 
-        // Friction Control (Anti-Slide)
-        if (this.state === 'SURF') {
-            // Slippery
-            this.body.material = this.world.slipperyMaterial || null;
-            this.body.linearDamping = 0.1;
-        } else if (this.state === 'SWIM') {
-            // Water Drag
-            this.body.material = null;
-            this.body.linearDamping = 0.5; // High drag
-        } else {
-            // Grippy (but smooth movement)
-            this.body.material = null; // Default friction
-            this.body.linearDamping = 0.1; // Was 0.9, caused sluggishness
-        }
-
-        // Anti-Slide on Slopes (Force Stop) & Damping
-        if (speed < 0.1 && this.state !== 'SURF' && this.state !== 'AIR') {
-            // High damping to stop immediately
-            this.body.linearDamping = 0.9;
-        } else {
-            this.body.linearDamping = 0.1;
-        }
-
-        if (grounded && speed < 0.1 && this.state !== 'SURF') {
-            // Manual Friction to stop sliding
+        // 2. Gestion de la Friction (CRITIQUE : 0 friction quand on bouge)
+        if (inputLen > 0.1) {
+            this.body.linearDamping = 0.0; // Glisse parfaite
+        } else if (grounded) {
+            this.body.linearDamping = 0.9; // Freinage sec à l'arrêt
             this.body.velocity.x *= 0.5;
             this.body.velocity.z *= 0.5;
-            this.body.angularVelocity.set(0, 0, 0);
-            this.currentSpeed = 0;
         }
 
-        // Artificial Gravity/Downforce
-        if (grounded && this.state !== 'AIR' && this.state !== 'SWIM') {
-            this.body.velocity.y -= 10 * dt; // Stick to ground
-        }
+        // 3. Vitesse Cible (Boostée)
+        let targetSpeed = 10; // Walk
+        if (this.state === 'RUN') targetSpeed = 18; // Run boosté
+        if (this.state === 'SPRINT') targetSpeed = 24;
 
-        // Buoyancy (Swim)
-        if (this.state === 'SWIM') {
-            if (this.mesh.position.y < 1.5) {
-                this.body.velocity.y += 15 * dt; // Float up
-            }
-            // Cap vertical speed
-            if (this.body.velocity.y > 2) this.body.velocity.y = 2;
-        }
+        const accel = (this.state === 'IDLE') ? 10.0 : 5.0;
+        this.currentSpeed = THREE.MathUtils.lerp(this.currentSpeed, targetSpeed * inputLen, dt * accel);
 
-        // Target Speed
-        let targetSpeed = 0;
-        if (this.state === 'WALK') targetSpeed = 6;
-        if (this.state === 'RUN') targetSpeed = 12;
-        if (this.state === 'SWIM') targetSpeed = 4;
-        if (this.state === 'AIR') targetSpeed = 6; // Better air control
-        if (this.state === 'GLIDE') targetSpeed = 10; // Faster glide
-        if (this.state === 'SURF') targetSpeed = 20; // FAST SURF
+        // 4. Application Mouvement
+        let moveDir = input.clone().normalize();
 
-        // Inertia
-        const accel = (this.state === 'IDLE') ? 10.0 : 2.0;
-        this.currentSpeed = THREE.MathUtils.lerp(this.currentSpeed, targetSpeed * speed, dt * accel);
+        if (grounded && this.world && this.world.terrainManager) {
+            // Raycast Sol
+            const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+            const raycaster = new THREE.Raycaster(rayOrigin, new THREE.Vector3(0, -1, 0), 0, 2.5);
+            const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
 
-        // Apply Velocity
-        if (speed > 0.1 || this.currentSpeed > 0.1) {
-            let moveDir = input.clone().normalize();
+            if (intersects.length > 0) {
+                // Pente détectée : on projette
+                const groundNormal = intersects[0].face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(intersects[0].object.matrixWorld)).normalize();
+                moveDir.projectOnPlane(groundNormal).normalize();
 
-            // Slope Physics: Project movement onto ground plane
-            if (grounded && this.world && this.world.terrainManager) {
-                const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0));
-                const rayDir = new THREE.Vector3(0, -1, 0);
-                const raycaster = new THREE.Raycaster(rayOrigin, rayDir, 0, 2.0);
-                if (this.world.terrainManager.group) {
-                    const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
-                    if (intersects.length > 0 && intersects[0].face) {
-                        const normal = intersects[0].face.normal.clone();
-                        // Transform normal to world space if needed (usually local if terrain is static, but let's be safe)
-                        const object = intersects[0].object;
-                        if (object && /** @type {THREE.Mesh} */(object).isMesh) {
-                            normal.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(object.matrixWorld));
-                        }
-
-                        // Project and normalize
-                        moveDir.projectOnPlane(normal).normalize();
-                    }
-                }
+                // Alignement Visuel (Pente)
+                const targetUp = groundNormal;
+                const alignQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), targetUp);
+                const yQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.mesh.rotation.y);
+                this.mesh.quaternion.slerp(alignQuat.multiply(yQuat), dt * 10);
             }
 
-            // Movement Logic
-            if (this.state === 'GLIDE') {
+            // APPLICATION VÉLOCITÉ AU SOL
+            if (inputLen > 0.1) {
                 this.body.velocity.x = moveDir.x * this.currentSpeed;
                 this.body.velocity.z = moveDir.z * this.currentSpeed;
-                this.body.velocity.y = Math.max(this.body.velocity.y, -2);
-            } else if (this.state === 'SURF') {
-                // Physics-based sliding + input influence
-                this.body.velocity.x += moveDir.x * dt * 5;
-                this.body.velocity.z += moveDir.z * dt * 5;
-            } else if (this.state === 'SWIM') {
-                // Swimming movement
-                this.body.velocity.x += moveDir.x * dt * 10;
-                this.body.velocity.z += moveDir.z * dt * 10;
-            } else if (grounded) {
-                // Direct control on ground
-                this.body.velocity.x = moveDir.x * this.currentSpeed;
-                this.body.velocity.z = moveDir.z * this.currentSpeed;
-                // Note: We don't set Y here, gravity/slope projection handles it
-                // Actually, for full slope support with direct velocity, we might want to apply the Y component of moveDir too if it's significant?
-                // The user asked to "Applique la vitesse sur ce nouveau vecteur".
-                // If we only set X and Z, we lose the slope climb capability.
-                // So we should add the Y component if we are on a slope.
-                if (moveDir.y !== 0) {
+
+                // "Step Assist" : Si on monte (moveDir.y > 0), on aide un peu.
+                // Si on est plat, on laisse la physique gérer le Y ou on met 0.
+                if (moveDir.y > 0) {
                     this.body.velocity.y = moveDir.y * this.currentSpeed;
+                } else {
+                    // Petite levitation pour éviter de racler le sol
+                    // this.body.velocity.y = 0; 
                 }
-            } else {
-                // Air control (limited)
-                this.body.velocity.x += moveDir.x * dt * 5;
-                this.body.velocity.z += moveDir.z * dt * 5;
-                // Clamp air speed
+            }
+
+        } else {
+            // EN L'AIR
+            if (inputLen > 0.1) {
+                this.body.velocity.x += moveDir.x * dt * 20;
+                this.body.velocity.z += moveDir.z * dt * 20;
+
+                // Clamp Air Speed
                 const hVel = new THREE.Vector2(this.body.velocity.x, this.body.velocity.z);
                 if (hVel.length() > targetSpeed) {
                     hVel.normalize().multiplyScalar(targetSpeed);
@@ -696,73 +658,31 @@ export class Player {
                     this.body.velocity.z = hVel.y;
                 }
             }
+            // Gravité
+            if (this.state !== 'SWIM') this.body.velocity.y -= 30 * dt;
+
+            // Reset rotation visuelle X/Z en l'air
+            const yQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.mesh.rotation.y);
+            this.mesh.quaternion.slerp(yQuat, dt * 5);
         }
 
-        // Rotation (Follow Velocity)
-        const velocity = new THREE.Vector2(this.body.velocity.x, this.body.velocity.z);
-        if (velocity.length() > 0.1) {
-            const targetRotation = Math.atan2(velocity.x, velocity.y); // Note: atan2(x, y) for Three.js Y-rotation
-            const currentRotation = this.mesh.rotation.y;
+        // 5. Rotation Personnage (Direction Input)
+        const velocityXY = new THREE.Vector2(this.body.velocity.x, this.body.velocity.z);
+        if (inputLen > 0.1) { // On utilise l'input pour tourner, plus réactif que la vélocité
+            const targetRotationY = Math.atan2(input.x, input.z) + this.cameraState.theta; // Ajuste selon caméra si besoin, ou juste input world space
+            // Note: getInputVector renvoie déjà en world space relative caméra, donc :
+            const targetRot = Math.atan2(input.x, input.z);
 
-            // Shortest path interpolation
-            let diff = targetRotation - currentRotation;
+            let currentRot = this.mesh.rotation.y;
+            let diff = targetRot - currentRot;
             while (diff > Math.PI) diff -= Math.PI * 2;
             while (diff < -Math.PI) diff += Math.PI * 2;
-
-            // Smooth lerp
-            this.mesh.rotation.y += diff * dt * 10;
-            this.rotationVelocity = diff;
+            this.mesh.rotation.y += diff * dt * 15;
         }
 
-        // Sync Mesh
-        // Body is a Sphere of radius 0.5
-        const physicsOffset = 0.5;
-
+        // 6. Sync Mesh
         this.mesh.position.copy(this.body.position);
-        this.mesh.position.y -= physicsOffset; // Pivot at feet
-
-        // Slope Alignment
-        if (grounded && this.world && this.world.terrainManager) {
-            // Raycast down to find normal
-            const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0));
-            const rayDir = new THREE.Vector3(0, -1, 0);
-            const raycaster = new THREE.Raycaster(rayOrigin, rayDir, 0, 2.0);
-
-            // Use terrainManager.group for intersection
-            if (this.world.terrainManager.group) {
-                // Raycast against the entire terrain group (recursive)
-                const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
-                if (intersects.length > 0) {
-                    const normal = intersects[0].face.normal;
-
-                    // Transform normal to world space
-                    const object = /** @type {any} */ (intersects[0].object);
-                    if (object && object.isMesh) {
-                        normal.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(object.matrixWorld));
-                    }
-
-                    const targetUp = normal.clone();
-
-                    // Calculate target quaternion based on normal
-                    const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), targetUp);
-
-                    // Combine with Y rotation (Direction)
-                    const yRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.mesh.rotation.y);
-                    targetQuat.multiply(yRotation);
-
-                    // Smoothly interpolate
-                    this.mesh.quaternion.slerp(targetQuat, dt * 10);
-                    return; // Skip default rotation sync
-                }
-            }
-        }
-
-        // Default Rotation (if not on slope or no normal found)
-        // We already set rotation.y above based on velocity.
-        // Just ensure we reset X/Z rotation if we were on a slope and now are not.
-        // But wait, we are modifying mesh.rotation.y directly above. 
-        // If we use quaternion slerp, we should probably stick to quaternions.
-        // For now, let's just leave the default behavior if no slope found.
+        this.mesh.position.y -= 0.5;
     }
     /**
      * @param {number} dt
