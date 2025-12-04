@@ -10,6 +10,8 @@ import { InventoryManager } from './managers/InventoryManager.js';
 import { SwordTrail } from './VFX.js';
 // @ts-ignore
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+// @ts-ignore
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 /**
  * @typedef {Object} Limb
@@ -142,10 +144,10 @@ export class Player {
 
     initPhysics() {
         if (!this.world) return;
-        // Capsule-like shape (Cylinder)
-        const radius = 0.4;
-        const height = 1.8;
-        const shape = new CANNON.Cylinder(radius, radius, height, 8);
+        if (!this.world) return;
+        // Sphere shape for smoother movement
+        const radius = 0.5;
+        const shape = new CANNON.Sphere(radius);
 
         // Material
         const material = this.world.slipperyMaterial || new CANNON.Material('player');
@@ -154,7 +156,7 @@ export class Player {
             mass: 60, // kg
             material: material,
             shape: shape,
-            linearDamping: 0.9, // High damping for ground control
+            linearDamping: 0.1, // Lower damping for smoother movement (was 0.9)
             angularDamping: 0.9,
             fixedRotation: true // Prevent tipping over
         });
@@ -170,22 +172,6 @@ export class Player {
 
         // Load GLB
         this.loadGLB();
-
-        // Initialize Weapon Slot (Placeholder until bone attachment)
-        this.weaponSlot = new THREE.Group();
-        this.weaponSlot.position.set(0.2, 1.0, 0.3); // Approximate hand position
-        this.mesh.add(this.weaponSlot);
-
-        // Initialize Shield Group
-        this.shieldGroup = new THREE.Group();
-        this.shieldGroup.position.set(0, 1.0, -0.3); // Approximate back position
-        this.mesh.add(this.shieldGroup);
-
-        // Initialize Camera Lag
-        this.cameraLagPos.copy(this.mesh.position);
-
-        // Initialize Sword Trail
-        this.swordTrail = new SwordTrail(this.world.scene, 0x00FFFF, 20);
     }
 
     loadGLB() {
@@ -213,6 +199,57 @@ export class Player {
             if (this.mesh) this.mesh.add(model);
             this.glbModel = model;
 
+            // --- BONE SOCKET SYSTEM ---
+            // Find Right Hand Bone
+            /** @type {THREE.Object3D|null} */
+            let handBone = null;
+
+            // Priority List
+            const boneNames = ['RightHand', 'mixamorig:RightHand', 'Hand.R', 'RightHandIndex1'];
+
+            // First pass: Exact match or high priority
+            model.traverse((/** @type {any} */ child) => {
+                if (handBone) return; // Stop if found
+                if (child.isBone) {
+                    if (child.name === 'RightHand' || child.name === 'mixamorig:RightHand' || child.name === 'Hand.R') {
+                        handBone = child;
+                    }
+                }
+            });
+
+            // Second pass: Partial match if not found (but exclude fingers if possible)
+            if (!handBone) {
+                model.traverse((/** @type {any} */ child) => {
+                    if (handBone) return;
+                    if (child.isBone && child.name.includes('RightHand') && !child.name.includes('Pinky') && !child.name.includes('Index') && !child.name.includes('Thumb') && !child.name.includes('Middle') && !child.name.includes('Ring')) {
+                        handBone = child;
+                    }
+                });
+            }
+
+            // Fallback: If still not found, take anything with RightHand (even fingers, better than nothing)
+            if (!handBone) {
+                model.traverse((/** @type {any} */ child) => {
+                    if (handBone) return;
+                    if (child.isBone && child.name.includes('RightHand')) {
+                        handBone = child;
+                    }
+                });
+            }
+
+            if (handBone) {
+                console.log("Found Hand Bone:", handBone.name);
+                this.weaponSlot = new THREE.Group();
+                handBone.add(this.weaponSlot);
+
+                // Reset transform relative to bone
+                this.weaponSlot.position.set(0, 0, 0);
+                this.weaponSlot.rotation.set(0, 0, 0);
+                this.weaponSlot.scale.set(1, 1, 1);
+            } else {
+                console.warn("Right Hand Bone not found!");
+            }
+
             // Mixer Setup
             this.mixer = new THREE.AnimationMixer(model);
 
@@ -221,7 +258,8 @@ export class Player {
                 RUN: 'assets/déplacement.glb',
                 ATTACK: 'assets/sword_attack.glb',
                 CLIMB: 'assets/grimper.glb',
-                JUMP: 'assets/Jumping.glb'
+                JUMP: 'assets/Jumping.glb',
+                BOW: 'assets/arc.glb'
             };
 
             const promises = Object.entries(anims).map(([name, path]) => {
@@ -238,10 +276,10 @@ export class Player {
                 });
             });
 
-            // Also check if the main model has animations (e.g. default BOW)
+            // Also check if the main model has animations (e.g. default IDLE)
             if (gltf.animations.length > 0) {
                 if (this.animations) {
-                    this.animations['BOW'] = gltf.animations[0];
+                    this.animations['IDLE'] = gltf.animations[0];
                 }
             }
 
@@ -250,11 +288,61 @@ export class Player {
                     console.log("All animations loaded:", Object.keys(this.animations));
                     // Start Idle
                     this.playAnimation('IDLE');
+
+                    // Equip Starter Weapon
+                    this.equipWeapon('assets/sword_iron.glb');
                 }
             });
 
-        }, undefined, (error) => {
+        }, undefined, (/** @type {any} */ error) => {
             console.error('An error happened loading the GLB:', error);
+        });
+    }
+
+    /**
+     * @param {string} path 
+     */
+    equipWeapon(path) {
+        if (!this.weaponSlot) return;
+
+        // Clear existing
+        while (this.weaponSlot.children.length > 0) {
+            this.weaponSlot.remove(this.weaponSlot.children[0]);
+        }
+
+        const loader = new GLTFLoader();
+
+        // Setup Draco Loader
+        // @ts-ignore
+        const dracoLoader = new DRACOLoader();
+        // @ts-ignore
+        dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+        // @ts-ignore
+        loader.setDRACOLoader(dracoLoader);
+
+        loader.load(path, (/** @type {any} */ gltf) => {
+            const sword = gltf.scene;
+
+            // Adjust rotation to fit in hand (standard fix for many assets)
+            // Usually swords point UP (Y) or Forward (Z). In hand, Z is often "out" of palm.
+            // Let's try rotating -90 on X or Y. 
+            // For now, let's assume standard alignment and tweak if user complains.
+            // User suggested: "Applique une rotation par défaut si nécessaire (souvent -90° sur X ou Y)"
+            sword.rotation.x = -Math.PI / 2; // Common fix
+
+            sword.traverse((/** @type {THREE.Object3D} */ child) => {
+                if (/** @type {THREE.Mesh} */(child).isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+
+            if (this.weaponSlot) this.weaponSlot.add(sword);
+            console.log("Equipped Weapon:", path);
+
+            // Dispose Draco
+            // @ts-ignore
+            dracoLoader.dispose();
         });
     }
 
@@ -269,12 +357,13 @@ export class Player {
 
         const newClip = this.animations[name];
         const newAction = this.mixer.clipAction(newClip);
+        const currentAction = this.currentAction;
 
-        if (this.currentAction) {
+        if (currentAction) {
             // Crossfade
             newAction.reset();
             newAction.play();
-            this.currentAction.crossFadeTo(newAction, duration, true);
+            currentAction.crossFadeTo(newAction, duration, true);
         } else {
             newAction.play();
         }
@@ -283,14 +372,18 @@ export class Player {
             newAction.setLoop(THREE.LoopOnce, 1);
             newAction.clampWhenFinished = true;
 
-            const onFinished = (/** @type {any} */ e) => {
-                if (e.action === newAction) {
-                    if (this.mixer) this.mixer.removeEventListener('finished', onFinished);
-                    // Return to Idle
-                    this.playAnimation('IDLE', true, 0.2);
-                }
-            };
-            if (this.mixer) this.mixer.addEventListener('finished', onFinished);
+            // For JUMP, we want to clamp and NOT return to IDLE automatically (handled by state machine)
+            if (name !== 'JUMP') {
+                const mixer = this.mixer;
+                const onFinished = (/** @type {any} */ e) => {
+                    if (e.action === newAction) {
+                        mixer.removeEventListener('finished', onFinished);
+                        // Return to Idle
+                        this.playAnimation('IDLE', true, 0.2);
+                    }
+                };
+                mixer.addEventListener('finished', onFinished);
+            }
         } else {
             newAction.setLoop(THREE.LoopRepeat, Infinity);
             newAction.clampWhenFinished = false;
@@ -332,7 +425,7 @@ export class Player {
         }
 
         // Screen Shake Decay
-        if (this.shakeTimer > 0) {
+        if ((this.shakeTimer || 0) > 0) {
             this.shakeTimer -= dt;
             if (this.shakeTimer <= 0) this.shakeIntensity = 0;
         }
@@ -458,6 +551,27 @@ export class Player {
      */
     updatePhysics(dt) {
         if (!this.mesh || !this.body) return;
+
+        // Combat Lock: Stop movement/rotation during attack
+        if (this.combat && this.combat.isAttacking) {
+            this.body.velocity.x = 0;
+            this.body.velocity.z = 0;
+            this.currentSpeed = 0;
+
+            // Keep Gravity/Downforce
+            const grounded = this.checkGround();
+            if (grounded && this.state !== 'AIR' && this.state !== 'SWIM') {
+                this.body.velocity.y -= 10 * dt;
+            }
+
+            // Sync Mesh (Position only, NO rotation update)
+            const physicsOffset = 0.5;
+            this.mesh.position.copy(this.body.position);
+            this.mesh.position.y -= physicsOffset;
+
+            return; // Skip rest of movement logic
+        }
+
         const input = this.getInputVector();
         const speed = input.length();
         const grounded = this.checkGround();
@@ -472,9 +586,9 @@ export class Player {
             this.body.material = null;
             this.body.linearDamping = 0.5; // High drag
         } else {
-            // Grippy
+            // Grippy (but smooth movement)
             this.body.material = null; // Default friction
-            this.body.linearDamping = 0.9;
+            this.body.linearDamping = 0.1; // Was 0.9, caused sluggishness
         }
 
         // Anti-Slide on Slopes (Force Stop)
@@ -565,10 +679,54 @@ export class Player {
         }
 
         // Sync Mesh
-        const physicsHeight = 1.8;
-        const physicsOffset = physicsHeight / 2;
+        // Body is a Sphere of radius 0.5
+        const physicsOffset = 0.5;
+
         this.mesh.position.copy(this.body.position);
         this.mesh.position.y -= physicsOffset; // Pivot at feet
+
+        // Slope Alignment
+        if (grounded && this.world && this.world.terrainManager) {
+            // Raycast down to find normal
+            const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+            const rayDir = new THREE.Vector3(0, -1, 0);
+            const raycaster = new THREE.Raycaster(rayOrigin, rayDir, 0, 2.0);
+
+            // Use terrainManager.group for intersection
+            if (this.world.terrainManager.group) {
+                // Raycast against the entire terrain group (recursive)
+                const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
+                if (intersects.length > 0) {
+                    const normal = intersects[0].face.normal;
+
+                    // Transform normal to world space
+                    const object = /** @type {any} */ (intersects[0].object);
+                    if (object && object.isMesh) {
+                        normal.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(object.matrixWorld));
+                    }
+
+                    const targetUp = normal.clone();
+
+                    // Calculate target quaternion based on normal
+                    const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), targetUp);
+
+                    // Combine with Y rotation (Direction)
+                    const yRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.mesh.rotation.y);
+                    targetQuat.multiply(yRotation);
+
+                    // Smoothly interpolate
+                    this.mesh.quaternion.slerp(targetQuat, dt * 10);
+                    return; // Skip default rotation sync
+                }
+            }
+        }
+
+        // Default Rotation (if not on slope or no normal found)
+        // We already set rotation.y above based on velocity.
+        // Just ensure we reset X/Z rotation if we were on a slope and now are not.
+        // But wait, we are modifying mesh.rotation.y directly above. 
+        // If we use quaternion slerp, we should probably stick to quaternions.
+        // For now, let's just leave the default behavior if no slope found.
     }
     /**
      * @param {number} dt
@@ -576,29 +734,51 @@ export class Player {
     updateVisuals(dt) {
         // --- GLB ANIMATION STATE MACHINE ---
         if (this.mixer && this.animations) {
-            // Prevent overriding one-shot animations (like ATTACK or BOW)
-            if (this.currentAnimName === 'ATTACK' && this.currentAction && this.currentAction.isRunning()) {
-                this.mixer.update(dt);
-                return;
-            }
-            if (this.currentAnimName === 'BOW' && this.currentAction && this.currentAction.isRunning()) {
-                this.mixer.update(dt);
+            // Priority 1: Jump (Air/Glide)
+            if (this.state === 'AIR' || this.state === 'GLIDE') {
+                this.playAnimation('JUMP', false);
                 return;
             }
 
-            if (this.combat && this.combat.isAttacking) {
-                this.playAnimation('ATTACK', false);
-            } else if (this.state === 'AIR' || this.state === 'GLIDE') {
-                this.playAnimation('JUMP', false);
-            } else if (this.state === 'RUN' || this.state === 'WALK') {
-                this.playAnimation('RUN');
-                // Adjust speed based on movement
-                if (this.currentAction) {
-                    this.currentAction.timeScale = this.state === 'RUN' ? 1.5 : 1.0;
+            // Priority 2: Combat
+            if (this.combat) {
+                if (this.combat.isAttacking) {
+                    this.playAnimation('ATTACK', false);
+                    this.mixer.update(dt);
+                    return;
                 }
-            } else if (this.state === 'CLIMB') {
+                if (this.combat.isAiming) {
+                    this.playAnimation('BOW', false); // or clamp
+                    this.mixer.update(dt);
+                    return;
+                }
+            }
+
+            // Priority 3: Movement
+            if (this.state === 'CLIMB') {
                 this.playAnimation('CLIMB');
-            } else if (this.state === 'IDLE') {
+            } else if (this.state === 'RUN' || this.state === 'WALK') {
+                // Calculate Real Velocity (Horizontal)
+                const velocity = new THREE.Vector2(this.body.velocity.x, this.body.velocity.z).length();
+
+                // Anti-Wall-Run: If trying to move but blocked (low velocity), play IDLE
+                // We check if input is active (implied by state RUN/WALK usually, but let's trust the state)
+                // If velocity is very low, we are likely pushing a wall.
+                if (velocity < 0.5) {
+                    this.playAnimation('IDLE');
+                } else {
+                    this.playAnimation('RUN');
+                    // Dynamic TimeScale for "No Skating"
+                    if (this.currentAction) {
+                        // Base speed is ~5.0 for 1.0 scale. Adjust as needed.
+                        let scale = velocity / 5.0;
+                        // Clamp to avoid super slow/fast animation
+                        scale = Math.max(0.5, Math.min(scale, 2.0));
+                        this.currentAction.timeScale = scale;
+                    }
+                }
+            } else {
+                // Default
                 this.playAnimation('IDLE');
             }
 
@@ -611,8 +791,8 @@ export class Player {
      */
     updateCamera(dt) {
         if (!this.mesh) return;
-        // Camera Target (Player Head)
-        const targetPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+        // Camera Target (Shoulders/Head)
+        const targetPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.6, 0)); // Was 1.5
 
         // Camera Lag
         this.cameraLagPos.lerp(targetPos, dt * 5); // Smooth follow
@@ -628,6 +808,14 @@ export class Player {
 
         this.camera.position.set(x, y, z);
         this.camera.lookAt(this.cameraLagPos);
+
+        // Camera Collision with Terrain
+        if (this.world && this.world.terrainManager) {
+            const camH = this.world.terrainManager.getGlobalHeight(this.camera.position.x, this.camera.position.z);
+            if (this.camera.position.y < camH + 0.5) {
+                this.camera.position.y = camH + 0.5;
+            }
+        }
 
         // Screen Shake
         if (this.shakeIntensity > 0) {

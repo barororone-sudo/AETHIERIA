@@ -209,7 +209,8 @@ export class Game {
 
         requestAnimationFrame(this.animate);
 
-        const dt = this.clock.getDelta();
+        let dt = this.clock.getDelta();
+        if (dt > 0.1) dt = 0.1; // Clamp dt to prevent physics explosion on tab switch
 
         // If Paused, skip logic updates but keep rendering (and UI)
         if (this.isPaused) {

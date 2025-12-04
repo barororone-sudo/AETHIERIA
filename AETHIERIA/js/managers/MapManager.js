@@ -469,16 +469,19 @@ export class MapManager {
         if (!icon) {
             icon = document.createElement('div');
             icon.className = 'map-icon-player';
-            // Style for player icon
+            // Style for player icon (Arrow)
             Object.assign(icon.style, {
-                width: '10px',
-                height: '10px',
-                backgroundColor: '#00ff00',
-                borderRadius: '50%',
+                width: '0',
+                height: '0',
+                borderLeft: '6px solid transparent',
+                borderRight: '6px solid transparent',
+                borderBottom: '12px solid #00ff00', // Arrow pointing UP
+                backgroundColor: 'transparent',
+                borderRadius: '0',
                 position: 'absolute',
                 transform: 'translate(-50%, -50%)',
-                border: '2px solid white',
-                zIndex: '10'
+                zIndex: '10',
+                filter: 'drop-shadow(0 0 2px black)'
             });
             this.iconLayer.appendChild(icon);
             this.icons.set('player', icon);
@@ -490,9 +493,12 @@ export class MapManager {
         icon.style.left = `${pos.x}px`;
         icon.style.top = `${pos.y}px`;
 
-        // Rotate icon based on camera angle
-        const angle = this.game.player.cameraState ? this.game.player.cameraState.theta : 0;
-        icon.style.transform = `translate(-50%, -50%) rotate(${-angle}rad)`;
+        // Rotate icon based on player rotation
+        // Mesh rotation Y: PI is Forward (-Z), 0 is Backward (+Z)
+        // Arrow default is UP (-Z)
+        // So we need to map PI -> 0 deg, 0 -> 180 deg
+        const rotation = this.game.player.mesh.rotation.y;
+        icon.style.transform = `translate(-50%, -50%) rotate(${-rotation + Math.PI}rad)`;
     }
 
     updateEnemyIcons() {
