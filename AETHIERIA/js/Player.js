@@ -56,8 +56,8 @@ export class Player {
         this.exhausted = false;
         this.staminaRegenRate = 10;
         this.staminaDrainRates = {
-            SPRINT: 20,
-            GLIDE: 15, // Balanced: not too short, not infinite
+            SPRINT: 15,
+            GLIDE: 8, // Balanced: ~12s flight time
             CLIMB: 15,
             SURF: 5,
             SWIM: 10
@@ -517,6 +517,54 @@ export class Player {
         return false;
     }
 
+    checkLedge() {
+        if (!this.mesh) return null;
+
+        // Raycast Definitions
+        const forward = this.getForwardVector();
+        const kneePos = this.mesh.position.clone().add(new THREE.Vector3(0, 0.5, 0)); // Knee/Waist
+        const headPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.8, 0)); // Head
+
+        const rayDist = 1.0; // Check 1m ahead
+
+        let kneeHit = false;
+        let headHit = false;
+        let wallObject = null;
+        let wallHeight = 0;
+
+        if (this.world && this.world.terrainManager) {
+            // Check Low
+            const rayLow = new THREE.Raycaster(kneePos, forward, 0, rayDist);
+            const hitsLow = rayLow.intersectObjects(this.world.terrainManager.group.children, true);
+            if (hitsLow.length > 0) {
+                kneeHit = true;
+                wallObject = hitsLow[0].object;
+            }
+
+            // Check High
+            const rayHigh = new THREE.Raycaster(headPos, forward, 0, rayDist);
+            const hitsHigh = rayHigh.intersectObjects(this.world.terrainManager.group.children, true);
+            if (hitsHigh.length > 0) {
+                headHit = true;
+            }
+        }
+
+        // MANTLE CONDITION: Knee hit but Head clear (Ledge)
+        if (kneeHit && !headHit && wallObject && this.world && this.world.terrainManager && this.world.terrainManager.group) {
+            // Find EXACT ledge height (raycast down from above)
+            // Start ray 1.8m up, 1m forward, look DOWN
+            const ledgeCheckOrigin = this.mesh.position.clone().addScaledVector(forward, 0.8).add(new THREE.Vector3(0, 2.5, 0));
+            const rayDown = new THREE.Raycaster(ledgeCheckOrigin, new THREE.Vector3(0, -1, 0), 0, 3.0);
+            const hitsDown = rayDown.intersectObjects(this.world.terrainManager.group.children, true);
+
+            if (hitsDown.length > 0) {
+                return { type: 'LEDGE', height: hitsDown[0].point.y };
+            }
+        }
+
+        return null; // No ledge
+    }
+
     unlockGlider() {
         this.canGlide = true;
         if (this.game.ui) this.game.ui.showToast("Paravoile Débloquée !");
@@ -543,7 +591,7 @@ export class Player {
                 if (!grounded) {
                     this.state = 'AIR';
                 } else if (this.input.keys.jump && !this.exhausted) {
-                    this.body.velocity.y = 15; // Balanced Jump (was 25, too high)
+                    this.body.velocity.y = 18; // Heroic Jump (User Request: 18)
                     this.state = 'AIR';
                     this.lastJumpTime = Date.now();
                 } else if (this.input.keys.crouch) {
@@ -557,6 +605,7 @@ export class Player {
                             this.state = 'RUN';
                         }
                     } else {
+                        // Safe Idling
                         this.state = 'IDLE';
                     }
                 }
@@ -590,10 +639,23 @@ export class Player {
                         // If ground is far enough (> 3m)
                         if (intersects.length > 0 && intersects[0].distance > 3.0) {
                             this.state = 'GLIDE';
+                            this.body.velocity.y = Math.max(this.body.velocity.y, -1.0); // Air Brake
+                            this.body.angularVelocity.set(0, 0, 0); // Stop spinning
+
+                            // Align rotation to camera/input immediately if moving
+                            const input = this.getInputVector();
+                            if (input.length() > 0) {
+                                const angle = Math.atan2(input.x, input.z);
+                                const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+                                this.body.quaternion.copy(q);
+                            }
+
                             this.hasReleasedJump = false; // Prevent spam
                         } else if (intersects.length === 0) {
                             // No ground found (void) -> Glide allowed
                             this.state = 'GLIDE';
+                            this.body.velocity.y = Math.max(this.body.velocity.y, -1.0); // Air Brake
+                            this.body.angularVelocity.set(0, 0, 0);
                             this.hasReleasedJump = false;
                         }
                     }
@@ -654,24 +716,6 @@ export class Player {
                         this.body.velocity.y = 6;
                         this.body.velocity.addScaledVector(this.getForwardVector(), -4);
                     }
-                } else if (grounded && this.input.keys.backward) {
-                    this.state = 'IDLE';
-                } else if (!this.checkWall()) {
-                    this.state = 'AIR';
-                }
-                break;
-
-            case 'SURF':
-                if (this.input.keys.jump && !this.exhausted) {
-                    // Exit Surf by Jump
-                    this.exitSurf();
-                    this.state = 'AIR';
-                    this.body.velocity.y = 5; // Small hop
-                    this.hasReleasedJump = false;
-                } else if (!this.input.keys.crouch || speed < 0.1 || this.exhausted) {
-                    // Exit Surf by Release Crouch or Stop
-                    this.exitSurf();
-                    this.state = grounded ? 'IDLE' : 'AIR';
                 }
                 break;
 
@@ -764,11 +808,29 @@ export class Player {
 
                 // Air Control
                 // Gravity Adjustment (Floatier Fall)
-                this.body.velocity.y -= 20 * dt; // Balanced Gravity (was 10, too floaty)
+                this.body.velocity.y -= 15 * dt; // Gravity (User Request: -15)
 
                 if (inputLen > 0) {
                     this.body.velocity.x += input.x * dt * 5;
                     this.body.velocity.z += input.z * dt * 5;
+
+                    // CHECK FOR MANTLE (Zelda Logic)
+                    // If moving forward into a wall in mid-air
+                    if (this.body.velocity.y < 5) { // Only when falling or peak jump
+                        const ledge = this.checkLedge();
+                        if (ledge) {
+                            // "Pop" up to ledge
+                            const targetY = ledge.height + 1.2; // Stand on top
+
+                            // Simple teleport/boost for now (Animation would be better)
+                            if (Math.abs(this.mesh.position.y - targetY) < 2.5) {
+                                this.body.position.y = THREE.MathUtils.lerp(this.body.position.y, targetY, 0.5);
+                                this.body.velocity.y = 5; // Little hop up
+                                this.body.velocity.addScaledVector(this.getForwardVector(), 5); // Push forward
+                                this.state = 'AIR'; // Stay air until grounded
+                            }
+                        }
+                    }
                 }
                 break;
 
@@ -784,22 +846,60 @@ export class Player {
                 }
                 break;
             case 'GLIDE':
-                this.body.velocity.y -= 5.0 * dt; // Gravity (prevent infinite flight)
-                const glideSpeed = 12;
-                const forward = this.getForwardVector();
+                // "Zelda Style" Flight Physics
 
-                // Constant forward speed
-                this.body.velocity.x = forward.x * glideSpeed;
-                this.body.velocity.z = forward.z * glideSpeed;
-
-                // Steering
-                if (inputLen > 0) {
-                    this.body.velocity.x += input.x * dt * 5;
-                    this.body.velocity.z += input.z * dt * 5;
+                // 1. Gravity / Lift
+                // Constant slow descent (Terminal Velocity)
+                const glideTerminalVelocity = -2.0;
+                if (this.body.velocity.y > glideTerminalVelocity) {
+                    this.body.velocity.y -= 5.0 * dt; // Gravity towards terminal
+                } else {
+                    this.body.velocity.y = glideTerminalVelocity; // Clamp
                 }
+
+                // 2. Movement
+                const baseGlideSpeed = 8.0; // Always move slightly
+                const boostSpeed = 12.0;
+
+                if (inputLen > 0) {
+                    // Active Control
+                    // Rotate character to face input direction smoothly
+                    const angle = Math.atan2(input.x, input.z);
+                    const targetQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+                    this.body.quaternion.slerp(targetQ, 0.1);
+
+                    // Move in facing direction
+                    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.body.quaternion);
+                    this.body.velocity.x = forward.x * boostSpeed;
+                    this.body.velocity.z = forward.z * boostSpeed;
+
+                } else {
+                    // Passive Gliding (Drifting forward)
+                    // If no input, keep current orientation but move slower
+                    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.body.quaternion);
+                    this.body.velocity.x = forward.x * baseGlideSpeed;
+                    this.body.velocity.z = forward.z * baseGlideSpeed;
+                }
+
+                // 3. Stabilization (Prevent twisting)
+                this.body.angularVelocity.set(0, 0, 0);
                 break;
 
             case 'SURF':
+                // Check for exit via JUMP
+                if (this.input.keys.jump && !this.exhausted) {
+                    this.exitSurf();
+                    this.state = 'AIR';
+                    this.body.velocity.y = 8;
+                    this.input.jumpTapCount = 0;
+                    this.hasReleasedJump = false;
+                }
+                // Check for exit via STOP or CROUCH RELEASE (optional, but good for control)
+                else if (!this.input.keys.crouch) {
+                    this.exitSurf();
+                    this.state = grounded ? 'IDLE' : 'AIR';
+                }
+
                 // Slope Physics
                 let slopeAngle = 0;
                 let onSlope = false;

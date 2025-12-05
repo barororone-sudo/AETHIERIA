@@ -157,34 +157,30 @@ export class MapManager {
         const cx = rect.width / 2;
         const cy = rect.height / 2;
 
-        // Screen Click relative to center
-        const mouseX = e.clientX - rect.left - cx;
-        const mouseY = e.clientY - rect.top - cy;
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
 
-        // World Pixel relative to center (unzoomed)
-        // mouseX = (WorldPixel - Center) * Zoom + Offset
-        // (mouseX - Offset) / Zoom + Center = WorldPixel
+        // We need to reverse the transform applied in update() to get Map Coordinates.
+        // update logic:
+        // tx = (cx + offset.x) - (center.x * zoom)
+        // ScreenX = mapX * zoom + tx
 
-        // We need WorldPixel relative to Map Center (0,0 is top-left of map image)
-        // But our math uses currentMapCenter (Player) as reference.
+        // Therefore:
+        // mapX * zoom = ScreenX - tx
+        // mapX = (ScreenX - tx) / zoom
 
-        // Let's use the same logic as Zoom:
-        // pMapRel = (mouseX - this.mapOffset.x) / this.targetZoom;
-        // This gives us pixels relative to the current center (Player).
+        // Reconstruct tx
+        let tx = (cx + this.mapOffset.x) - (this.currentMapCenter.x * this.zoom);
+        let ty = (cy + this.mapOffset.y) - (this.currentMapCenter.y * this.zoom);
 
-        const pMapRelX = (mouseX - this.mapOffset.x) / this.targetZoom;
-        const pMapRelY = (mouseY - this.mapOffset.y) / this.targetZoom;
-
-        // Absolute Map Pixel (relative to Player's Map Pos)
-        // MapPixel = PlayerMapPos + pMapRel
-
-        const mapPixelX = this.currentMapCenter.x + pMapRelX;
-        const mapPixelY = this.currentMapCenter.y + pMapRelY;
+        const mapPixelX = (clickX - tx) / this.zoom;
+        const mapPixelY = (clickY - ty) / this.zoom;
 
         // Convert Map Pixel to World
         // mapX = (worldX + worldSize/2) * scale
         // worldX = (mapX / scale) - worldSize/2
 
+        // mapSize = 2000, worldSize = 2000 => scale = 1
         const worldX = (mapPixelX / this.scale) - this.worldSize / 2;
         const worldZ = (mapPixelY / this.scale) - this.worldSize / 2;
 
@@ -196,65 +192,27 @@ export class MapManager {
         if (!this.isBigMap) return;
         e.preventDefault();
 
-        const rect = this.container.getBoundingClientRect();
-        const cx = rect.width / 2;
-        const cy = rect.height / 2;
-
-        // Mouse position relative to center
-        const mouseX = e.clientX - rect.left - cx;
-        const mouseY = e.clientY - rect.top - cy;
-
-        // Current World Point under mouse (before zoom)
-        // Screen = (Map - Center) * Zoom + Offset
-        // Map * Zoom = Screen - Offset + Center * Zoom
-        // Actually, let's use the transform logic from update():
-        // tx = (cx + offset.x) - (center.x * zoom)
-        // screenX = tx + mapPixelX * zoom
-        // screenX = cx + offset.x - center.x * zoom + mapPixelX * zoom
-        // screenX - cx - offset.x = (mapPixelX - center.x) * zoom
-        // (screenX - cx - offset.x) / zoom + center.x = mapPixelX
-
-        // Let's simplify:
-        // We want the point under the mouse to stay under the mouse.
-        // Point P_world is at Mouse_screen.
-        // P_screen_old = Mouse_screen
-        // P_screen_new = Mouse_screen
-
-        // P_screen = (P_map - Center_map) * Zoom + Offset + Center_screen
-        // We are changing Zoom to Zoom_new.
-        // We need to change Offset to Offset_new such that P_screen stays same.
-
-        // (P_map - Center_map) * Zoom_old + Offset_old = (P_map - Center_map) * Zoom_new + Offset_new
-        // Offset_new = Offset_old + (P_map - Center_map) * (Zoom_old - Zoom_new)
-
-        // We need P_map - Center_map.
-        // From equation 1:
-        // (P_screen - Center_screen - Offset_old) / Zoom_old = P_map - Center_map
-
-        // So:
-        // Offset_new = Offset_old + ((P_screen - Center_screen - Offset_old) / Zoom_old) * (Zoom_old - Zoom_new)
-
-        const zoomSpeed = 0.005; // Increased speed
+        // SIMPLIFIED ZOOM (Center Zoom)
+        const zoomSpeed = 0.5;
         const oldZoom = this.targetZoom;
-        let newZoom = oldZoom - e.deltaY * zoomSpeed;
-        newZoom = Math.max(0.5, Math.min(newZoom, 5.0));
+
+        // e.deltaY > 0 means scrolling DOWN (Zoom OUT)
+        let newZoom = oldZoom - Math.sign(e.deltaY) * zoomSpeed;
+
+        // Clamp Zoom
+        newZoom = Math.max(0.5, Math.min(newZoom, 4.0));
 
         this.targetZoom = newZoom;
 
-        // Calculate Offset Adjustment
-        // mouseX is (P_screen - Center_screen)
-        const pMapRel = (mouseX - this.mapOffset.x) / oldZoom;
-        const pMapRelY = (mouseY - this.mapOffset.y) / oldZoom;
+        // CRITICAL FIX: Scale Offset so we stay looking at the same map point
+        // Offset_new = Offset_old * (newZoom / oldZoom)
 
-        this.mapOffset.x += pMapRel * (oldZoom - newZoom);
-        this.mapOffset.y += pMapRelY * (oldZoom - newZoom);
-
-        // console.log(`Zoom: ${newZoom.toFixed(2)}, Offset: ${this.mapOffset.x.toFixed(0)}, ${this.mapOffset.y.toFixed(0)}, MouseRel: ${pMapRel.toFixed(0)}`);
+        if (oldZoom > 0) {
+            const ratio = newZoom / oldZoom;
+            this.mapOffset.x *= ratio;
+            this.mapOffset.y *= ratio;
+        }
     }
-
-    // ... (skipping context menu)
-
-
 
     onContextMenu(e) {
         if (!this.isBigMap) return;
@@ -528,10 +486,10 @@ export class MapManager {
             this.updateRevealAnimation(dt);
         }
 
-        // Smooth Zoom - REMOVED for precision
+        // INSTANT ZOOM (Fixes Drift/Jump issues)
         this.zoom = this.targetZoom;
 
-        // SCROLLING LOGIC (GPS Style)
+        // SCROLLING LOGIC
         const cw = this.container.clientWidth;
         const ch = this.container.clientHeight;
         const cx = cw / 2;
@@ -540,43 +498,25 @@ export class MapManager {
         const p = this.game.player.mesh.position;
         const playerMapPos = this.worldToMap(p.x, p.z);
 
+        // Always update this reference
+        this.currentMapCenter = playerMapPos;
+
         if (this.isBigMap) {
-            // If dragging, we are offsetting from the center
-            // Center is Player Position initially, but we can pan away.
-            // Let's say currentMapCenter IS the player position, but we add mapOffset.
+            // Logic:
+            // We want the Player (currentMapCenter) to be at Screen Center (cx, cy) + Offset.
+            // ScreenX = (MapX * Zoom) + TranslateX
+            // TranslateX = ScreenX - (MapX * Zoom)
+            // We want ScreenX to be (cx + offset.x) when MapX is currentMapCenter.x
+            // tx = (cx + offset.x) - (currentMapCenter.x * zoom)
 
-            this.currentMapCenter = playerMapPos; // Base center is player
-
-            // Calculate Transform
-            // We want the point (center.x, center.y) to be at screen center (cx, cy) + offset
-            // And scaled by zoom.
-
-            // Transform Origin is usually top-left (0,0).
-            // So we translate the content such that the target point is at the desired screen location.
-
-            // Target Screen X = cx + this.mapOffset.x
-            // Target Screen Y = cy + this.mapOffset.y
-
-            // Content X = Target Screen X - (MapCenter X * Zoom)
-            // Content Y = Target Screen Y - (MapCenter Y * Zoom)
-
-            // Correct Logic per User Request:
-            // Pivot is Player (currentMapCenter). We want Pivot * Zoom to be at Center of Screen (cx, cy) + Offset.
-            // ScreenPos = MapPos * Zoom + Translate
-            // (cx + offset) = (center * zoom) + tx
-            // tx = cx - (center * zoom) + offset
-
-            let tx = cx - (this.currentMapCenter.x * this.zoom) + this.mapOffset.x;
-            let ty = cy - (this.currentMapCenter.y * this.zoom) + this.mapOffset.y;
+            let tx = (cx + this.mapOffset.x) - (this.currentMapCenter.x * this.zoom);
+            let ty = (cy + this.mapOffset.y) - (this.currentMapCenter.y * this.zoom);
 
             this.content.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${this.zoom})`;
 
-            // Update Waypoint if exists (it's in icon layer, which scales with content? 
-            // Yes, iconLayer is child of content. So we just set local pos.)
-            // No need to update waypoint pos here if it's absolute in content.
-
         } else {
-            // Minimap fixed zoom (1.0), centered on player, no offset
+            // Minimap: Simple Centering on Player, no Offset, Zoom 1.0 (or custom fixed zoom)
+            // tx = cx - (playerMapPos.x * 1.0)
             let tx = cx - playerMapPos.x;
             let ty = cy - playerMapPos.y;
             this.content.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
@@ -625,9 +565,9 @@ export class MapManager {
             Object.assign(icon.style, {
                 width: '0',
                 height: '0',
-                borderLeft: '6px solid transparent',
-                borderRight: '6px solid transparent',
-                borderBottom: '12px solid #00ff00', // Arrow pointing UP
+                borderLeft: '5px solid transparent', // Smaller (was 6)
+                borderRight: '5px solid transparent',
+                borderBottom: '10px solid #00ff00', // Smaller (was 12)
                 backgroundColor: 'transparent',
                 borderRadius: '0',
                 position: 'absolute',
@@ -641,6 +581,9 @@ export class MapManager {
 
         const p = this.game.player.mesh.position;
         const pos = this.worldToMap(p.x, p.z);
+
+        // Debug Icon Pos
+        // console.log(`Icon Pos: ${pos.x}, ${pos.y} (Player: ${p.x}, ${p.z})`);
 
         icon.style.left = `${pos.x}px`;
         icon.style.top = `${pos.y}px`;
@@ -777,9 +720,19 @@ export class MapManager {
             // OPEN BIG MAP
             this.container.classList.add('big-map-active');
 
-            // Reset Offset to center on player
+            // OPEN BIG MAP
+            this.container.classList.add('big-map-active');
+
+            // FORCE RESET: Always center on player when opening
+            // This prevents the "stuck on old view" issue user reported.
             this.mapOffset = { x: 0, y: 0 };
-            this.targetZoom = 1.0;
+
+            // Optional: Reset zoom or keep it? 
+            // User complained about "being at the same place". Resetting zoom ensures a fresh start.
+            // this.targetZoom = 1.0; 
+
+            // Recenter Hint (Still useful if they pan while open)
+            if (this.game.ui) this.game.ui.showToast("ESPACE pour Recentrer");
 
             // PAUSE GAME
             if (this.game) {
@@ -788,9 +741,23 @@ export class MapManager {
                 document.exitPointerLock();
             }
 
+            // Add internal key listener for Space (Recenter)
+            this._recenterHandler = (e) => {
+                if (e.code === 'Space') {
+                    this.mapOffset = { x: 0, y: 0 };
+                }
+            };
+            window.addEventListener('keydown', this._recenterHandler);
+
         } else {
             // CLOSE BIG MAP
             this.container.classList.remove('big-map-active');
+
+            // Remove listener
+            if (this._recenterHandler) {
+                window.removeEventListener('keydown', this._recenterHandler);
+                this._recenterHandler = null;
+            }
 
             // RESUME GAME
             if (this.game) {

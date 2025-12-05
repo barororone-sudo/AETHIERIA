@@ -138,23 +138,21 @@ export class Game {
             this.ui.initMinimap();
             this.loader.updateProgress(100);
 
-            // --- POST PROCESSING ---
-            this.initPostProcessing();
-
-            // Start Audio on interaction
-            document.addEventListener('click', () => {
-                if (this.isRunning) this.audio.startMusic();
-            }, { once: true });
-
             // Phase 3: Profile Selection
-            this.ui.createSlotSelectionUI();
+            const slotsInfo = await this.saveManager.getSlotsInfo();
+            this.ui.createSlotSelectionUI(slotsInfo);
 
-            // Force Hide Loading Screen - NOW SAFE TO HIDE
+            this.loader.updateProgress(100);
+
+            // Force Hide Loading Screen
             const loadingScreen = document.getElementById('loading-screen');
             if (loadingScreen) {
                 loadingScreen.style.opacity = '0';
                 setTimeout(() => loadingScreen.style.display = 'none', 500);
             }
+
+            // --- POST PROCESSING ---
+            this.initPostProcessing();
 
         } catch (e) {
             ErrorHandler.showError("Initialization Failed", "main.js", 0, 0, e);

@@ -65,7 +65,7 @@ export class UIManager {
         this.initBossUI();
         this.initCrosshair();
         // this.initMinimap(); // Deferred to Game.init()
-        this.createMainMenu();
+        // this.createMainMenu(); // DEFERRED to avoid flicker during loading
 
         // Pause Menu Buttons
         document.getElementById('resume-btn').onclick = () => this.toggleMenu();
@@ -152,7 +152,10 @@ export class UIManager {
         this.setupKeyboardNavigation(this.mainMenu);
     }
 
-    createSlotSelectionUI() {
+    /**
+     * @param {Array<Object> | null} [preloadedSlots=null]
+     */
+    createSlotSelectionUI(preloadedSlots = null) {
         // Remove Main Menu if it exists
         this.hideMainMenu();
 
@@ -185,8 +188,8 @@ export class UIManager {
         slotsContainer.style.gap = '30px'; // Reduced gap for 3 slots
         container.appendChild(slotsContainer);
 
-        // Create Slots dynamically (Async)
-        this.game.saveManager.getSlotsInfo().then(slotsInfo => {
+        // Helper to render slots
+        const renderSlots = (slotsInfo) => {
             slotsInfo.forEach(info => {
                 const cardWrapper = document.createElement('div');
                 cardWrapper.style.position = 'relative';
@@ -295,10 +298,25 @@ export class UIManager {
                 cardWrapper.appendChild(card);
                 slotsContainer.appendChild(cardWrapper);
             });
-        }); // End Promise
+            document.body.appendChild(container);
+            this.setupKeyboardNavigation(container);
+        };
 
-        document.body.appendChild(container);
-        this.setupKeyboardNavigation(container);
+        // Use preloaded data or fetch it
+        if (preloadedSlots) {
+            renderSlots(preloadedSlots);
+        } else {
+            this.game.saveManager.getSlotsInfo().then(slotsInfo => {
+                renderSlots(slotsInfo);
+            });
+        }
+    }
+
+    hideMainMenu() {
+        if (this.mainMenu) {
+            this.mainMenu.style.opacity = '0';
+            setTimeout(() => this.mainMenu.remove(), 500);
+        }
     }
 
     initBossUI() {
