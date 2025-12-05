@@ -1,0 +1,23 @@
+{
+  "position": {
+    "x": -0.9464762551735896,
+    "y": 4.714376552837336,
+    "z": 6.098747984848142
+  },
+  "stats": {
+    "hp": 80,
+    "stamina": 100
+  },
+  "story": {
+    "state": "PROLOGUE"
+  },
+  "world": {
+    "fog": [],
+    "towers": {
+      "tower_central": false,
+      "tower_north_west": false,
+      "tower_south_east": false
+    }
+  },
+  "timestamp": 1764928737669
+}

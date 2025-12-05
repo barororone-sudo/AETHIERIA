@@ -128,12 +128,13 @@ export class UIManager {
             this.game.start(true);
         };
 
-        // Check if save exists
-        if (!localStorage.getItem(this.game.saveManager.getCurrentKey())) {
-            continueBtn.disabled = true;
-            continueBtn.style.opacity = '0.5';
-            continueBtn.style.cursor = 'not-allowed';
-        }
+        // Check if save exists - Async check would be better, but for now let's ENABLE it
+        // and let the button click handle the "No Save" alert from main.js
+        // Or better: We could make an async check here if we really wanted to disable it.
+        // For simplicity: We assume there might be a save.
+        continueBtn.disabled = false;
+        continueBtn.style.opacity = '1.0';
+        continueBtn.style.cursor = 'pointer';
 
         const newGameBtn = document.createElement('button');
         newGameBtn.innerText = 'New Game';
@@ -184,127 +185,120 @@ export class UIManager {
         slotsContainer.style.gap = '30px'; // Reduced gap for 3 slots
         container.appendChild(slotsContainer);
 
-        // Create Slots dynamically
-        const slotsInfo = this.game.saveManager.getSlotsInfo();
+        // Create Slots dynamically (Async)
+        this.game.saveManager.getSlotsInfo().then(slotsInfo => {
+            slotsInfo.forEach(info => {
+                const cardWrapper = document.createElement('div');
+                cardWrapper.style.position = 'relative';
 
-        slotsInfo.forEach(info => {
-            const cardWrapper = document.createElement('div');
-            cardWrapper.style.position = 'relative';
-
-            const card = document.createElement('div');
-            card.className = 'slot-card'; // For keyboard navigation selector
-            card.setAttribute('tabindex', '0'); // Make focusable
-            card.style.width = '250px';
-            card.style.height = '350px';
-            card.style.background = 'linear-gradient(180deg, rgba(30,30,40,1) 0%, rgba(20,20,30,1) 100%)';
-            card.style.border = '2px solid #444';
-            card.style.borderRadius = '15px';
-            card.style.display = 'flex';
-            card.style.flexDirection = 'column';
-            card.style.alignItems = 'center';
-            card.style.justifyContent = 'center';
-            card.style.cursor = 'pointer';
-            card.style.transition = 'all 0.3s';
-            card.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
-            card.style.overflow = 'hidden';
-
-            // Hover Effect
-            card.onmouseenter = () => {
-                card.style.transform = 'translateY(-10px) scale(1.05)';
-                card.style.border = '2px solid #ffd700';
-                card.style.boxShadow = '0 0 30px rgba(255, 215, 0, 0.3)';
-            };
-            card.onmouseleave = () => {
-                card.style.transform = 'translateY(0) scale(1.0)';
+                const card = document.createElement('div');
+                card.className = 'slot-card'; // For keyboard navigation selector
+                card.setAttribute('tabindex', '0'); // Make focusable
+                card.style.width = '250px';
+                card.style.height = '350px';
+                card.style.background = 'linear-gradient(180deg, rgba(30,30,40,1) 0%, rgba(20,20,30,1) 100%)';
                 card.style.border = '2px solid #444';
+                card.style.borderRadius = '15px';
+                card.style.display = 'flex';
+                card.style.flexDirection = 'column';
+                card.style.alignItems = 'center';
+                card.style.justifyContent = 'center';
+                card.style.cursor = 'pointer';
+                card.style.transition = 'all 0.3s';
                 card.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
-            };
+                card.style.overflow = 'hidden';
 
-            // Content
-            const slotTitle = document.createElement('h2');
-            slotTitle.innerText = `PARTIE ${info.id}`;
-            slotTitle.style.color = '#aaa';
-            slotTitle.style.marginBottom = '20px';
-            card.appendChild(slotTitle);
+                // Hover Effect
+                card.onmouseenter = () => {
+                    card.style.transform = 'translateY(-10px) scale(1.05)';
+                    card.style.border = '2px solid #ffd700';
+                    card.style.boxShadow = '0 0 30px rgba(255, 215, 0, 0.3)';
+                };
+                card.onmouseleave = () => {
+                    card.style.transform = 'translateY(0) scale(1.0)';
+                    card.style.border = '2px solid #444';
+                    card.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+                };
 
-            if (info.exists) {
-                // Info
-                const details = document.createElement('div');
-                details.style.textAlign = 'center';
-                details.style.color = 'white';
-                details.innerHTML = `
+                // Content
+                const slotTitle = document.createElement('h2');
+                slotTitle.innerText = `PARTIE ${info.id}`;
+                slotTitle.style.color = '#aaa';
+                slotTitle.style.marginBottom = '20px';
+                card.appendChild(slotTitle);
+
+                if (info.exists) {
+                    // Info
+                    const details = document.createElement('div');
+                    details.style.textAlign = 'center';
+                    details.style.color = 'white';
+                    details.innerHTML = `
                     <p style="font-size: 24px; color: #ffd700; margin: 10px 0;">Niveau ${info.level}</p>
                     <p style="font-size: 14px; color: #888; margin: 5px 0;">${info.location}</p>
                     <p style="font-size: 12px; color: #666; margin-top: 20px;">${info.date}</p>
                 `;
-                card.appendChild(details);
+                    card.appendChild(details);
 
-                // Trash Button (Outside Card to avoid click conflict, or inside with stopPropagation)
-                const trashBtn = document.createElement('button');
-                trashBtn.innerHTML = '🗑️';
-                trashBtn.style.position = 'absolute';
-                trashBtn.style.top = '-10px';
-                trashBtn.style.right = '-10px';
-                trashBtn.style.width = '40px';
-                trashBtn.style.height = '40px';
-                trashBtn.style.borderRadius = '50%';
-                trashBtn.style.border = 'none';
-                trashBtn.style.background = '#ff4444';
-                trashBtn.style.color = 'white';
-                trashBtn.style.fontSize = '20px';
-                trashBtn.style.cursor = 'pointer';
-                trashBtn.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
-                trashBtn.style.display = 'flex';
-                trashBtn.style.alignItems = 'center';
-                trashBtn.style.justifyContent = 'center';
-                trashBtn.style.zIndex = '10';
+                    // Trash Button (Outside Card to avoid click conflict, or inside with stopPropagation)
+                    const trashBtn = document.createElement('button');
+                    trashBtn.innerHTML = '🗑️';
+                    trashBtn.style.position = 'absolute';
+                    trashBtn.style.top = '-10px';
+                    trashBtn.style.right = '-10px';
+                    trashBtn.style.width = '40px';
+                    trashBtn.style.height = '40px';
+                    trashBtn.style.borderRadius = '50%';
+                    trashBtn.style.border = 'none';
+                    trashBtn.style.background = '#ff4444';
+                    trashBtn.style.color = 'white';
+                    trashBtn.style.fontSize = '20px';
+                    trashBtn.style.cursor = 'pointer';
+                    trashBtn.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+                    trashBtn.style.display = 'flex';
+                    trashBtn.style.alignItems = 'center';
+                    trashBtn.style.justifyContent = 'center';
+                    trashBtn.style.zIndex = '10';
 
-                trashBtn.onclick = (e) => {
-                    e.stopPropagation(); // Prevent card click
-                    if (confirm(`Supprimer la sauvegarde Partie ${info.id} ? Cette action est irréversible.`)) {
-                        this.game.saveManager.deleteSlot(info.id);
-                        // Refresh UI
-                        container.remove();
-                        this.showSlotSelection();
-                    }
+                    trashBtn.onclick = async (e) => {
+                        e.stopPropagation(); // Prevent card click
+                        if (confirm(`Supprimer la sauvegarde Partie ${info.id} ? Cette action est irréversible.`)) {
+                            await this.game.saveManager.deleteSlot(info.id);
+                            // Refresh UI
+                            container.remove();
+                            this.createSlotSelectionUI();
+                        }
+                    };
+                    cardWrapper.appendChild(trashBtn);
+
+                } else {
+                    // Empty
+                    const empty = document.createElement('div');
+                    empty.innerText = '+ Nouvelle Partie';
+                    empty.style.color = '#666';
+                    empty.style.fontSize = '20px';
+                    empty.style.border = '2px dashed #444';
+                    empty.style.padding = '20px';
+                    empty.style.borderRadius = '10px';
+                    card.appendChild(empty);
+                }
+
+                // Click Handler (Select Slot)
+                card.onclick = () => {
+                    this.game.saveManager.selectSlot(info.id);
+
+                    container.style.opacity = '0';
+                    setTimeout(() => container.remove(), 500);
+
+                    this.createMainMenu();
                 };
-                cardWrapper.appendChild(trashBtn);
 
-            } else {
-                // Empty
-                const empty = document.createElement('div');
-                empty.innerText = '+ Nouvelle Partie';
-                empty.style.color = '#666';
-                empty.style.fontSize = '20px';
-                empty.style.border = '2px dashed #444';
-                empty.style.padding = '20px';
-                empty.style.borderRadius = '10px';
-                card.appendChild(empty);
-            }
-
-            // Click Handler (Select Slot)
-            card.onclick = () => {
-                this.game.saveManager.selectSlot(info.id);
-
-                container.style.opacity = '0';
-                setTimeout(() => container.remove(), 500);
-
-                this.createMainMenu();
-            };
-
-            cardWrapper.appendChild(card);
-            slotsContainer.appendChild(cardWrapper);
-        });
+                cardWrapper.appendChild(card);
+                slotsContainer.appendChild(cardWrapper);
+            });
+        }); // End Promise
 
         document.body.appendChild(container);
         this.setupKeyboardNavigation(container);
-    }
-
-    hideMainMenu() {
-        if (this.mainMenu) {
-            this.mainMenu.style.opacity = '0';
-            setTimeout(() => this.mainMenu.remove(), 500);
-        }
     }
 
     initBossUI() {
@@ -339,7 +333,7 @@ export class UIManager {
 
     initInput() {
         window.addEventListener('keydown', (e) => {
-            if (e.code === 'KeyI' || e.code === 'Escape') {
+            if (e.code === 'KeyI') {
                 this.toggleMenu();
             }
             // Use KeyDown for immediate response, but handle repeats if necessary
@@ -386,9 +380,8 @@ export class UIManager {
             const canvas = document.querySelector('canvas');
             if (canvas) canvas.style.filter = 'none';
 
-            if (document.body.requestPointerLock) {
-                document.body.requestPointerLock().catch(e => console.warn("Pointer Lock suppressed:", e));
-            }
+            // Removed automatic pointer lock request to avoid "User Gesture" errors.
+            // Player must click to regain focus.
         }
     }
 
@@ -401,21 +394,6 @@ export class UIManager {
             el.className = 'inventory-slot';
 
             if (slot) {
-                const item = Items[slot.id];
-                el.style.backgroundColor = item.color;
-                el.title = item.name;
-
-                const name = document.createElement('span');
-                name.innerText = item.name;
-                el.appendChild(name);
-
-                if (slot.count > 1) {
-                    const count = document.createElement('div');
-                    count.className = 'item-count';
-                    count.innerText = slot.count;
-                    el.appendChild(count);
-                }
-
                 el.onclick = () => {
                     this.game.player.inventory.useItem(index);
                     this.renderInventory(); // Refresh

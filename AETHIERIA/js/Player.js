@@ -57,7 +57,7 @@ export class Player {
         this.staminaRegenRate = 10;
         this.staminaDrainRates = {
             SPRINT: 20,
-            GLIDE: 35, // Increased for short flight
+            GLIDE: 15, // Balanced: not too short, not infinite
             CLIMB: 15,
             SURF: 5,
             SWIM: 10
@@ -76,6 +76,9 @@ export class Player {
         this.stepTimer = 0;
         this.lastGenTime = 0; // Debounce for scroll wheel
         this.hasReleasedJump = true;
+        this.jumpTapCount = 0;
+        this.canGlide = true; // Enabled by default for testing
+        this.canSurf = true;
 
         // Camera State
         this.cameraState = {
@@ -99,8 +102,7 @@ export class Player {
         /** @type {number} */ this.shakeIntensity = 0;
 
         // Abilities
-        // Abilities
-        /** @type {boolean} */ this.canGlide = false; // Locked by default
+        // this.canGlide = false; // REMOVED duplicate
         /** @type {boolean} */ this.canSurf = true;
 
         /** @type {number} */ this.VISUAL_OFFSET_Y = 0.0;
@@ -160,6 +162,11 @@ export class Player {
         });
 
         document.addEventListener('mousedown', (e) => {
+            // Check if Map is Open - If so, DO NOT LOCK POINTER
+            if (this.game.ui && this.game.ui.mapManager && this.game.ui.mapManager.isBigMap) {
+                return;
+            }
+
             if (document.pointerLockElement !== document.body) {
                 document.body.requestPointerLock().catch(e => {
                     if (e.name === 'SecurityError') return; // Ignore benign security errors (fast toggle)
@@ -388,6 +395,23 @@ export class Player {
             this.input.keys.interact = false; // Debounce
         }
 
+        // PANIC BUTTON (P) - Reset Position
+        if (this.game.input.keys.p || (this.input.keys.interact && this.input.keys.jump)) { // Fallback combo
+            // console.log("PANIC RESET TRIGGERED");
+            this.body.position.set(0, 50, 0);
+            this.body.velocity.set(0, 0, 0);
+            this.state = 'AIR';
+            this.body.wakeUp();
+        }
+
+        // Debug Logging (Every 1s)
+        if (!this.debugTimer) this.debugTimer = 0;
+        this.debugTimer += dt;
+        if (this.debugTimer > 1.0) {
+            this.debugTimer = 0;
+            // console.log(`[PLAYER DEBUG] State: ${this.state}, Pos: ${this.body.position.y.toFixed(2)}, VelY: ${this.body.velocity.y.toFixed(2)}, Grounded: ${this.checkGround()}`);
+        }
+
         // Hit Stop
         if (this.hitStopTimer > 0) {
             this.hitStopTimer -= dt;
@@ -519,14 +543,12 @@ export class Player {
                 if (!grounded) {
                     this.state = 'AIR';
                 } else if (this.input.keys.jump && !this.exhausted) {
-                    this.body.velocity.y = 8;
+                    this.body.velocity.y = 15; // Balanced Jump (was 25, too high)
                     this.state = 'AIR';
                     this.lastJumpTime = Date.now();
-                } else if (this.input.keys.jump && this.combat.isAiming && this.canSurf && !this.exhausted) {
-                    // Shield Surf from Ground (Jump + Block)
-                    this.body.velocity.y = 5; // Small hop
-                    this.state = 'SURF';
-                    this.enterSurf();
+                } else if (this.input.keys.crouch) {
+                    // Enter Guard
+                    this.state = 'GUARD';
                 } else {
                     if (speed > 0.1) {
                         if (this.input.keys.sprint && !this.exhausted) {
@@ -540,20 +562,64 @@ export class Player {
                 }
                 break;
 
+            case 'GUARD':
+                if (!this.input.keys.crouch || speed > 0.1) {
+                    this.state = 'IDLE';
+                }
+                break;
+
             case 'AIR':
                 if (!this.input.keys.jump) this.hasReleasedJump = true;
+
+                // Read Tap Count
+                const taps = this.input.jumpTapCount;
+
+                // Double Tap -> Glide (Keep as backup)
+                if (taps === 2 && this.canGlide && !this.exhausted) {
+                    this.state = 'GLIDE';
+                    this.input.jumpTapCount = 0; // Consume
+                }
+                // Single Press High Air -> Glide (New Logic)
+                else if (this.input.keys.jump && this.canGlide && !this.exhausted && this.hasReleasedJump) {
+                    // Check Height
+                    if (this.mesh && this.world && this.world.terrainManager && this.world.terrainManager.group) {
+                        const rayOrigin = this.mesh.position.clone();
+                        const raycaster = new THREE.Raycaster(rayOrigin, new THREE.Vector3(0, -1, 0), 0, 100); // Check down
+                        const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
+
+                        // If ground is far enough (> 3m)
+                        if (intersects.length > 0 && intersects[0].distance > 3.0) {
+                            this.state = 'GLIDE';
+                            this.hasReleasedJump = false; // Prevent spam
+                        } else if (intersects.length === 0) {
+                            // No ground found (void) -> Glide allowed
+                            this.state = 'GLIDE';
+                            this.hasReleasedJump = false;
+                        }
+                    }
+                }
+                // Triple Tap -> Surf
+                else if (taps === 3 && this.canSurf && !this.exhausted) {
+                    this.state = 'SURF';
+                    this.enterSurf();
+                    this.input.jumpTapCount = 0; // Consume
+                }
+
+                // Landing Assist: Force down if close to ground but not grounded yet
+                if (this.mesh && this.world && this.world.terrainManager && this.world.terrainManager.group && this.body.velocity.y > -1) {
+                    // Simple raycast check for "almost grounded"
+                    const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 0.5, 0));
+                    const raycaster = new THREE.Raycaster(rayOrigin, new THREE.Vector3(0, -1, 0), 0, 1.5); // Check slightly further than checkGround
+                    const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
+                    if (intersects.length > 0) {
+                        this.body.velocity.y = -5; // Force landing
+                    }
+                }
 
                 if (grounded && this.body.velocity.y <= 0) {
                     this.state = 'IDLE';
                 } else if (this.input.keys.crouch) {
                     this.state = 'DIVE';
-                } else if (this.input.keys.jump && this.canGlide && !this.exhausted && this.hasReleasedJump && (Date.now() - this.lastJumpTime > 500)) {
-                    this.state = 'GLIDE';
-                    this.hasReleasedJump = false; // Consume press
-                } else if (this.input.keys.jump && this.combat.isAiming && this.canSurf && !this.exhausted) {
-                    // Shield Surf: Jump while Blocking/Aiming
-                    this.state = 'SURF';
-                    this.enterSurf();
                 } else if (this.input.keys.forward && !this.exhausted && this.checkWall()) {
                     this.state = 'CLIMB';
                     this.body.velocity.set(0, 0, 0);
@@ -596,35 +662,47 @@ export class Player {
                 break;
 
             case 'SURF':
-                if (!this.input.keys.crouch || speed < 0.1 || this.exhausted) {
+                if (this.input.keys.jump && !this.exhausted) {
+                    // Exit Surf by Jump
+                    this.exitSurf();
+                    this.state = 'AIR';
+                    this.body.velocity.y = 5; // Small hop
+                    this.hasReleasedJump = false;
+                } else if (!this.input.keys.crouch || speed < 0.1 || this.exhausted) {
+                    // Exit Surf by Release Crouch or Stop
                     this.exitSurf();
                     this.state = grounded ? 'IDLE' : 'AIR';
                 }
                 break;
 
             case 'SWIM':
-                if (this.mesh && this.mesh.position.y >= 1.3 && grounded) {
-                    this.state = 'IDLE';
+                if (this.mesh && this.mesh.position.y >= 1.3) {
+                    // Exit water: Go to IDLE if grounded, otherwise AIR
+                    this.state = grounded ? 'IDLE' : 'AIR';
                 }
                 break;
         }
     }
 
     enterSurf() {
-        // Move shield to feet
-        if (this.shieldGroup && this.mesh) {
+        if (this.mesh && this.shieldGroup && this.shieldMesh) {
             this.mesh.attach(this.shieldGroup); // Parent to root
-            this.shieldGroup.position.set(0, 0.1, 0);
+            // this.shieldGroup.position.set(0, -0.5, 0); 
+            this.shieldGroup.position.set(0, 0.2, 0);
             this.shieldGroup.rotation.set(0, 0, 0);
+
+            // Make it bigger
+            this.shieldMesh.scale.set(1.5, 1, 1.5);
         }
     }
 
     exitSurf() {
         // Move shield to back
-        if (this.shieldGroup && this.mesh) {
+        if (this.shieldGroup && this.mesh && this.shieldMesh) {
             this.mesh.attach(this.shieldGroup);
             this.shieldGroup.position.set(0, 1.0, -0.3);
             this.shieldGroup.rotation.set(Math.PI / 2, 0, 0); // Adjust rotation if needed
+            this.shieldMesh.scale.set(1, 1, 1); // Reset scale
         }
     }
 
@@ -655,11 +733,39 @@ export class Player {
         this.body.angularDamping = 0.9;
 
         switch (this.state) {
+            case 'GUARD':
+                this.body.velocity.set(0, 0, 0);
+                this.body.linearDamping = 1.0; // Max damping
+                break;
+
             case 'AIR':
-                // Extra Gravity for heavier feel
-                this.body.velocity.y -= 20 * dt;
+                // Extra Gravity (Removed to rely on physics engine)
+                // this.body.velocity.y -= 10 * dt; 
+
+                // Terminal Velocity Clamp (Prevent falling through map)
+                if (this.body.velocity.y < -30) {
+                    this.body.velocity.y = -30;
+                }
+
+                // GROUND SAFETY CHECK
+                // If we are falling fast, do a raycast down to predict collision
+                if (this.body.velocity.y < -10) {
+                    const raycaster = new THREE.Raycaster(this.mesh.position, new THREE.Vector3(0, -1, 0), 0, Math.abs(this.body.velocity.y * dt) + 1.0);
+                    if (this.world && this.world.terrainManager) {
+                        const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
+                        if (intersects.length > 0) {
+                            // About to hit ground, clamp position
+                            this.body.position.y = intersects[0].point.y + 1.0;
+                            this.body.velocity.y = 0;
+                            this.state = 'IDLE';
+                        }
+                    }
+                }
 
                 // Air Control
+                // Gravity Adjustment (Floatier Fall)
+                this.body.velocity.y -= 20 * dt; // Balanced Gravity (was 10, too floaty)
+
                 if (inputLen > 0) {
                     this.body.velocity.x += input.x * dt * 5;
                     this.body.velocity.z += input.z * dt * 5;
@@ -772,7 +878,7 @@ export class Player {
                 if (this.state === 'RUN') targetSpeed = 12;
                 if (this.state === 'SPRINT') targetSpeed = 18;
 
-                const accel = (this.state === 'IDLE') ? 10.0 : 5.0;
+                const accel = (this.state === 'IDLE') ? 25.0 : 10.0;
                 this.currentSpeed = THREE.MathUtils.lerp(this.currentSpeed, targetSpeed * inputLen, dt * accel);
 
                 // Slope Handling
@@ -791,7 +897,15 @@ export class Player {
                     this.body.velocity.x = moveDir.x * this.currentSpeed;
                     this.body.velocity.z = moveDir.z * this.currentSpeed;
                 } else if (grounded) {
-                    this.body.linearDamping = 0.9;
+                    // Force Stop (No Sliding)
+                    this.body.velocity.x = 0;
+                    this.body.velocity.z = 0;
+                    this.currentSpeed = 0;
+                }
+
+                // Gravity on slopes/edges if not fully grounded but in ground state
+                if (!grounded) {
+                    this.body.velocity.y -= 10 * dt;
                 }
                 break;
         }
@@ -836,6 +950,17 @@ export class Player {
         if (this.gliderMesh) this.gliderMesh.visible = false; // Hide by default
 
         switch (this.state) {
+            case 'GUARD':
+                // Body Upright
+                targetRotX = 0;
+
+                // Shield in front
+                if (this.shieldGroup) {
+                    this.shieldGroup.position.set(0, 0.2, 0.5); // In front of chest
+                    this.shieldGroup.rotation.set(0, 0, 0);
+                }
+                break;
+
             case 'GLIDE':
                 // Superman Pose
                 targetRotX = Math.PI / 2; // Face down
@@ -1181,7 +1306,8 @@ export class Player {
     checkGround() {
         if (!this.world || !this.mesh) return false;
         const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 0.5, 0));
-        const raycaster = new THREE.Raycaster(rayOrigin, new THREE.Vector3(0, -1, 0), 0, 0.6); // 0.5 + margin
+        // Deepened detection (0.6 -> 0.8) to prevent floating
+        const raycaster = new THREE.Raycaster(rayOrigin, new THREE.Vector3(0, -1, 0), 0, 0.8);
 
         // Check Terrain
         if (this.world.terrainManager && this.world.terrainManager.group) {

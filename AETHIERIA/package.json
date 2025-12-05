@@ -3,12 +3,15 @@
   "version": "1.0.0",
   "description": "Project Aetheria",
   "scripts": {
-    "start": "http-server . -p 3001 -c-1"
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "http-server": "^14.1.1"
+    "express": "^4.18.2",
+    "http-server": "^14.1.1",
+    "three": "^0.160.0",
+    "cannon-es": "^0.20.0"
   }
 }

@@ -57,7 +57,15 @@ export class World {
         this.createSky();
         this.createClouds();
         // this.createGrassField(); // Replaced by TerrainManager
-        // this.createPhysicsFloor(this.defaultMaterial); // Replaced by TerrainManager
+
+        // Safety Floor (Invisible) to catch player if terrain fails
+        const floorShape = new CANNON.Plane();
+        const floorBody = new CANNON.Body({ mass: 0 });
+        floorBody.addShape(floorShape);
+        floorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+        floorBody.position.set(0, -10, 0);
+        this.physicsWorld.addBody(floorBody);
+
         this.createWater();
 
         // --- GAMEPLAY OBJECTS ---
@@ -85,7 +93,8 @@ export class World {
         // TOWERS
         this.towers = [];
 
-        this.towers = [];
+        // LOOT
+        this.loot = [];
 
         // Day/Night Cycle
         this.gameTime = 0.25; // Start at 6am (0.25)
@@ -190,7 +199,7 @@ export class World {
             type: 'chest',
             itemId: itemId,
             interact: () => {
-                console.log(`Opening chest with ${itemId}`);
+                // console.log(`Opening chest with ${itemId}`);
                 this.game.player.inventory.addItem(itemId, 1);
                 this.scene.remove(mesh); // Poof
                 // Show notification
@@ -620,7 +629,7 @@ export class World {
             position.y = y;
         }
         this.golem = new Golem(this, position);
-        console.log("Golem Spawned!");
+        // console.log("Golem Spawned!");
     }
 
     spawnTower(x, z, id) {
@@ -722,7 +731,7 @@ export class World {
 
             if (dist < 1) {
                 // Pickup
-                console.log("Loot Collected!");
+                // console.log("Loot Collected!");
                 this.scene.remove(item.mesh);
                 this.loot.splice(i, 1);
                 // TODO: Add to inventory
@@ -749,7 +758,47 @@ export class World {
                 });
             }
         }
-        console.log(`Generated Fog Grid: ${this.fogGrid.length} points`);
+        // console.log(`Generated Fog Grid: ${this.fogGrid.length} points`);
+    }
+
+    getClosestInteractable(position, range) {
+        let closest = null;
+        let minDist = range;
+
+        // Check Towers
+        if (this.towers) {
+            for (const tower of this.towers) {
+                const dist = position.distanceTo(tower.mesh.position);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = tower;
+                }
+            }
+        }
+
+        // Check NPCs
+        if (this.npcs) {
+            for (const npc of this.npcs) {
+                const dist = position.distanceTo(npc.mesh.position);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = npc;
+                }
+            }
+        }
+
+        // Check Generic Interactables
+        if (this.interactables) {
+            for (const obj of this.interactables) {
+                const dist = position.distanceTo(obj.position);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = obj;
+                }
+            }
+        }
+
+        return closest;
     }
 
     updateDayNightCycle(dt) {
@@ -812,10 +861,13 @@ export class World {
     }
 
     update(dt, playerBody) {
+        // Step Physics World
+        this.physicsWorld.step(1 / 60, dt, 3);
+
         this.updateDayNightCycle(dt);
 
         if (this.terrainManager && this.terrainManager.update) {
-            this.terrainManager.update(dt);
+            this.terrainManager.update(playerBody ? playerBody.position : null);
         }
 
         if (playerBody) {
@@ -825,6 +877,10 @@ export class World {
 
         if (this.npcs) {
             this.npcs.forEach(npc => npc.update(dt));
+        }
+
+        if (this.towers) {
+            this.towers.forEach(tower => tower.update(dt));
         }
     }
 

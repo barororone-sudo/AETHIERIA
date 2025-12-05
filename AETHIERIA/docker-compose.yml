@@ -1,0 +1,25 @@
+services:
+  aetheria:
+    build: .
+    container_name: aetheria_game
+    ports:
+      - "3002:3001"
+    volumes:
+      # Map current directory to /app in container for Hot Reload
+      - .:/app
+      # Prevent local node_modules from overwriting container's node_modules
+      - /app/node_modules
+    environment:
+      - NODE_ENV=production
+    # Resource limits to keep it lightweight
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 1024M
+    # Log rotation to prevent disk saturation
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

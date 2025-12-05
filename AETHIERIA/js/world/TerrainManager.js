@@ -132,28 +132,28 @@ export class TerrainManager {
 
         switch (biomeType) {
             case 'DESERT':
-                amplitude = 5; // Dunes
+                amplitude = 15; // Higher Dunes
                 frequency = 0.005;
-                octaves = 2;
-                baseHeight = 2;
-                break;
-            case 'FOREST':
-                amplitude = 15; // Hilly
-                frequency = 0.015;
-                octaves = 4;
+                octaves = 4; // More detail
                 baseHeight = 5;
                 break;
+            case 'FOREST':
+                amplitude = 25; // Hilly
+                frequency = 0.01;
+                octaves = 5;
+                baseHeight = 10;
+                break;
             case 'PLAINS':
-                amplitude = 8; // Gentle
+                amplitude = 12; // Rolling hills
                 frequency = 0.008;
-                octaves = 3;
-                baseHeight = 3;
+                octaves = 4;
+                baseHeight = 5;
                 break;
             case 'CITY':
                 amplitude = 2; // Flat foundation
                 frequency = 0.005;
                 octaves = 1;
-                baseHeight = 4;
+                baseHeight = 8;
                 break;
         }
 
@@ -269,4 +269,10 @@ export class TerrainManager {
 
     // Alias
     getHeightAt(x, z) { return this.getGlobalHeight(x, z); }
+
+    getBiomeAt(x, z) {
+        const height = this.getGlobalHeight(x, z);
+        const moisture = this.getMoisture(x, z);
+        return this.getBiome(x, z, height, moisture);
+    }
 }

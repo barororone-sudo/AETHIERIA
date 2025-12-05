@@ -22,16 +22,19 @@ export class AssetLoader {
         this.progressBar = document.getElementById('loading-bar-fill');
 
         this.manager.onProgress = (url, itemsLoaded, itemsTotal) => {
-            const progress = (itemsLoaded / itemsTotal) * 100;
+            // Assets are 0-80% of total load
+            const progress = (itemsLoaded / itemsTotal) * 80;
             if (this.progressBar) this.progressBar.style.width = `${progress}%`;
         };
 
         this.manager.onLoad = () => {
-            if (this.loadingScreen) {
-                this.loadingScreen.style.opacity = '0';
-                setTimeout(() => this.loadingScreen.style.display = 'none', 500);
-            }
+            // Do not hide here. Wait for Game Init.
+            console.log("AssetLoader: All assets loaded.");
         };
+    }
+
+    updateProgress(percent) {
+        if (this.progressBar) this.progressBar.style.width = `${percent}%`;
     }
 
     async loadAll() {
@@ -65,11 +68,7 @@ export class AssetLoader {
         await Promise.all(promises);
 
         // Artificial delay if needed, or just finish
-        if (this.loadingScreen) {
-            this.loadingScreen.style.opacity = '0';
-            setTimeout(() => {
-                this.loadingScreen.style.display = 'none';
-            }, 500);
-        }
+        // Artificial delay if needed, or just finish
+        // Do not hide here. Wait for Game Init.
     }
 }

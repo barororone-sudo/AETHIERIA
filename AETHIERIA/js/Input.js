@@ -11,10 +11,15 @@ export class Input {
             crouch: false, // Ctrl
             sprint: false,  // Shift
             interact: false,
-            confirm: false
+            confirm: false,
+            p: false
         };
 
         this.init();
+
+        // Tap Counting
+        this.lastJumpTime = 0;
+        this.jumpTapCount = 0;
     }
 
     init() {
@@ -43,6 +48,15 @@ export class Input {
                 break;
             case 'Space':
                 this.keys.jump = isDown;
+                if (isDown) {
+                    const now = Date.now();
+                    if (now - this.lastJumpTime < 300) {
+                        this.jumpTapCount++;
+                    } else {
+                        this.jumpTapCount = 1;
+                    }
+                    this.lastJumpTime = now;
+                }
                 break;
             case 'ControlLeft':
             case 'ControlRight':
@@ -54,6 +68,9 @@ export class Input {
                 break;
             case 'KeyF':
                 this.keys.interact = isDown;
+                break;
+            case 'KeyP':
+                this.keys.p = isDown;
                 break;
             case 'Enter':
             case 'Space':

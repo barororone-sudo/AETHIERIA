@@ -62,7 +62,31 @@ export class Game {
         this.isDebugMode = false;
         /** @type {THREE.Mesh[]} */
         this.debugMeshes = [];
+
+        // --- ECO MODE PROPERTIES ---
+        this.targetFPS = 60;
+        this.frameInterval = 1000 / this.targetFPS;
+        this.lastFrameTime = 0;
+        this.isTabHidden = false;
+
         this.animate = this.animate.bind(this);
+
+        // --- ECO MODE LISTENER ---
+        document.addEventListener('visibilitychange', () => {
+            this.isTabHidden = document.hidden;
+            if (this.isTabHidden) {
+                console.log("Game hidden: Eco Mode ON (1 FPS)");
+                this.targetFPS = 1; // 1 FPS in background
+                this.frameInterval = 1000 / this.targetFPS;
+                if (this.audio) this.audio.mute(); // Optional: mute audio
+            } else {
+                console.log("Game visible: Eco Mode OFF (60 FPS)");
+                this.targetFPS = 60; // 60 FPS in foreground
+                this.frameInterval = 1000 / this.targetFPS;
+                if (this.audio) this.audio.unmute();
+                this.lastFrameTime = performance.now(); // Reset to avoid jump
+            }
+        });
 
         // Handle window resize for camera
         window.addEventListener('resize', () => {
@@ -92,18 +116,27 @@ export class Game {
 
     async init() {
         try {
-            // Wait for assets
+            // Wait for assets (0-80%)
             await this.loader.loadAll();
+            this.loader.updateProgress(85);
 
             // Init Game Logic
             this.world = new World(this);
             this.player = new Player(this, this.camera);
+            this.player.world = this.world; // Link World to Player
+            if (this.player.combat) this.player.combat.init(); // Init Combat (Pools)
 
             this.story = new StoryManager(this);
 
             // Phase 2: Initialization
-            this.ui.initMinimap(); // Init Minimap BEFORE World so Towers can register
             if (this.world) this.world.init();
+            this.loader.updateProgress(90);
+
+            // Init Minimap (Heavy Operation)
+            // Use setTimeout to allow UI to render the 90% state before freezing
+            await new Promise(resolve => setTimeout(resolve, 50));
+            this.ui.initMinimap();
+            this.loader.updateProgress(100);
 
             // --- POST PROCESSING ---
             this.initPostProcessing();
@@ -116,9 +149,12 @@ export class Game {
             // Phase 3: Profile Selection
             this.ui.createSlotSelectionUI();
 
-            // Force Hide Loading Screen
+            // Force Hide Loading Screen - NOW SAFE TO HIDE
             const loadingScreen = document.getElementById('loading-screen');
-            if (loadingScreen) loadingScreen.style.display = 'none';
+            if (loadingScreen) {
+                loadingScreen.style.opacity = '0';
+                setTimeout(() => loadingScreen.style.display = 'none', 500);
+            }
 
         } catch (e) {
             ErrorHandler.showError("Initialization Failed", "main.js", 0, 0, e);
@@ -128,15 +164,15 @@ export class Game {
     /**
      * @param {boolean} continueSave
      */
-    start(continueSave) {
+    async start(continueSave) {
         if (continueSave) {
-            if (!this.saveManager.load()) {
+            if (!await this.saveManager.load()) {
                 alert("No save found!");
                 return;
             }
         } else {
             this.saveManager.reset();
-            this.saveManager.save(); // Create initial save immediately
+            await this.saveManager.save(); // Create initial save immediately
         }
 
         this.ui.hideMainMenu();
@@ -149,7 +185,7 @@ export class Game {
 
         this.ui.showMinimap(); // Show Map only when game starts
         this.isRunning = true;
-        this.animate();
+        requestAnimationFrame(this.animate);
     }
 
     initPostProcessing() {
@@ -217,17 +253,29 @@ export class Game {
         }
     }
 
-    animate() {
+    /**
+     * @param {number} currentTime
+     */
+    animate(currentTime) {
         if (!this.isRunning) return;
 
         requestAnimationFrame(this.animate);
 
+        // --- FPS THROTTLE ---
+        if (!this.lastFrameTime) this.lastFrameTime = currentTime;
+        const elapsed = currentTime - this.lastFrameTime;
+
+        if (elapsed < this.frameInterval) return;
+
+        // Adjust lastFrameTime to target interval, but don't spiral behind
+        this.lastFrameTime = currentTime - (elapsed % this.frameInterval);
+
         let dt = this.clock.getDelta();
-        if (dt > 0.1) dt = 0.1; // Clamp dt to prevent physics explosion on tab switch
+        if (dt > 0.1) dt = 0.1; // Clamp dt
 
         // If Paused, skip logic updates but keep rendering (and UI)
         if (this.isPaused) {
-            if (this.ui) this.ui.update();
+            if (this.ui) this.ui.update(dt);
             // Render with Composer (Post-Processing)
             if (this.composer) {
                 this.composer.render();
@@ -265,12 +313,50 @@ export class Game {
             console.warn("Erreur Story:", e);
         }
 
+        try {
+            if (this.dialogueManager) this.dialogueManager.update(dt);
+        } catch (e) {
+            console.warn("Erreur Dialogue:", e);
+        }
+
         // Render with Composer (Post-Processing)
         if (this.composer) {
             this.composer.render();
         } else if (this.world) {
             this.renderer.instance.render(this.world.scene, this.camera);
         }
+    }
+
+    dispose() {
+        this.isRunning = false;
+        // Dispose Renderer
+        if (this.renderer && this.renderer.instance) {
+            this.renderer.instance.dispose();
+            this.renderer.instance.forceContextLoss();
+        }
+        // Dispose Composer
+        if (this.composer) {
+            this.composer.dispose();
+        }
+        // Dispose World (Geometries/Materials)
+        if (this.world) {
+            this.world.scene.traverse((object) => {
+                // @ts-ignore
+                if (object.geometry) object.geometry.dispose();
+                // @ts-ignore
+                if (object.material) {
+                    // @ts-ignore
+                    if (Array.isArray(object.material)) {
+                        // @ts-ignore
+                        object.material.forEach(m => m.dispose());
+                    } else {
+                        // @ts-ignore
+                        object.material.dispose();
+                    }
+                }
+            });
+        }
+        console.log("Game Resources Disposed");
     }
 }
 

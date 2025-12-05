@@ -52,6 +52,9 @@ export class Tower {
         if (this.game.ui && this.game.ui.mapManager) {
             this.game.ui.mapManager.addTowerIcon(this, this.id);
         }
+        if (this.world.towers) {
+            this.world.towers.push(this);
+        }
     }
 
     update(dt) {
@@ -111,7 +114,7 @@ export class Tower {
         if (this.isUnlocked) return;
         this.isUnlocked = true;
 
-        console.log("ACTIVATION TOUR");
+        // console.log("ACTIVATION TOUR");
         this.hideInteractButton();
 
         // 1. HIDE UI
@@ -166,8 +169,8 @@ export class Tower {
             this.game.ui.mapManager.show(); // Ensure visible
 
             // Trigger Animation (1.5s duration)
-            // Animate to FULL radius (300)
-            this.game.ui.mapManager.animateReveal(this.position.x, this.position.z, 300, 1.5, () => {
+            // Animate to FULL radius (100)
+            this.game.ui.mapManager.animateReveal(this.position.x, this.position.z, 100, 1.5, () => {
                 this.game.ui.mapManager.unlockTower(this);
             });
         }

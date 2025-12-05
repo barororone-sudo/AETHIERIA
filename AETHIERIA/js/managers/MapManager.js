@@ -35,18 +35,34 @@ export class MapManager {
 
         this.container = document.createElement('div');
         this.container.id = 'minimap-container';
+        this.container.style.overflow = 'hidden'; // Ensure content stays within bounds
+        this.container.style.position = 'absolute'; // Or fixed, handled by CSS usually but good to enforce if needed
         document.body.appendChild(this.container);
 
         // 2. Create Content Wrapper (The Scrolling Part)
         this.content = document.createElement('div');
         this.content.id = 'map-content';
+        this.content.style.transformOrigin = '0 0'; // Fix Alignment
+        this.content.style.width = `${this.mapSize}px`;
+        this.content.style.height = `${this.mapSize}px`;
         this.container.appendChild(this.content);
 
         // 3. Create Layers INSIDE Content
+        // Common Style for Layers to ensure perfect overlay
+        const layerStyle = {
+            position: 'absolute',
+            top: '0',
+            left: '0',
+            width: '100%',
+            height: '100%'
+        };
+
         // Terrain (Canvas generated)
         this.terrainLayer = document.createElement('img');
         this.terrainLayer.id = 'map-layer-terrain';
         this.terrainLayer.src = this.generateMapTexture(); // Generate Procedural Map
+        Object.assign(this.terrainLayer.style, layerStyle);
+        this.terrainLayer.style.zIndex = '1';
         this.content.appendChild(this.terrainLayer);
 
         // Fog (Canvas)
@@ -54,26 +70,34 @@ export class MapManager {
         this.fogCanvas.id = 'map-layer-fog';
         this.fogCanvas.width = this.mapSize;
         this.fogCanvas.height = this.mapSize;
+        Object.assign(this.fogCanvas.style, layerStyle);
+        this.fogCanvas.style.zIndex = '2'; // Fog above terrain
         this.content.appendChild(this.fogCanvas);
 
         // Icons (Div)
         this.iconLayer = document.createElement('div');
         this.iconLayer.id = 'map-layer-icons';
-        this.content.appendChild(this.iconLayer);
-
-        // Enforce Z-Index
-        // Enforce Z-Index (Terrain -> Fog -> Icons)
-        this.terrainLayer.style.zIndex = '1';
-        this.fogCanvas.style.zIndex = '2'; // Fog above terrain
+        Object.assign(this.iconLayer.style, layerStyle);
         this.iconLayer.style.zIndex = '10'; // Icons above fog
+        this.content.appendChild(this.iconLayer);
 
         // 4. Setup Fog
         this.fogCtx = this.fogCanvas.getContext('2d');
-        this.fogCtx.fillStyle = 'black';
+        this.fogCtx.fillStyle = '#000000'; // Full Black
         this.fogCtx.fillRect(0, 0, this.mapSize, this.mapSize);
 
         // 5. Event Listeners for Interaction
         this.setupInteractions();
+
+        // 6. Process Pending Icons
+        if (this.pendingIcons) {
+            this.pendingIcons.forEach(item => {
+                if (item.type === 'tower') {
+                    this.addTowerIcon(item.tower, item.index);
+                }
+            });
+            this.pendingIcons = [];
+        }
 
         console.log("MapManager: DOM Injected.");
     }
@@ -87,10 +111,12 @@ export class MapManager {
     }
 
     onMouseDown(e) {
-        if (!this.isBigMap || e.button !== 0) return; // Left click only
+        if (!this.isBigMap) return;
+        // Left click (0) or Right click (2)
         this.isDragging = true;
         this.dragStart.x = e.clientX;
         this.dragStart.y = e.clientY;
+        this.dragThresholdExceeded = false; // Reset drag flag
         this.container.style.cursor = 'grabbing';
     }
 
@@ -100,27 +126,135 @@ export class MapManager {
         const dx = e.clientX - this.dragStart.x;
         const dy = e.clientY - this.dragStart.y;
 
-        this.dragStart.x = e.clientX;
-        this.dragStart.y = e.clientY;
+        // Check if moved enough to consider it a drag
+        if (!this.dragThresholdExceeded && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+            this.dragThresholdExceeded = true;
+        }
 
-        // Pan is inverted relative to camera, but direct for map drag
-        // We are moving the offset
-        this.mapOffset.x += dx;
-        this.mapOffset.y += dy;
+        if (this.dragThresholdExceeded) {
+            this.dragStart.x = e.clientX;
+            this.dragStart.y = e.clientY;
+
+            // Pan logic
+            this.mapOffset.x += dx;
+            this.mapOffset.y += dy;
+        }
     }
 
     onMouseUp(e) {
         this.isDragging = false;
-        if (this.isBigMap) this.container.style.cursor = 'default';
+        if (this.isBigMap) this.container.style.cursor = ''; // Let CSS handle it (grab)
+
+        // If it was a CLICK (not a drag), handle selection
+        if (!this.dragThresholdExceeded) {
+            this.handleMapClick(e);
+        }
+    }
+
+    handleMapClick(e) {
+        // Calculate World Coordinates from Click
+        const rect = this.container.getBoundingClientRect();
+        const cx = rect.width / 2;
+        const cy = rect.height / 2;
+
+        // Screen Click relative to center
+        const mouseX = e.clientX - rect.left - cx;
+        const mouseY = e.clientY - rect.top - cy;
+
+        // World Pixel relative to center (unzoomed)
+        // mouseX = (WorldPixel - Center) * Zoom + Offset
+        // (mouseX - Offset) / Zoom + Center = WorldPixel
+
+        // We need WorldPixel relative to Map Center (0,0 is top-left of map image)
+        // But our math uses currentMapCenter (Player) as reference.
+
+        // Let's use the same logic as Zoom:
+        // pMapRel = (mouseX - this.mapOffset.x) / this.targetZoom;
+        // This gives us pixels relative to the current center (Player).
+
+        const pMapRelX = (mouseX - this.mapOffset.x) / this.targetZoom;
+        const pMapRelY = (mouseY - this.mapOffset.y) / this.targetZoom;
+
+        // Absolute Map Pixel (relative to Player's Map Pos)
+        // MapPixel = PlayerMapPos + pMapRel
+
+        const mapPixelX = this.currentMapCenter.x + pMapRelX;
+        const mapPixelY = this.currentMapCenter.y + pMapRelY;
+
+        // Convert Map Pixel to World
+        // mapX = (worldX + worldSize/2) * scale
+        // worldX = (mapX / scale) - worldSize/2
+
+        const worldX = (mapPixelX / this.scale) - this.worldSize / 2;
+        const worldZ = (mapPixelY / this.scale) - this.worldSize / 2;
+
+        console.log(`Map Click: ${worldX.toFixed(2)}, ${worldZ.toFixed(2)}`);
+        this.addWaypoint(worldX, worldZ);
     }
 
     onWheel(e) {
         if (!this.isBigMap) return;
         e.preventDefault();
-        const zoomSpeed = 0.001;
-        this.targetZoom -= e.deltaY * zoomSpeed;
-        this.targetZoom = Math.max(0.5, Math.min(this.targetZoom, 5.0));
+
+        const rect = this.container.getBoundingClientRect();
+        const cx = rect.width / 2;
+        const cy = rect.height / 2;
+
+        // Mouse position relative to center
+        const mouseX = e.clientX - rect.left - cx;
+        const mouseY = e.clientY - rect.top - cy;
+
+        // Current World Point under mouse (before zoom)
+        // Screen = (Map - Center) * Zoom + Offset
+        // Map * Zoom = Screen - Offset + Center * Zoom
+        // Actually, let's use the transform logic from update():
+        // tx = (cx + offset.x) - (center.x * zoom)
+        // screenX = tx + mapPixelX * zoom
+        // screenX = cx + offset.x - center.x * zoom + mapPixelX * zoom
+        // screenX - cx - offset.x = (mapPixelX - center.x) * zoom
+        // (screenX - cx - offset.x) / zoom + center.x = mapPixelX
+
+        // Let's simplify:
+        // We want the point under the mouse to stay under the mouse.
+        // Point P_world is at Mouse_screen.
+        // P_screen_old = Mouse_screen
+        // P_screen_new = Mouse_screen
+
+        // P_screen = (P_map - Center_map) * Zoom + Offset + Center_screen
+        // We are changing Zoom to Zoom_new.
+        // We need to change Offset to Offset_new such that P_screen stays same.
+
+        // (P_map - Center_map) * Zoom_old + Offset_old = (P_map - Center_map) * Zoom_new + Offset_new
+        // Offset_new = Offset_old + (P_map - Center_map) * (Zoom_old - Zoom_new)
+
+        // We need P_map - Center_map.
+        // From equation 1:
+        // (P_screen - Center_screen - Offset_old) / Zoom_old = P_map - Center_map
+
+        // So:
+        // Offset_new = Offset_old + ((P_screen - Center_screen - Offset_old) / Zoom_old) * (Zoom_old - Zoom_new)
+
+        const zoomSpeed = 0.005; // Increased speed
+        const oldZoom = this.targetZoom;
+        let newZoom = oldZoom - e.deltaY * zoomSpeed;
+        newZoom = Math.max(0.5, Math.min(newZoom, 5.0));
+
+        this.targetZoom = newZoom;
+
+        // Calculate Offset Adjustment
+        // mouseX is (P_screen - Center_screen)
+        const pMapRel = (mouseX - this.mapOffset.x) / oldZoom;
+        const pMapRelY = (mouseY - this.mapOffset.y) / oldZoom;
+
+        this.mapOffset.x += pMapRel * (oldZoom - newZoom);
+        this.mapOffset.y += pMapRelY * (oldZoom - newZoom);
+
+        // console.log(`Zoom: ${newZoom.toFixed(2)}, Offset: ${this.mapOffset.x.toFixed(0)}, ${this.mapOffset.y.toFixed(0)}, MouseRel: ${pMapRel.toFixed(0)}`);
     }
+
+    // ... (skipping context menu)
+
+
 
     onContextMenu(e) {
         if (!this.isBigMap) return;
@@ -248,114 +382,124 @@ export class MapManager {
         // Remove existing waypoint? Or allow multiple? User said "sélection un point". Singular?
         if (this.waypointIcon) {
             this.waypointIcon.remove();
+            this.waypointIcon = null;
         }
 
+        // VISUAL REMOVED as per user request ("retire moi les flèche rouge")
+        /*
         const icon = document.createElement('div');
         Object.assign(icon.style, {
-            width: '0',
-            height: '0',
-            borderLeft: '10px solid transparent',
-            borderRight: '10px solid transparent',
-            borderTop: '15px solid red',
+            width: '10px',
+            height: '10px',
+            backgroundColor: 'transparent',
+            border: '2px solid red',
+            borderRadius: '50%', // Circle
             position: 'absolute',
-            transform: 'translate(-50%, -100%)', // Tip at point
+            transform: 'translate(-50%, -50%)', // Center on point
             zIndex: '20',
-            filter: 'drop-shadow(0 2px 2px rgba(0,0,0,0.5))'
+            boxShadow: '0 0 4px red'
         });
 
         this.iconLayer.appendChild(icon);
         this.waypointIcon = icon;
-        this.waypointPos = { x, z }; // World Coords
+        */
+        this.waypointPos = { x, z }; // World Coords (Keep logic, hide visual)
 
         // Update position immediately
-        const pos = this.worldToMap(x, z);
-        icon.style.left = `${pos.x}px`;
-        icon.style.top = `${pos.y}px`;
+        // const pos = this.worldToMap(x, z);
+        // if (this.waypointIcon) {
+        //    this.waypointIcon.style.left = `${pos.x}px`;
+        //    this.waypointIcon.style.top = `${pos.y}px`;
+        // }
 
         console.log("Waypoint added at", x, z);
     }
 
     generateMapTexture() {
+        const resolution = 2048; // High resolution for clarity
         const canvas = document.createElement('canvas');
-        canvas.width = this.mapSize;
-        canvas.height = this.mapSize;
+        canvas.width = resolution;
+        canvas.height = resolution;
         const ctx = canvas.getContext('2d');
 
-        // Helper to convert World Coords to Map Coords
-        const toMap = (x, z) => {
-            const mx = (x + this.worldSize / 2) * this.scale;
-            const my = (z + this.worldSize / 2) * this.scale;
-            return { x: mx, y: my };
-        };
+        // Fill Background (Deep Water)
+        ctx.fillStyle = '#1a3c6e'; // Deep Blue
+        ctx.fillRect(0, 0, resolution, resolution);
 
-        // 1. Base Ground (Brighter Green for visibility)
-        ctx.fillStyle = '#4a6b4a';
-        ctx.fillRect(0, 0, this.mapSize, this.mapSize);
-
-        // 2. Grid Lines (Faint)
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.lineWidth = 1;
-        const gridSize = 100; // 100 world units = 100 pixels (scale 1)
-        for (let x = 0; x <= this.mapSize; x += gridSize) {
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, this.mapSize);
-            ctx.stroke();
-        }
-        for (let y = 0; y <= this.mapSize; y += gridSize) {
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(this.mapSize, y);
-            ctx.stroke();
+        if (!this.game.world.terrainManager) {
+            console.warn("MapManager: TerrainManager not ready for map generation.");
+            return canvas.toDataURL();
         }
 
-        // 3. Grass Field (0, 0, 100x100)
-        // World: -50 to 50 on X and Z
-        const p1 = toMap(-50, -50);
-        const p2 = toMap(50, 50);
-        const w = p2.x - p1.x;
-        const h = p2.y - p1.y;
+        const tm = this.game.world.terrainManager;
+        const imgData = ctx.getImageData(0, 0, resolution, resolution);
+        const data = imgData.data;
 
-        ctx.fillStyle = '#4a854a'; // Lighter Green
-        ctx.fillRect(p1.x, p1.y, w, h);
+        // Iterate pixels
+        for (let y = 0; y < resolution; y++) {
+            for (let x = 0; x < resolution; x++) {
+                // Map Pixel -> World Coordinate
+                // Map (0,0) is Top-Left (-1000, -1000 World)
+                // Map (512,512) is Bottom-Right (1000, 1000 World)
 
-        // 4. Arena (0, -40, Radius 20)
-        const arenaPos = toMap(0, -40);
-        const arenaRadius = 20 * this.scale;
-        ctx.fillStyle = '#444444'; // Dark Grey
-        ctx.beginPath();
-        ctx.arc(arenaPos.x, arenaPos.y, arenaRadius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#222';
-        ctx.lineWidth = 2;
-        ctx.stroke();
+                const worldX = (x / resolution) * this.worldSize - (this.worldSize / 2);
+                const worldZ = (y / resolution) * this.worldSize - (this.worldSize / 2);
 
-        // 5. Wall (0, -10, 10x20x2 but BoxGeometry is 10,20,2 so width=10, depth=2)
-        // Position is center.
-        const wallPos = toMap(0, -10);
-        const wallW = 10 * this.scale;
-        const wallD = 2 * this.scale; // Depth (Z)
+                const height = tm.getHeightAt(worldX, worldZ);
+                const biome = tm.getBiomeAt(worldX, worldZ);
 
-        ctx.fillStyle = '#888888'; // Grey
-        ctx.fillRect(wallPos.x - wallW / 2, wallPos.y - wallD / 2, wallW, wallD);
+                let r, g, b;
 
-        // 6. Towers (Bases)
-        // Central (50, 50)
-        // NW (-100, 100)
-        // SE (150, -50)
-        const towers = [
-            { x: 50, z: 50 },
-            { x: -100, z: 100 },
-            { x: 150, z: -50 }
-        ];
+                // Color Logic
+                if (height < 1.8) {
+                    // Water/Coast
+                    r = 60; g = 120; b = 200; // Blue
+                } else if (height < 3.0) {
+                    // Beach
+                    r = 210; g = 190; b = 130; // Sand
+                } else {
+                    // Land
+                    switch (biome) {
+                        case 'SNOW':
+                            r = 240; g = 240; b = 250;
+                            break;
+                        case 'MOUNTAIN':
+                            r = 100; g = 100; b = 100;
+                            break;
+                        case 'DESERT':
+                            r = 200; g = 170; b = 100;
+                            break;
+                        case 'FOREST':
+                            r = 30; g = 100; b = 30;
+                            break;
+                        case 'CITY':
+                            r = 120; g = 120; b = 130;
+                            break;
+                        default: // PLAINS
+                            r = 80; g = 160; b = 80;
+                    }
 
-        ctx.fillStyle = '#550000'; // Dark Red Base
-        towers.forEach(t => {
-            const pos = toMap(t.x, t.z);
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, 5 * this.scale, 0, Math.PI * 2);
-            ctx.fill();
-        });
+                    // Simple shading based on height (fake ambient occlusion)
+                    const shade = 1.0 - (height / 100) * 0.2;
+                    r *= shade;
+                    g *= shade;
+                    b *= shade;
+                }
+
+                const index = (y * resolution + x) * 4;
+                data[index] = r;
+                data[index + 1] = g;
+                data[index + 2] = b;
+                data[index + 3] = 255; // Alpha
+            }
+        }
+
+        ctx.putImageData(imgData, 0, 0);
+
+        // Draw Towers (Overlay) - REMOVED to prevent ghosting (Icons are used instead)
+        // const towers = [ ... ];
+        // ctx.fillStyle = '#ff0000';
+        // towers.forEach(t => { ... });
 
         return canvas.toDataURL();
     }
@@ -384,8 +528,8 @@ export class MapManager {
             this.updateRevealAnimation(dt);
         }
 
-        // Smooth Zoom
-        this.zoom += (this.targetZoom - this.zoom) * 0.1;
+        // Smooth Zoom - REMOVED for precision
+        this.zoom = this.targetZoom;
 
         // SCROLLING LOGIC (GPS Style)
         const cw = this.container.clientWidth;
@@ -416,8 +560,14 @@ export class MapManager {
             // Content X = Target Screen X - (MapCenter X * Zoom)
             // Content Y = Target Screen Y - (MapCenter Y * Zoom)
 
-            let tx = (cx + this.mapOffset.x) - (this.currentMapCenter.x * this.zoom);
-            let ty = (cy + this.mapOffset.y) - (this.currentMapCenter.y * this.zoom);
+            // Correct Logic per User Request:
+            // Pivot is Player (currentMapCenter). We want Pivot * Zoom to be at Center of Screen (cx, cy) + Offset.
+            // ScreenPos = MapPos * Zoom + Translate
+            // (cx + offset) = (center * zoom) + tx
+            // tx = cx - (center * zoom) + offset
+
+            let tx = cx - (this.currentMapCenter.x * this.zoom) + this.mapOffset.x;
+            let ty = cy - (this.currentMapCenter.y * this.zoom) + this.mapOffset.y;
 
             this.content.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${this.zoom})`;
 
@@ -482,7 +632,7 @@ export class MapManager {
                 borderRadius: '0',
                 position: 'absolute',
                 transform: 'translate(-50%, -50%)',
-                zIndex: '10',
+                zIndex: '100', // ALWAYS ON TOP
                 filter: 'drop-shadow(0 0 2px black)'
             });
             this.iconLayer.appendChild(icon);
@@ -565,13 +715,21 @@ export class MapManager {
         this.fogCtx.globalCompositeOperation = 'destination-out';
         this.fogCtx.beginPath();
         this.fogCtx.arc(pos.x, pos.y, mapRadius, 0, Math.PI * 2);
+        this.fogCtx.fillStyle = 'white'; // Color doesn't matter for destination-out, but good practice
         this.fogCtx.fill();
         this.fogCtx.restore();
 
-        console.log(`MapManager: Revealed zone at ${worldX}, ${worldZ} with radius ${radius}`);
+        // console.log(`MapManager: Revealed zone at ${worldX}, ${worldZ} with radius ${radius}`);
     }
 
     addTowerIcon(tower, index) {
+        if (!this.iconLayer) {
+            // Queue it if map not ready yet
+            if (!this.pendingIcons) this.pendingIcons = [];
+            this.pendingIcons.push({ type: 'tower', tower, index });
+            return;
+        }
+
         const icon = document.createElement('div');
         // Style for tower icon
         Object.assign(icon.style, {
@@ -602,9 +760,8 @@ export class MapManager {
             tower.icon.style.boxShadow = '0 0 10px #00ccff';
             tower.icon.style.zIndex = '20'; // Bring to top
         }
-        // Reveal the zone (Fog of War)
-        console.log("MapManager: Unlocking Tower - Revealing Zone");
-        this.revealZone(tower.position.x, tower.position.z, 300);
+        // console.log("MapManager: Unlocking Tower - Revealing Zone");
+        this.revealZone(tower.position.x, tower.position.z, 100);
     }
 
     toggleMap(forceState) {
@@ -627,7 +784,7 @@ export class MapManager {
             // PAUSE GAME
             if (this.game) {
                 this.game.isPaused = true;
-                document.body.style.cursor = 'default';
+                document.body.style.cursor = ''; // Let CSS handle it (grab)
                 document.exitPointerLock();
             }
 

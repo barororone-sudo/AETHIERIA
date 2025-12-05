@@ -69,4 +69,12 @@ export class AudioManager {
             this.music.stop();
         }
     }
+
+    mute() {
+        Howler.mute(true);
+    }
+
+    unmute() {
+        Howler.mute(false);
+    }
 }
