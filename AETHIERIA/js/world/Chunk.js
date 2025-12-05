@@ -46,14 +46,11 @@ export class Chunk {
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.computeVertexNormals();
 
-        const material = new THREE.MeshStandardMaterial({
-            vertexColors: true,
-            roughness: 0.9,
-            metalness: 0.1,
-            flatShading: true
-        });
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geometry.computeVertexNormals();
 
-        this.mesh = new THREE.Mesh(geometry, material);
+        // OPTIMIZATION: Use Shared Material
+        this.mesh = new THREE.Mesh(geometry, this.tm.assets.groundMaterial);
         this.mesh.receiveShadow = true;
         this.tm.group.add(this.mesh);
     }
@@ -240,6 +237,7 @@ export class Chunk {
         if (this.mesh) {
             this.tm.group.remove(this.mesh);
             this.mesh.geometry.dispose();
+            // DO NOT dispose material (Shared)
         }
         if (this.body && this.hasPhysics) {
             this.tm.world.physicsWorld.removeBody(this.body);
@@ -248,7 +246,7 @@ export class Chunk {
         // Cleanup Instanced Meshes
         this.instancedMeshes.forEach(mesh => {
             this.tm.group.remove(mesh);
-            mesh.dispose(); // Custom dispose if needed, but geometry is shared
+            // DO NOT dispose geometry/material here (Shared Assets)
         });
         this.instancedMeshes = [];
     }

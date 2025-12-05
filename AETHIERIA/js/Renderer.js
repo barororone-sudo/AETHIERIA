@@ -9,7 +9,7 @@ export class Renderer {
         });
 
         this.instance.setSize(window.innerWidth, window.innerHeight);
-        this.instance.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.instance.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         this.instance.shadowMap.enabled = true;
         this.instance.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -28,7 +28,7 @@ export class Renderer {
 
     onResize() {
         this.instance.setSize(window.innerWidth, window.innerHeight);
-        this.instance.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.instance.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     }
 
     render(scene, camera) {

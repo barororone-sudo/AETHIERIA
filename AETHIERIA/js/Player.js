@@ -290,19 +290,50 @@ export class Player {
         light.position.set(0, 1, 0);
         this.mesh.add(light);
 
-        // 5. Glider (Paraglider) - Procedural Triangle
-        const gliderGeo = new THREE.ConeGeometry(1.5, 1.0, 3); // Triangle shape
-        gliderGeo.rotateX(Math.PI / 2); // Flat
-        gliderGeo.rotateY(Math.PI); // Point forward
-        const gliderMat = new THREE.MeshStandardMaterial({
-            color: 0x3366ff,
-            side: THREE.DoubleSide,
-            roughness: 0.5
+        // 5. Glider (Energy Wings) - "Neon Stylized" Design
+        this.gliderMesh = new THREE.Group();
+        this.gliderMesh.position.set(0, 1.4, -0.2); // Upper back
+        this.gliderMesh.visible = false;
+
+        // Central Unit (Compact Tech Pack)
+        const packGeo = new THREE.BoxGeometry(0.3, 0.4, 0.15); // Smaller pack
+        const packMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.3, metalness: 0.8 });
+        const pack = new THREE.Mesh(packGeo, packMat);
+        this.gliderMesh.add(pack);
+
+        // Neon Glow Material
+        const wingMat = new THREE.MeshStandardMaterial({
+            color: 0x00ffcc, // Cyan/Teal
+            emissive: 0x00ffcc,
+            emissiveIntensity: 3.0, // High Glow
+            transparent: true,
+            opacity: 0.9,
+            side: THREE.DoubleSide
         });
 
-        this.gliderMesh = new THREE.Mesh(gliderGeo, gliderMat);
-        this.gliderMesh.position.set(0, 1.5, -0.5);
-        this.gliderMesh.visible = false;
+        // Wing Geometry (Smaller, Swept Back)
+        const wingGeo = new THREE.BufferGeometry();
+        // Modern swept-wing shape, much smaller spread
+        const wingVerts = new Float32Array([
+            0, 0, 0,       // Root
+            -1.2, 0.2, 0.3, // Tip (Shorter spread: 1.2 vs 2.5)
+            -0.3, -0.2, 0.2, // Back edge
+
+            0, 0, 0,
+            -1.2, 0.2, 0.3,
+            -0.3, 0.1, -0.1 // Front edge
+        ]);
+        wingGeo.setAttribute('position', new THREE.BufferAttribute(wingVerts, 3));
+        wingGeo.computeVertexNormals();
+
+        const lWing = new THREE.Mesh(wingGeo, wingMat);
+        this.gliderMesh.add(lWing);
+
+        // Right Wing (Mirrored)
+        const rWing = lWing.clone();
+        rWing.scale.set(-1, 1, 1);
+        this.gliderMesh.add(rWing);
+
         this.mesh.add(this.gliderMesh);
 
         // 6. Shield Group (Surfboard / Back)
@@ -591,9 +622,10 @@ export class Player {
                 if (!grounded) {
                     this.state = 'AIR';
                 } else if (this.input.keys.jump && !this.exhausted) {
-                    this.body.velocity.y = 18; // Heroic Jump (User Request: 18)
+                    this.body.velocity.y = 22; // BOOSTED Jump (Obstacle Fix)
                     this.state = 'AIR';
                     this.lastJumpTime = Date.now();
+                    this.hasReleasedJump = false; // Prevent instant glide activation
                 } else if (this.input.keys.crouch) {
                     // Enter Guard
                     this.state = 'GUARD';
@@ -623,12 +655,26 @@ export class Player {
                 // Read Tap Count
                 const taps = this.input.jumpTapCount;
 
-                // Double Tap -> Glide (Keep as backup)
+                // Double Tap -> Glide (Restored)
                 if (taps === 2 && this.canGlide && !this.exhausted) {
-                    this.state = 'GLIDE';
-                    this.input.jumpTapCount = 0; // Consume
+                    // SAFETY CHECK: Prevent ground activation (which causes blue screen/clipping)
+                    let safeToGlide = true;
+                    if (this.mesh && this.world && this.world.terrainManager) {
+                        const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 0.5, 0));
+                        // STRICTER: Require 5m clearance to prevent ground clipping
+                        const raycaster = new THREE.Raycaster(rayOrigin, new THREE.Vector3(0, -1, 0), 0, 5.0);
+                        const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
+                        if (intersects.length > 0) {
+                            safeToGlide = false;
+                        }
+                    }
+
+                    if (safeToGlide) {
+                        this.state = 'GLIDE';
+                        this.input.jumpTapCount = 0; // Consume
+                    }
                 }
-                // Single Press High Air -> Glide (New Logic)
+                // Single Press High Air -> Glide (Restored)
                 else if (this.input.keys.jump && this.canGlide && !this.exhausted && this.hasReleasedJump) {
                     // Check Height
                     if (this.mesh && this.world && this.world.terrainManager && this.world.terrainManager.group) {
@@ -636,8 +682,8 @@ export class Player {
                         const raycaster = new THREE.Raycaster(rayOrigin, new THREE.Vector3(0, -1, 0), 0, 100); // Check down
                         const intersects = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
 
-                        // If ground is far enough (> 3m)
-                        if (intersects.length > 0 && intersects[0].distance > 3.0) {
+                        // If ground is far enough (> 5m)
+                        if (intersects.length > 0 && intersects[0].distance > 5.0) {
                             this.state = 'GLIDE';
                             this.body.velocity.y = Math.max(this.body.velocity.y, -1.0); // Air Brake
                             this.body.angularVelocity.set(0, 0, 0); // Stop spinning
@@ -846,39 +892,34 @@ export class Player {
                 }
                 break;
             case 'GLIDE':
-                // "Zelda Style" Flight Physics
+                // "Zelda Style" Flight Physics - PLAYER CONTROLLED
 
                 // 1. Gravity / Lift
-                // Constant slow descent (Terminal Velocity)
                 const glideTerminalVelocity = -2.0;
                 if (this.body.velocity.y > glideTerminalVelocity) {
-                    this.body.velocity.y -= 5.0 * dt; // Gravity towards terminal
+                    this.body.velocity.y -= 5.0 * dt;
                 } else {
-                    this.body.velocity.y = glideTerminalVelocity; // Clamp
+                    this.body.velocity.y = glideTerminalVelocity;
                 }
 
-                // 2. Movement
-                const baseGlideSpeed = 8.0; // Always move slightly
-                const boostSpeed = 12.0;
-
+                // 2. Movement (Direct Input Control)
                 if (inputLen > 0) {
-                    // Active Control
-                    // Rotate character to face input direction smoothly
+                    // Apply velocity directly based on camera-relative input
+                    this.body.velocity.x = input.x * 15;
+                    this.body.velocity.z = input.z * 15;
+                    // Reset Damping
+                    this.body.linearDamping = 0.1;
+
+                    // Rotation: Face direction of movement
                     const angle = Math.atan2(input.x, input.z);
                     const targetQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
                     this.body.quaternion.slerp(targetQ, 0.1);
 
-                    // Move in facing direction
-                    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.body.quaternion);
-                    this.body.velocity.x = forward.x * boostSpeed;
-                    this.body.velocity.z = forward.z * boostSpeed;
-
                 } else {
-                    // Passive Gliding (Drifting forward)
-                    // If no input, keep current orientation but move slower
-                    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.body.quaternion);
-                    this.body.velocity.x = forward.x * baseGlideSpeed;
-                    this.body.velocity.z = forward.z * baseGlideSpeed;
+                    // No Input: Slide/Coast
+                    // Apply High Damping to stop horizontal movement = HOVER
+                    this.body.linearDamping = 2.0;
+                    // No forced forward movement here!
                 }
 
                 // 3. Stabilization (Prevent twisting)
@@ -1047,7 +1088,7 @@ export class Player {
 
         // --- STATE MACHINE VISUALS ---
 
-        if (this.gliderMesh) this.gliderMesh.visible = false; // Hide by default
+        if (this.gliderMesh) this.gliderMesh.visible = false; // Hide by default - STRICT RESET
 
         switch (this.state) {
             case 'GUARD':
@@ -1063,7 +1104,7 @@ export class Player {
 
             case 'GLIDE':
                 // Superman Pose
-                targetRotX = Math.PI / 2; // Face down
+                targetRotX = 1.2; // ~70 deg (Prevent camera clipping into wings)
                 targetPosY = 0.0; // Align with hitbox center
 
                 // Arms T-Pose / Wings
@@ -1110,69 +1151,10 @@ export class Player {
                     this.shieldGroup.position.set(0, -0.5, 0); // Under feet
                     this.shieldGroup.rotation.set(0, 0, 0); // Flat
                 }
-                break;
+                break; // Properly break SURF case
 
-            default:
-                // Reset Shield to Back (Re-parent to Body)
-                if (this.shieldGroup && this.shieldGroup.parent !== this.bodyMesh) {
-                    this.bodyMesh.attach(this.shieldGroup);
-                    this.shieldGroup.position.set(0, 0.0, -0.35);
-                    this.shieldGroup.rotation.set(0, 0, 0);
-                }
-                break;
-
-                // Dynamic Balance
-                const surfBob = Math.sin(time * 5) * 0.05;
-                leftHandPos.y += surfBob;
-                rightHandPos.y -= surfBob;
-                break;
-
-            case 'CLIMB':
-                // Spiderman / Link Climb
-                targetRotX = -0.2; // Slight lean into wall
-                targetPosY = 0.6;
-
-                // Alternating Reach
-                if (this.input.keys.forward || this.input.keys.backward || this.input.keys.left || this.input.keys.right) {
-                    const climbSpeed = 10;
-                    leftHandPos.y = 0.5 + Math.sin(time * climbSpeed) * 0.4;
-                    rightHandPos.y = 0.5 + Math.cos(time * climbSpeed) * 0.4;
-                } else {
-                    // Hold still
-                    leftHandPos.y = 0.6;
-                    rightHandPos.y = 0.6;
-                }
-                leftHandPos.z = 0.3; // Reach forward
-                rightHandPos.z = 0.3;
-                break;
-
-            case 'SWIM':
-                // Head above water
-                targetRotX = Math.PI / 4; // 45 deg swimming
-
-                // Bobbing
-                const swimBob = Math.sin(time * 3) * 0.1;
-                targetPosY = 0.2 + swimBob; // Lower body submerged
-
-                // Breaststroke Arms
-                const swimCycle = time * 3;
-                leftHandPos.x = -0.5 + Math.sin(swimCycle) * 0.3;
-                leftHandPos.z = Math.cos(swimCycle) * 0.3;
-                rightHandPos.x = 0.5 - Math.sin(swimCycle) * 0.3;
-                rightHandPos.z = Math.cos(swimCycle) * 0.3;
-                break;
-
-            case 'SPRINT':
-                // Naruto Run / Dash
-                targetRotX = 0.8; // ~45 deg forward lean
-                targetPosY = 0.5;
-
-                // Frantic Arms (Pumping)
-                const runSpeed = 15;
-                leftHandPos.z = Math.sin(time * runSpeed) * 0.6;
-                leftHandPos.y = Math.cos(time * runSpeed) * 0.2;
-                rightHandPos.z = Math.cos(time * runSpeed) * 0.6;
-                rightHandPos.y = Math.sin(time * runSpeed) * 0.2;
+            case 'GLIDE': // Ensure Glide logic is safe if it was here? No, GLIDE was above.
+                // Just ensuring the structure is correct.
                 break;
 
             case 'RUN':
@@ -1340,8 +1322,9 @@ export class Player {
      */
     updateCamera(dt) {
         if (!this.mesh) return;
-        // Camera Target (Shoulders/Head)
-        const targetPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.6, 0)); // Was 1.5
+        // Camera Target (Head level or slightly above to prevent obstruction)
+        // Raised from 1.6 to 1.9 to clear player head
+        const targetPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.9, 0));
 
         // Camera Lag
         this.cameraLagPos.lerp(targetPos, dt * 5); // Smooth follow
@@ -1379,6 +1362,16 @@ export class Player {
         this.targetFov = (this.state === 'RUN') ? 85 : 75;
         this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, this.targetFov, dt * 2);
         this.camera.updateProjectionMatrix();
+
+        // CAMERA FIX FOR GLIDE: Pull back
+        if (this.state === 'GLIDE') {
+            // Force camera further back and up
+            const idealOffset = targetPos.clone().add(new THREE.Vector3(0, 2, 4).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.cameraState.theta));
+            this.camera.position.lerp(idealOffset, dt * 2);
+            // Ensure lookAt is correct
+            this.camera.lookAt(targetPos);
+            return; // Skip normal orbit logic
+        }
     }
 
     /**

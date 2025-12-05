@@ -1,24 +1,23 @@
 {
   "position": {
-    "x": 47.43337343634981,
-    "y": 3.9672125460903356,
-    "z": 48.86463084705048
+    "x": -0.3584469384273275,
+    "y": 5.347994253087011,
+    "z": -4.637104118069921e-7
   },
   "stats": {
-    "hp": 67,
-    "stamina": 108
+    "hp": 72,
+    "stamina": 100
   },
   "story": {
     "state": "PROLOGUE"
   },
   "world": {
-    "time": 0,
     "fog": [],
     "towers": {
-      "tower_central": true,
+      "tower_central": false,
       "tower_north_west": false,
       "tower_south_east": false
     }
   },
-  "timestamp": 1764932035690
+  "timestamp": 1764936241572
 }

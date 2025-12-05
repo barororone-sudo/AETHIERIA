@@ -42,6 +42,14 @@ export class TerrainManager {
                 color: 0x888888,
                 roughness: 0.2,
                 map: this.createBuildingTexture()
+            }),
+
+            // OPTIMIZATION: Shared Material for Terrain Chunks
+            groundMaterial: new THREE.MeshStandardMaterial({
+                vertexColors: true,
+                roughness: 0.9,
+                metalness: 0.1,
+                flatShading: true
             })
         };
     }

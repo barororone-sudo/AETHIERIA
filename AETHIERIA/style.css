@@ -256,3 +256,19 @@ body {
     cursor: pointer;
     font-weight: bold;
 }
+
+/* --- MAP LOD --- */
+.map-icon-enemy {
+    display: none;
+    /* Hide by default on Big Map (LOD) */
+}
+
+/* On Minimap (not big), show enemies always (or based on radar logic) */
+#minimap-container:not(.big-map-active) .map-icon-enemy {
+    display: block;
+}
+
+/* On Big Map, only show if Zoom is HIGH */
+#minimap-container.zoom-high .map-icon-enemy {
+    display: block !important;
+}
