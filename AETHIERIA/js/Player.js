@@ -292,7 +292,7 @@ export class Player {
 
         // 5. Glider (Energy Wings) - "Neon Stylized" Design
         this.gliderMesh = new THREE.Group();
-        this.gliderMesh.position.set(0, 1.4, -0.2); // Upper back
+        this.gliderMesh.position.set(0, 1.8, -0.2); // Moved HIGHER to clear head (Was 1.4)
         this.gliderMesh.visible = false;
 
         // Central Unit (Compact Tech Pack)
@@ -308,7 +308,7 @@ export class Player {
             emissiveIntensity: 3.0, // High Glow
             transparent: true,
             opacity: 0.9,
-            side: THREE.DoubleSide
+            side: THREE.FrontSide // FIX: FrontSide prevents Seeing BLUE screen if clipped inside
         });
 
         // Wing Geometry (Smaller, Swept Back)
@@ -1365,9 +1365,14 @@ export class Player {
 
         // CAMERA FIX FOR GLIDE: Pull back
         if (this.state === 'GLIDE') {
-            // Force camera further back and up
-            const idealOffset = targetPos.clone().add(new THREE.Vector3(0, 2, 4).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.cameraState.theta));
+            // Force camera further back and up (0, 4, 8) as requested
+            const idealOffset = targetPos.clone().add(new THREE.Vector3(0, 4, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.cameraState.theta));
             this.camera.position.lerp(idealOffset, dt * 2);
+
+            // Adjust FOV for speed sensation
+            this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, 85, dt * 2);
+            this.camera.updateProjectionMatrix();
+
             // Ensure lookAt is correct
             this.camera.lookAt(targetPos);
             return; // Skip normal orbit logic
@@ -1393,6 +1398,17 @@ export class Player {
     updateUI() {
         if (this.game.ui) {
             this.game.ui.update(this);
+
+            // Map Toggle Logic
+            if (this.input.keys.map && !this.mapToggleLock) {
+                if (this.game.ui.mapManager) {
+                    this.game.ui.mapManager.toggleMap();
+                }
+                this.mapToggleLock = true;
+            }
+            if (!this.input.keys.map) {
+                this.mapToggleLock = false;
+            }
         }
     }
 

@@ -12,7 +12,8 @@ export class Input {
             sprint: false,  // Shift
             interact: false,
             confirm: false,
-            p: false
+            p: false,
+            map: false
         };
 
         this.init();
@@ -76,6 +77,10 @@ export class Input {
             case 'Space':
                 this.keys.confirm = isDown;
                 if (e.code === 'Space') this.keys.jump = isDown; // Keep Jump on Space too
+                break;
+            case 'CapsLock':
+            case 'KeyM':
+                this.keys.map = isDown;
                 break;
         }
     }
