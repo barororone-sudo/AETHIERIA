@@ -139,6 +139,11 @@ export class SaveManager {
             if (data.position) {
                 player.body.position.set(data.position.x, data.position.y, data.position.z);
                 player.body.velocity.set(0, 0, 0);
+
+                // FIX: Force Terrain Update IMMEDIATELY to generate ground physics before next frame
+                if (this.game.world && this.game.world.terrainManager) {
+                    this.game.world.terrainManager.update(player.body.position);
+                }
             }
 
             // Restore Inventory

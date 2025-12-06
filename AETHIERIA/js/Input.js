@@ -21,6 +21,7 @@ export class Input {
         // Tap Counting
         this.lastJumpTime = 0;
         this.jumpTapCount = 0;
+        this.onToggleMap = null; // Callback for Map Toggle
     }
 
     init() {
@@ -78,10 +79,7 @@ export class Input {
                 this.keys.confirm = isDown;
                 if (e.code === 'Space') this.keys.jump = isDown; // Keep Jump on Space too
                 break;
-            case 'CapsLock':
-            case 'KeyM':
-                this.keys.map = isDown;
-                break;
+
         }
     }
 }

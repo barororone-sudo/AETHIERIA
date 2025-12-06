@@ -170,7 +170,7 @@ export class Tower {
 
             // Trigger Animation (1.5s duration)
             // Animate to FULL radius (100)
-            this.game.ui.mapManager.animateReveal(this.position.x, this.position.z, 100, 1.5, () => {
+            this.game.ui.mapManager.animateReveal(this.position.x, this.position.z, 200, 1.5, () => {
                 this.game.ui.mapManager.unlockTower(this);
             });
         }

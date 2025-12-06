@@ -43,6 +43,9 @@ export class MapManager {
         this.container.id = 'minimap-container';
         this.container.style.overflow = 'hidden';
         this.container.style.position = 'absolute';
+        this.container.style.display = 'none'; // Hidden by default (Waiting for Game Start)
+        this.container.style.zIndex = '1000'; // Standard UI z-index
+
         // Default Minimap Styles are in CSS
         document.body.appendChild(this.container);
 
@@ -82,8 +85,13 @@ export class MapManager {
         this.fogCanvas.width = this.mapSize;
         this.fogCanvas.height = this.mapSize;
         Object.assign(this.fogCanvas.style, layerStyle);
-        this.fogCanvas.style.zIndex = '2';
+        this.fogCanvas.style.zIndex = '5'; // Fog ABOVE Terrain(1), BELOW Icons(10)
         this.content.appendChild(this.fogCanvas);
+
+        // 5. Interactions
+        this.setupInteractions();
+
+        // 6. Process Pending / Existing Towers
 
         // Icons Layer (Where all markers live)
         this.iconLayer = document.createElement('div');
@@ -99,8 +107,6 @@ export class MapManager {
         this.fogCtx.fillRect(0, 0, this.mapSize, this.mapSize);
 
         // 5. Interactions
-        this.setupInteractions();
-
         // 6. Process Pending / Existing Towers
         if (this.pendingIcons) {
             this.pendingIcons.forEach(item => {
@@ -128,6 +134,7 @@ export class MapManager {
     onWheel(e) {
         if (!this.isBigMap) return;
         e.preventDefault();
+        console.log("Map Wheel Event:", e.deltaY); // DEBUG INPUT
 
         // Get Mouse Position relative to Container (Viewport)
         const rect = this.container.getBoundingClientRect();
@@ -188,6 +195,11 @@ export class MapManager {
     // --- CORE UPDATE ---
     update(dt) {
         if (!this.game.player || !this.container || !this.content) return;
+
+        // 0. Update Scale Var for Icons (InvScale)
+        if (this.iconLayer) {
+            this.iconLayer.style.setProperty('--map-scale', this.isBigMap ? this.viewState.scale : 1);
+        }
 
         // 1. Update Icon Positions (Pure Map Coords)
         this.updatePlayerIcon();
@@ -251,7 +263,10 @@ export class MapManager {
         icon.style.top = `${pos.y}px`;
 
         const rotation = this.game.player.mesh.rotation.y;
-        icon.style.transform = `translate(-50%, -50%) rotate(${-rotation + Math.PI}rad)`;
+        // Inverse Scale for Player Icon manually
+        const scale = this.isBigMap ? this.viewState.scale : 1;
+        const invScale = 1 / Math.max(0.1, scale);
+        icon.style.transform = `translate(-50%, -50%) rotate(${-rotation + Math.PI}rad) scale(${invScale})`;
     }
 
     updateEnemyIcons() {
@@ -264,14 +279,6 @@ export class MapManager {
             }
 
             let icon = this.icons.get(`enemy-${index}`);
-            // Logic: Show if in range
-            const dist = this.game.player.mesh.position.distanceTo(enemy.body.position);
-            // ... omitting radar range check for simplicity of icon logic, or keep it?
-            // Keeping radar for minimap is good, but user wants LOD control.
-            // Let's keep basic radar logic (40m) OR purely rely on LOD?
-            // User said: "Plus je zoome, plus je veux voir les détails (ennemis)".
-            // This implies they might be hidden when zoomed out.
-            // Let's show them always if they exist, and let CSS handle zoom hiding.
 
             if (!icon) {
                 icon = document.createElement('div');
@@ -281,7 +288,7 @@ export class MapManager {
                     backgroundColor: 'red',
                     borderRadius: '50%',
                     position: 'absolute',
-                    transform: 'translate(-50%, -50%)',
+                    transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))', // CSS Var InvScale
                     zIndex: '5',
                     pointerEvents: 'none',
                     boxShadow: '0 0 4px red'
@@ -310,8 +317,9 @@ export class MapManager {
             backgroundColor: 'red',
             border: '2px solid white',
             borderRadius: '2px',
+            borderRadius: '2px',
             position: 'absolute',
-            transform: 'translate(-50%, -50%)',
+            transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))',
             zIndex: '8',
             pointerEvents: 'none'
         });
@@ -324,12 +332,16 @@ export class MapManager {
     }
 
     unlockTower(tower) {
+        // console.log("Unlocking Tower Icon...", tower);
         if (tower.icon) {
             tower.icon.style.backgroundColor = '#00ccff';
             tower.icon.style.boxShadow = '0 0 10px #00ccff';
             tower.icon.style.zIndex = '20';
+        } else {
+            console.warn("Tower has no icon to unlock!", tower);
         }
-        this.revealZone(tower.position.x, tower.position.z, 100);
+        // Force immediate large reveal
+        this.revealZone(tower.position.x, tower.position.z, 150);
     }
 
     // --- UTILS ---
@@ -386,27 +398,45 @@ export class MapManager {
     }
 
     revealZone(x, z, r) {
-        if (!this.fogCtx) return;
+        if (!this.fogCtx) { console.error("No Fog Context!"); return; }
         const pos = this.worldToMap(x, z);
         const mapR = r * this.scale;
 
+        // VISUAL DEBUG: Show coordinates on screen
+        if (this.game && this.game.ui) {
+            this.game.ui.showToast(`DEBUG REVEAL: X=${Math.floor(pos.x)} Y=${Math.floor(pos.y)} R=${Math.floor(mapR)}`);
+        }
+        console.log(`Revealing Zone at World(${x}, ${z}) -> Map(${pos.x}, ${pos.y}) Radius: ${r}`);
+
         this.fogCtx.save();
-        this.fogCtx.globalCompositeOperation = 'destination-out';
+        // FORCE RED PAINT AGAIN (Easiest to see)
+        this.fogCtx.globalCompositeOperation = 'source-over';
+        this.fogCtx.fillStyle = '#ff0000'; // Pure Red
         this.fogCtx.beginPath();
         this.fogCtx.arc(pos.x, pos.y, mapR, 0, Math.PI * 2);
         this.fogCtx.fill();
         this.fogCtx.restore();
     }
 
-    animateReveal(x, z, r) {
-        this.revealAnimation = { x, z, currentRadius: 0, targetRadius: r, speed: r };
+    animateReveal(x, z, r, duration = 1.0, onComplete = null) {
+        // Calculate speed based on duration
+        const speed = r / duration;
+        this.revealAnimation = { x, z, currentRadius: 0, targetRadius: r, speed, onComplete };
     }
+
     updateRevealAnimation(dt) {
+        if (!this.revealAnimation) return;
+
         const anim = this.revealAnimation;
         anim.currentRadius += anim.speed * dt;
+
         if (anim.currentRadius >= anim.targetRadius) {
             anim.currentRadius = anim.targetRadius;
             this.revealZone(anim.x, anim.z, anim.currentRadius);
+
+            // Execute Callback (Unlock Tower etc.)
+            if (anim.onComplete) anim.onComplete();
+
             this.revealAnimation = null;
         } else {
             this.revealZone(anim.x, anim.z, anim.currentRadius);
@@ -415,39 +445,72 @@ export class MapManager {
 
     toggleMap(force) {
         if (!this.container) return;
-        if (force !== undefined) this.isBigMap = force;
+        // console.log(`TOGGLE MAP CALLED. Current: ${this.isBigMap}, Force: ${force}`);
+
+        if (force !== undefined && force !== null) this.isBigMap = force;
         else this.isBigMap = !this.isBigMap;
 
         if (this.isBigMap) {
-            this.container.classList.add('big-map-active');
-            this.container.style.display = 'block'; // Ensure visibility
-
+            // FORCE Visibility Sequence
+            // FORCE LAYOUT (Manual Override with !important)
+            this.container.style.cssText = `
+                display: block !important;
+                z-index: 2000 !important;
+                opacity: 1 !important;
+                width: 80% !important;
+                width: 80% !important;
+                height: 80% !important;
+                top: 10% !important;
+                left: 10% !important;
+                bottom: auto !important;
+                right: auto !important;
+                border-radius: 20px !important;
+                position: absolute !important;
+                background: rgba(0,0,0,0.8);
+                border: 2px solid white !important;
+            `;
+            this.container.style.display = 'block'; // Force override
             // Release mouse for map interaction
             if (document.pointerLockElement) {
                 document.exitPointerLock();
             }
 
             // Initial Centering on Player for ViewState
-            const cw = this.container.clientWidth;
-            const ch = this.container.clientHeight;
-            const p = this.game.player.mesh.position;
-            const mapPos = this.worldToMap(p.x, p.z);
+            // Fallback to Window Size if container isn't ready
+            const cw = this.container.clientWidth || (window.innerWidth * 0.8);
+            const ch = this.container.clientHeight || (window.innerHeight * 0.8);
 
-            // ViewState logic:
-            // content transform = (vx, vy)
-            // We want player at center (cx, cy)
-            // cx = vx + mapPos.x * scale
-            // vx = cx - mapPos.x * scale
-            // Start at scale 1.0?
-            this.viewState.scale = 1.0;
-            this.viewState.x = (cw / 2) - mapPos.x;
-            this.viewState.y = (ch / 2) - mapPos.y;
+            if (this.game.player && this.game.player.mesh) {
+                const p = this.game.player.mesh.position;
+                const mapPos = this.worldToMap(p.x, p.z);
+
+                this.viewState.scale = 1.0;
+                this.viewState.x = (cw / 2) - mapPos.x;
+                this.viewState.y = (ch / 2) - mapPos.y;
+            }
 
             if (this.game.ui) this.game.ui.showToast("MOLETTE: Zoom | GLISSER: Déplacer");
         } else {
             this.container.classList.remove('big-map-active');
-            // document.body.requestPointerLock(); // Optional: Re-lock? 
-            // Better to let user click to re-lock to avoid browser permission errors
+
+            // CLEAR OVERRIDES (Restores CSS class defaults like Border)
+            this.container.style.cssText = '';
+
+            this.container.style.display = 'block'; // Ensure it stays visible as minimap
+
+            // RESET LAYOUT TO MINIMAP
+            this.container.style.width = '200px';
+            this.container.style.height = '200px';
+            this.container.style.top = 'auto'; // Clear top
+            this.container.style.left = 'auto'; // Clear left
+            this.container.style.bottom = '20px';
+            this.container.style.right = '20px';
+            this.container.style.borderRadius = '50%';
+
+            // Do not hide display immediately to allow transition, handled by CSS or timeout?
+            // Actually, keep it block for transition, CSS handles opacity/size.
+            // But if we want it to disappear from clicks...
+            // Let's rely on CSS transition for now, but remove the high z-index.
         }
     }
 

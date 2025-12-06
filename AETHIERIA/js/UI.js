@@ -354,6 +354,10 @@ export class UIManager {
             if (e.code === 'KeyI') {
                 this.toggleMenu();
             }
+            // Support 'M' (Qwerty) and Semicolon (Azerty M position) and literal 'm' check
+            if (e.code === 'KeyM' || e.code === 'Semicolon' || e.key === 'm' || e.key === 'M') {
+                this.toggleMap();
+            }
             // Use KeyDown for immediate response, but handle repeats if necessary
             if (e.code === 'CapsLock' && !e.repeat) {
                 console.log("CapsLock Pressed (UI)");
@@ -632,10 +636,22 @@ export class UIManager {
         this.updateMinimap(dt);
     }
 
+    updateMinimap(dt) {
+        if (this.mapManager) {
+            this.mapManager.update(dt);
+        }
+    }
+
     revealRegion(x, z, radius) {
         if (this.mapManager) {
             this.mapManager.revealZone(x, z, radius);
             this.showToast("Map Updated: Region Revealed");
+        }
+    }
+
+    toggleMap() {
+        if (this.mapManager) {
+            this.mapManager.toggleMap();
         }
     }
 

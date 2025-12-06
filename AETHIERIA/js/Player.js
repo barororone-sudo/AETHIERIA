@@ -96,6 +96,13 @@ export class Player {
         this.audio = game.audio || null;
         this.inputLocked = false;
 
+        // Register Input Callbacks
+        this.input.onToggleMap = () => {
+            if (this.game.ui && this.game.ui.mapManager) {
+                this.game.ui.mapManager.toggleMap();
+            }
+        };
+
         // Timers
         this.hitStopTimer = 0;
         /** @type {number} */ this.shakeTimer = 0;
@@ -221,6 +228,11 @@ export class Player {
         });
 
         this.body.position.set(0, 50, 0); // SAFE SPAWN HIGH UP
+
+        // FIX: Enable CCD (Continuous Collision Detection) to prevent tunneling at high speeds
+        this.body.ccdSpeedThreshold = 1;
+        this.body.ccdIterations = 10;
+
         this.world.physicsWorld.addBody(this.body);
     }
 
@@ -292,7 +304,7 @@ export class Player {
 
         // 5. Glider (Energy Wings) - "Neon Stylized" Design
         this.gliderMesh = new THREE.Group();
-        this.gliderMesh.position.set(0, 1.8, -0.2); // Moved HIGHER to clear head (Was 1.4)
+        this.gliderMesh.position.set(0, 0.8, -0.35); // On back, relative to body center
         this.gliderMesh.visible = false;
 
         // Central Unit (Compact Tech Pack)
@@ -303,8 +315,8 @@ export class Player {
 
         // Neon Glow Material
         const wingMat = new THREE.MeshStandardMaterial({
-            color: 0x00ffcc, // Cyan/Teal
-            emissive: 0x00ffcc,
+            color: 0xff0000, // DEBUG: RED
+            emissive: 0xff0000,
             emissiveIntensity: 3.0, // High Glow
             transparent: true,
             opacity: 0.9,
@@ -334,7 +346,7 @@ export class Player {
         rWing.scale.set(-1, 1, 1);
         this.gliderMesh.add(rWing);
 
-        this.mesh.add(this.gliderMesh);
+        this.bodyMesh.add(this.gliderMesh);
 
         // 6. Shield Group (Surfboard / Back)
         this.shieldGroup = new THREE.Group();
@@ -426,13 +438,22 @@ export class Player {
             this.input.keys.interact = false; // Debounce
         }
 
-        // PANIC BUTTON (P) - Reset Position
-        if (this.game.input.keys.p || (this.input.keys.interact && this.input.keys.jump)) { // Fallback combo
-            // console.log("PANIC RESET TRIGGERED");
+        // PANIC BUTTON (P)
+        if (this.game.input.keys.p) {
             this.body.position.set(0, 50, 0);
             this.body.velocity.set(0, 0, 0);
             this.state = 'AIR';
             this.body.wakeUp();
+        }
+
+        // --- SANITY CHECK (ANTI-CRASH) ---
+        this.checkSanity("Start of Update");
+
+        // Debug Logging (Every 1s)
+        if (!this.debugTimer) this.debugTimer = 0;
+        if (typeof dt !== 'number' || isNaN(dt)) {
+            console.warn("Invalid dt in Player.update:", dt);
+            dt = 0.016;
         }
 
         // Debug Logging (Every 1s)
@@ -457,10 +478,19 @@ export class Player {
 
         this.checkGround();
         this.updateStamina(dt);
+
         this.handleState(dt);
+        this.checkSanity("After handleState");
+
         this.updatePhysics(dt);
+        this.checkSanity("After updatePhysics");
+
         this.updateVisuals(dt);
+        this.checkSanity("After updateVisuals");
+
         this.updateCamera(dt);
+        this.checkSanity("After updateCamera");
+
         this.updateUI();
 
         if (this.combat) this.combat.update(dt);
@@ -622,7 +652,7 @@ export class Player {
                 if (!grounded) {
                     this.state = 'AIR';
                 } else if (this.input.keys.jump && !this.exhausted) {
-                    this.body.velocity.y = 22; // BOOSTED Jump (Obstacle Fix)
+                    this.body.velocity.y = 15; // Adjusted Jump Height (Was 22)
                     this.state = 'AIR';
                     this.lastJumpTime = Date.now();
                     this.hasReleasedJump = false; // Prevent instant glide activation
@@ -644,7 +674,8 @@ export class Player {
                 break;
 
             case 'GUARD':
-                if (!this.input.keys.crouch || speed > 0.1) {
+                // Exit Guard if Crouch released OR moving fast OR Jumping
+                if (!this.input.keys.crouch || speed > 1.0 || this.input.keys.jump) {
                     this.state = 'IDLE';
                 }
                 break;
@@ -670,8 +701,7 @@ export class Player {
                     }
 
                     if (safeToGlide) {
-                        this.state = 'GLIDE';
-                        this.input.jumpTapCount = 0; // Consume
+                        this.enterGlide();
                     }
                 }
                 // Single Press High Air -> Glide (Restored)
@@ -684,28 +714,13 @@ export class Player {
 
                         // If ground is far enough (> 5m)
                         if (intersects.length > 0 && intersects[0].distance > 5.0) {
-                            this.state = 'GLIDE';
-                            this.body.velocity.y = Math.max(this.body.velocity.y, -1.0); // Air Brake
-                            this.body.angularVelocity.set(0, 0, 0); // Stop spinning
-
-                            // Align rotation to camera/input immediately if moving
-                            const input = this.getInputVector();
-                            if (input.length() > 0) {
-                                const angle = Math.atan2(input.x, input.z);
-                                const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
-                                this.body.quaternion.copy(q);
-                            }
-
-                            this.hasReleasedJump = false; // Prevent spam
+                            this.enterGlide();
                         } else if (intersects.length === 0) {
-                            // No ground found (void) -> Glide allowed
-                            this.state = 'GLIDE';
-                            this.body.velocity.y = Math.max(this.body.velocity.y, -1.0); // Air Brake
-                            this.body.angularVelocity.set(0, 0, 0);
-                            this.hasReleasedJump = false;
+                            // No ground found (void) -> Glide allowed - DISABLED FOR DEBUGGING
+                            // this.enterGlide(); 
                         }
                     }
-                }
+                } // Closes else if (jump...)
                 // Triple Tap -> Surf
                 else if (taps === 3 && this.canSurf && !this.exhausted) {
                     this.state = 'SURF';
@@ -714,7 +729,7 @@ export class Player {
                 }
 
                 // Landing Assist: Force down if close to ground but not grounded yet
-                if (this.mesh && this.world && this.world.terrainManager && this.world.terrainManager.group && this.body.velocity.y > -1) {
+                if (this.mesh && this.world && this.world.terrainManager && this.world.terrainManager.group && this.body.velocity.y < 0 && this.body.velocity.y > -10) {
                     // Simple raycast check for "almost grounded"
                     const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 0.5, 0));
                     const raycaster = new THREE.Raycaster(rayOrigin, new THREE.Vector3(0, -1, 0), 0, 1.5); // Check slightly further than checkGround
@@ -727,7 +742,10 @@ export class Player {
                 if (grounded && this.body.velocity.y <= 0) {
                     this.state = 'IDLE';
                 } else if (this.input.keys.crouch) {
-                    this.state = 'DIVE';
+                    // FIX: Prevent accidental DIVE immediately after jump (causes clipping)
+                    if (Date.now() - this.lastJumpTime > 400) {
+                        this.state = 'DIVE';
+                    }
                 } else if (this.input.keys.forward && !this.exhausted && this.checkWall()) {
                     this.state = 'CLIMB';
                     this.body.velocity.set(0, 0, 0);
@@ -771,6 +789,69 @@ export class Player {
                     this.state = grounded ? 'IDLE' : 'AIR';
                 }
                 break;
+
+            case 'SURF':
+                this.handleSurfState(dt);
+                break;
+        }
+    }
+
+    enterGlide() {
+        console.log("Entering Glide...");
+        this.state = 'GLIDE';
+        this.input.jumpTapCount = 0; // Consume
+
+        // Air Brake
+        if (!this.body) { console.error("No Body in enterGlide"); return; }
+
+        if (isNaN(this.body.velocity.y)) {
+            console.warn("NaN Velocity Y in enterGlide. Resetting.");
+            this.body.velocity.y = 0;
+        }
+        this.body.velocity.y = Math.max(this.body.velocity.y, -1.0);
+        this.body.angularVelocity.set(0, 0, 0); // Stop spinning
+
+        // Align rotation to camera/input immediately if moving
+        const input = this.getInputVector();
+        console.log("Glide Input:", input);
+
+        if (input.length() > 0) {
+            const angle = Math.atan2(input.x, input.z);
+            if (!isNaN(angle)) {
+                const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+                this.body.quaternion.copy(q);
+            } else {
+                console.error("NaN Angle in enterGlide");
+            }
+        }
+
+        this.hasReleasedJump = false;
+    }
+
+    /**
+     * @param {number} dt
+     */
+    handleSurfState(dt) {
+        if (!this.input.keys.jump) this.hasReleasedJump = true;
+
+        // Exit Conditions:
+        // 1. Jump (Ollie out)
+        if (this.input.keys.jump && this.hasReleasedJump) {
+            this.exitSurf();
+            this.state = 'AIR';
+            this.body.velocity.y = 8;
+            this.input.jumpTapCount = 0;
+            this.hasReleasedJump = false;
+        }
+        // 2. Stop (Speed too low)
+        else if (this.checkGround() && this.body.velocity.length() < 0.5) {
+            this.exitSurf();
+            this.state = 'IDLE';
+        }
+        // 3. Manual Cancel (Crouch Toggle)
+        else if (this.input.keys.crouch) {
+            this.exitSurf();
+            this.state = 'IDLE';
         }
     }
 
@@ -918,7 +999,7 @@ export class Player {
                 } else {
                     // No Input: Slide/Coast
                     // Apply High Damping to stop horizontal movement = HOVER
-                    this.body.linearDamping = 2.0;
+                    this.body.linearDamping = 0.9;
                     // No forced forward movement here!
                 }
 
@@ -927,19 +1008,8 @@ export class Player {
                 break;
 
             case 'SURF':
-                // Check for exit via JUMP
-                if (this.input.keys.jump && !this.exhausted) {
-                    this.exitSurf();
-                    this.state = 'AIR';
-                    this.body.velocity.y = 8;
-                    this.input.jumpTapCount = 0;
-                    this.hasReleasedJump = false;
-                }
-                // Check for exit via STOP or CROUCH RELEASE (optional, but good for control)
-                else if (!this.input.keys.crouch) {
-                    this.exitSurf();
-                    this.state = grounded ? 'IDLE' : 'AIR';
-                }
+                // Logic moved to handleState to prevent conflicts
+                // Only Physics (Slope sliding) remains here
 
                 // Slope Physics
                 let slopeAngle = 0;
@@ -1153,9 +1223,6 @@ export class Player {
                 }
                 break; // Properly break SURF case
 
-            case 'GLIDE': // Ensure Glide logic is safe if it was here? No, GLIDE was above.
-                // Just ensuring the structure is correct.
-                break;
 
             case 'RUN':
             case 'WALK':
@@ -1365,17 +1432,36 @@ export class Player {
 
         // CAMERA FIX FOR GLIDE: Pull back
         if (this.state === 'GLIDE') {
-            // Force camera further back and up (0, 4, 8) as requested
-            const idealOffset = targetPos.clone().add(new THREE.Vector3(0, 4, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.cameraState.theta));
-            this.camera.position.lerp(idealOffset, dt * 2);
+            // Safety check
+            if (!this.cameraState || isNaN(this.cameraState.theta)) {
+                this.cameraState = {
+                    distance: 10,
+                    theta: 0,
+                    phi: 0,
+                    target: new THREE.Vector3()
+                };
+            }
 
-            // Adjust FOV for speed sensation
-            this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, 85, dt * 2);
-            this.camera.updateProjectionMatrix();
+            // Cible : Le dos du joueur
+            const target = this.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0));
 
-            // Ensure lookAt is correct
-            this.camera.lookAt(targetPos);
-            return; // Skip normal orbit logic
+            // Position Caméra : Loin derrière et en haut
+            const offset = new THREE.Vector3(0, 4, 8); // Slightly closer to avoid clipping
+
+            // Safe rotation application
+            const theta = this.cameraState.theta || 0;
+            offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), theta);
+
+            const targetPos = target.clone().add(offset);
+
+            // Check for NaN BEFORE applying
+            if (!isNaN(targetPos.x) && !isNaN(targetPos.y) && !isNaN(targetPos.z)) {
+                this.camera.position.lerp(targetPos, dt * 3);
+                this.camera.lookAt(this.mesh.position);
+            } else {
+                console.error("GLIDE CAMERA NAN DETECTED:", targetPos);
+            }
+            return;
         }
     }
 
@@ -1398,17 +1484,6 @@ export class Player {
     updateUI() {
         if (this.game.ui) {
             this.game.ui.update(this);
-
-            // Map Toggle Logic
-            if (this.input.keys.map && !this.mapToggleLock) {
-                if (this.game.ui.mapManager) {
-                    this.game.ui.mapManager.toggleMap();
-                }
-                this.mapToggleLock = true;
-            }
-            if (!this.input.keys.map) {
-                this.mapToggleLock = false;
-            }
         }
     }
 
@@ -1443,7 +1518,7 @@ export class Player {
         if (this.input.keys.right) v.x += 1;
 
         // Rotate by camera theta
-        const theta = this.cameraState.theta;
+        const theta = (this.cameraState && !isNaN(this.cameraState.theta)) ? this.cameraState.theta : 0;
         v.applyAxisAngle(new THREE.Vector3(0, 1, 0), theta);
 
         return v;
@@ -1456,7 +1531,46 @@ export class Player {
     getForwardVector() {
         if (!this.mesh) return new THREE.Vector3(0, 0, -1);
         const v = new THREE.Vector3(0, 0, -1);
-        v.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.mesh.rotation.y);
+        // Safety check for rotation
+        if (!isNaN(this.mesh.rotation.y)) {
+            v.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.mesh.rotation.y);
+        }
         return v;
+    }
+
+    /**
+     * WATCHDOG: Detects and fixes NaN physics to prevent game crash (Blue Screen)
+     * @param {string} label
+     */
+    checkSanity(label = "General") {
+        if (!this.body) return;
+
+        // Check Position
+        if (this.body.position && (isNaN(this.body.position.x) || isNaN(this.body.position.y) || isNaN(this.body.position.z))) {
+            console.error(`[CRITICAL] PLAYER POSITION CORRUPTED (NaN) at [${label}]. RESETTING...`);
+            // Reset to safe spot
+            this.body.position.set(0, 50, 0);
+            this.body.velocity.set(0, 0, 0);
+            this.body.angularVelocity.set(0, 0, 0);
+            if (this.mesh) this.mesh.position.copy(this.body.position);
+            this.state = 'AIR';
+            this.body.wakeUp(); // Ensure physics engine picks up the reset
+        }
+
+        // Check Rotation
+        if (this.body.quaternion && (isNaN(this.body.quaternion.x) || isNaN(this.body.quaternion.y) || isNaN(this.body.quaternion.z) || isNaN(this.body.quaternion.w))) {
+            console.error(`[CRITICAL] PLAYER ROTATION CORRUPTED (NaN) at [${label}]. RESETTING...`);
+            this.body.quaternion.set(0, 0, 0, 1);
+            if (this.mesh) this.mesh.rotation.set(0, 0, 0);
+            this.body.wakeUp();
+        }
+
+        // Check Velocity
+        if (this.body.velocity && (isNaN(this.body.velocity.x) || isNaN(this.body.velocity.y) || isNaN(this.body.velocity.z))) {
+            console.error(`[CRITICAL] PLAYER VELOCITY CORRUPTED (NaN) at [${label}]. RESETTING...`);
+            this.body.velocity.set(0, 0, 0);
+            this.body.angularVelocity.set(0, 0, 0);
+            this.body.wakeUp();
+        }
     }
 }

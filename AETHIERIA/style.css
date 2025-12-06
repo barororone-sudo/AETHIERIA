@@ -179,7 +179,7 @@ body {
     overflow: hidden;
     background: #000;
     box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-    transition: all 0.3s ease-in-out;
+    transition: all 0.1s ease-in-out;
 }
 
 #minimap-container img,
