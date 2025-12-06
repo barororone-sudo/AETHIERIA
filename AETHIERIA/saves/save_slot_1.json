@@ -5,11 +5,11 @@
     "z": 0
   },
   "stats": {
-    "hp": 61,
+    "hp": 67,
     "stamina": 100
   },
   "story": {
-    "state": "PROLOGUE"
+    "state": "TUTORIAL"
   },
   "world": {
     "fog": [],
@@ -19,5 +19,5 @@
       "tower_south_east": false
     }
   },
-  "timestamp": 1765050429517
+  "timestamp": 1765055760198
 }

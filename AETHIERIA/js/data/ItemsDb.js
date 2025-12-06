@@ -1,28 +1,28 @@
-export const ItemsDb = {
-    'sword_01': {
-        id: 'sword_01',
+export const ItemsDb = [
+    {
+        id: 'rusty_sword',
         name: 'Épée Rouillée',
-        description: 'Une vieille épée trouvée sur la plage. Elle a connu des jours meilleurs.',
-        type: 'weapon',
-        stats: { damage: 10 },
-        icon: 'assets/icons/sword_01.png', // Placeholder
-        color: '#A9A9A9'
+        type: 'WEAPON',
+        stats: {
+            damage: 10,
+            attackSpeed: 1.0
+        },
+        icon: '🗡️', // Placeholder
+        color: '#8B4513',
+        description: "Une lame d'ancien modèle, ébréchée par des siècles d'oubli. Elle pèse lourd du poids du passé."
     },
-    'potion_health': {
-        id: 'potion_health',
-        name: 'Potion de Soin',
-        description: 'Restaure une petite quantité de PV.',
-        type: 'consumable',
-        stats: { heal: 50 },
-        icon: 'assets/icons/potion_health.png',
-        color: '#FF0000'
-    },
-    'key_prologue': {
-        id: 'key_prologue',
-        name: 'Clé Ancienne',
-        description: 'Une clé mystérieuse donnée par Lumina.',
-        type: 'key',
-        icon: 'assets/icons/key_prologue.png',
-        color: '#FFD700'
+    {
+        id: 'pulse_baton',
+        name: 'Bâton d\'Impulsion',
+        type: 'WEAPON',
+        stats: {
+            damage: 18,
+            attackSpeed: 1.2
+        },
+        icon: '⚡',
+        color: '#00FFFF',
+        description: "Une arme technologique qui vibre d'une faible énergie bleue. Conçue pour la pacification, détournée pour la guerre."
     }
-};
+];
+
+export const getItemById = (id) => ItemsDb.find(i => i.id === id);

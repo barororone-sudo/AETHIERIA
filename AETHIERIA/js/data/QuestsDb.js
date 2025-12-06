@@ -1,63 +1,37 @@
-export const QuestsDb = {
-    'prologue': {
-        id: 'prologue',
+export const QuestsDb = [
+    {
+        id: 'quest_001',
         title: "L'Éveil",
-        description: "Vous vous réveillez sur une plage inconnue. Trouvez des réponses.",
-        steps: {
-            'start': {
-                description: "Parlez à l'inconnue sur la plage.",
-                objective: "Parler à Lumina",
-                target: { type: 'npc', id: 'lumina' }
+        description: "Après des siècles de sommeil, ECHO-7 se réactive. Le protocole de purge doit commencer. Atteignez la première Tour de la Plaine pour scanner la zone.",
+        steps: [
+            {
+                id: 'q1_step1',
+                description: "Trouver une arme pour vous défendre.",
+                targetType: 'ITEM_PICKUP',
+                targetId: 'rusty_sword',
+                isCompleted: false
             },
-            'find_sword': {
-                description: "Lumina dit qu'une arme est cachée près du rocher.",
-                objective: "Trouver l'Épée Rouillée",
-                target: { type: 'item', id: 'sword_01' }
+            {
+                id: 'q1_step2',
+                description: "Éliminer le Gardien du Pont qui bloque l'accès à la Tour.",
+                targetType: 'KILL_ENEMY',
+                targetId: 'guardian_golem', // Mapping vers EnemiesDb
+                isCompleted: false
             },
-            'defeat_golem': {
-                description: "Un Gardien bloque la sortie. Utilisez l'épée !",
-                objective: "Vaincre le Gardien",
-                target: { type: 'enemy', id: 'guardian_01' }
+            {
+                id: 'q1_step3',
+                description: "Activer la Tour de la Plaine.",
+                targetType: 'INTERACT',
+                targetId: 'tower_plains_01',
+                isCompleted: false
             }
-        }
-    },
-    'dialogues': {
-        'lumina_intro': {
-            start: {
-                text: "Ah, vous voilà enfin réveillé ! Je craignais que la marée ne vous emporte.",
-                tags: ["[CAMERA:ZOOM]"],
-                choices: [
-                    { text: "Où suis-je ?", next: 'where' },
-                    { text: "Qui êtes-vous ?", next: 'who' }
-                ]
-            },
-            where: {
-                text: "Sur la Plage des Oubliés. C'est ici que tout commence... ou finit.",
-                next: 'weapon'
-            },
-            who: {
-                text: "Je m'appelle Lumina. Je suis ici pour vous guider.",
-                next: 'weapon'
-            },
-            weapon: {
-                text: "Écoutez, ce n'est pas sûr ici. Il y a une vieille épée dans ce coffre, là-bas. Prenez-la.",
-                tags: ["[CAMERA:POINT:chest_01]"],
-                choices: [
-                    { text: "D'accord.", next: 'end_intro' }
-                ]
-            },
-            end_intro: {
-                text: "Allez, vite !",
-                action: 'quest_update:find_sword',
-                next: null
-            }
+        ],
+        rewards: {
+            xp: 500,
+            items: ['pulse_baton'] // Item ID reward
         },
-        'lumina_sword_found': {
-            start: {
-                text: "Bien ! Vous avez l'air moins... vulnérable. Maintenant, attention au Gardien !",
-                tags: ["[GIVE_ITEM:potion_health]"],
-                next: null
-            }
-        }
+        state: 'NOT_STARTED' // NOT_STARTED, IN_PROGRESS, COMPLETED
     }
-};
+];
+
+export const getQuestById = (id) => QuestsDb.find(q => q.id === id);

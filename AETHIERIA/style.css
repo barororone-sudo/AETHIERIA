@@ -205,29 +205,167 @@ body {
     cursor: grab;
 }
 
-/* --- PAUSE MENU --- */
+/* --- PAUSE MENU (Redesign) --- */
 #pause-menu {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.8);
-    display: flex;
+    background: rgba(0, 0, 0, 0.4);
+    /* Dark Overlay */
+    backdrop-filter: blur(8px);
+    display: none;
+    /* Flex when active */
     justify-content: center;
     align-items: center;
-    gap: 50px;
-    z-index: 900;
-    backdrop-filter: blur(5px);
+    z-index: 5000;
+    font-family: 'Cinzel', serif;
 }
 
-.glass-panel {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 15px;
-    padding: 30px;
-    width: 400px;
-    height: 500px;
+.pause-menu-container {
+    display: grid;
+    grid-template-columns: 300px 500px;
+    gap: 40px;
+    padding: 60px;
+    background: rgba(22, 25, 35, 0.85);
+    /* Dark Blue/Black */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.8), inset 0 0 100px rgba(0, 0, 0, 0.5);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Decorative Header Logic (Pseudo-element or separate?) */
+.pause-menu-container::before {
+    content: "PAUSE";
+    position: absolute;
+    top: -20px;
+    left: 20px;
+    font-size: 100px;
+    color: rgba(255, 255, 255, 0.03);
+    font-weight: 900;
+    pointer-events: none;
+}
+
+/* Left Column: Actions */
+.action-buttons {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 20px;
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    padding-right: 40px;
+}
+
+.btn-action {
+    padding: 15px 30px;
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: left;
+    color: #a0a0b0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-action::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: #ffd700;
+    transform: scaleY(0);
+    transition: transform 0.3s;
+    transform-origin: center;
+}
+
+.btn-action:hover,
+.btn-action.focused {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+    padding-left: 40px;
+    /* Slide Text */
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.btn-action:hover::before,
+.btn-action.focused::before {
+    transform: scaleY(1);
+}
+
+.btn-quit {
+    margin-top: auto;
+    color: #ff6b6b;
+}
+
+.btn-quit:hover {
+    color: #ff9999;
+    background: rgba(255, 0, 0, 0.1);
+}
+
+/* Right Column: Inventory & Stats */
+.right-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+}
+
+.section-header {
+    font-size: 18px;
+    color: #ffd700;
+    margin-bottom: 15px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 10px;
+}
+
+/* INVENTORY GRID */
+#inventory-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    min-height: 200px;
+    /* Reserve Space */
+}
+
+.inventory-slot {
+    width: 100%;
+    aspect-ratio: 1;
+    /* Square */
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    transition: all 0.2s;
+    cursor: pointer;
+    position: relative;
+}
+
+.inventory-slot:hover {
+    border-color: #ffd700;
+    transform: scale(1.05);
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.2);
+}
+
+/* STATS */
+#stats-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    font-size: 14px;
+    color: #ccc;
+}
+
+#stats-content strong {
     color: white;
 }
 

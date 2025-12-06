@@ -21,7 +21,7 @@ import { SaveManager } from './managers/SaveManager.js';
 import { AudioManager } from './AudioManager.js';
 import { DebugManager } from './Debug.js';
 import { DialogueManager } from './managers/DialogueManager.js';
-import { StoryManager } from './Story.js';
+import { StoryManager } from './managers/StoryManager.js';
 import { DataManager } from './managers/DataManager.js';
 import { Input } from './Input.js';
 
@@ -173,6 +173,8 @@ export class Game {
             await this.saveManager.save(); // Create initial save immediately
         }
 
+        // Removed duplicate save call
+
         this.ui.hideMainMenu();
         // Hide Loading Screen if it's still there
         const loadingScreen = document.getElementById('loading-screen');
@@ -181,9 +183,18 @@ export class Game {
             setTimeout(() => loadingScreen.remove(), 500);
         }
 
-        this.ui.showMinimap(); // Show Map only when game starts
         this.isRunning = true;
-        requestAnimationFrame(this.animate);
+
+        if (!continueSave) {
+            // New Game -> Cinematic + Tutorial
+            if (this.story) this.story.startNewGameSequence();
+        } else {
+            // Load Game -> Just Fade In (if we had a fade) and play
+            // We could reuse hideCinematicOverlay just in case
+            this.ui.hideCinematicOverlay();
+        }
+
+        this.ui.showMinimap(); // Show Map only when game starts
     }
 
     initPostProcessing() {
@@ -287,6 +298,16 @@ export class Game {
         let timeScale = 1;
         if (this.player) {
             timeScale = this.player.update(dt);
+        }
+
+        // DEBUG: Check Camera and Player
+        // Throttled Log
+        if (!this.logTimer) this.logTimer = 0;
+        this.logTimer += dt;
+        if (this.logTimer > 2.0) {
+            this.logTimer = 0;
+            console.log("CamPos:", this.camera.position);
+            if (this.player && this.player.mesh) console.log("PlayerPos:", this.player.mesh.position);
         }
 
         // World updates with scaled time (physics, enemies)

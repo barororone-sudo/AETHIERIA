@@ -53,6 +53,10 @@ export class World {
         // --- LIGHTING ---
         this.setupLights();
 
+        // DEBUG: Axes Helper to verify rendering
+        const axesHelper = new THREE.AxesHelper(500);
+        this.scene.add(axesHelper);
+
         // --- ENVIRONMENT ---
         this.createSky();
         this.createClouds();

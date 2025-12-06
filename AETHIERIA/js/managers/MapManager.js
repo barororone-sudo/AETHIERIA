@@ -134,7 +134,7 @@ export class MapManager {
     onWheel(e) {
         if (!this.isBigMap) return;
         e.preventDefault();
-        console.log("Map Wheel Event:", e.deltaY); // DEBUG INPUT
+        // console.log("Map Wheel Event:", e.deltaY); // DEBUG INPUT
 
         // Get Mouse Position relative to Container (Viewport)
         const rect = this.container.getBoundingClientRect();
@@ -398,37 +398,57 @@ export class MapManager {
     }
 
     revealZone(x, z, r) {
-        if (!this.fogCtx) { console.error("No Fog Context!"); return; }
+        if (!this.fogCtx) return;
         const pos = this.worldToMap(x, z);
         const mapR = r * this.scale;
 
-        // VISUAL DEBUG: Show coordinates on screen
-        if (this.game && this.game.ui) {
-            this.game.ui.showToast(`DEBUG REVEAL: X=${Math.floor(pos.x)} Y=${Math.floor(pos.y)} R=${Math.floor(mapR)}`);
-        }
-        console.log(`Revealing Zone at World(${x}, ${z}) -> Map(${pos.x}, ${pos.y}) Radius: ${r}`);
-
         this.fogCtx.save();
-        // FORCE RED PAINT AGAIN (Easiest to see)
-        this.fogCtx.globalCompositeOperation = 'source-over';
-        this.fogCtx.fillStyle = '#ff0000'; // Pure Red
+        this.fogCtx.globalCompositeOperation = 'destination-out';
+        this.fogCtx.fillStyle = 'rgba(0,0,0,1)';
+
+        // Organic Shape (Jagged Polygon)
         this.fogCtx.beginPath();
-        this.fogCtx.arc(pos.x, pos.y, mapR, 0, Math.PI * 2);
+        const points = 32; // Amount of jagged points
+        // Use position to seed the shape rotation/offset so towers look different
+        const seed = (x + z) * 0.01;
+
+        for (let i = 0; i <= points; i++) {
+            const angle = (i / points) * Math.PI * 2;
+
+            // Formula: Base R * (0.8 + 0.3 * noisy_wave)
+            // Using cos(angle * 5) creates a 5-pointed star-like blob
+            // Adding seed ensures uniqueness per tower
+            const variance = Math.cos(angle * 7 + seed) * 0.2 + Math.sin(angle * 3) * 0.1;
+            const currentR = mapR * (0.9 + variance);
+
+            const px = pos.x + Math.cos(angle) * currentR;
+            const py = pos.y + Math.sin(angle) * currentR;
+
+            if (i === 0) this.fogCtx.moveTo(px, py);
+            else this.fogCtx.lineTo(px, py);
+        }
+
+        this.fogCtx.closePath();
         this.fogCtx.fill();
+        this.fogCtx.globalCompositeOperation = 'source-over';
         this.fogCtx.restore();
     }
 
     animateReveal(x, z, r, duration = 1.0, onComplete = null) {
         // Calculate speed based on duration
         const speed = r / duration;
+        // Init currentRadius to 0 explicitly
         this.revealAnimation = { x, z, currentRadius: 0, targetRadius: r, speed, onComplete };
     }
 
     updateRevealAnimation(dt) {
         if (!this.revealAnimation) return;
 
+        // Ensure dt is valid
+        const animDt = (dt && !isNaN(dt)) ? dt : 0.016;
+
         const anim = this.revealAnimation;
-        anim.currentRadius += anim.speed * dt;
+        anim.currentRadius += anim.speed * animDt;
 
         if (anim.currentRadius >= anim.targetRadius) {
             anim.currentRadius = anim.targetRadius;
@@ -506,11 +526,6 @@ export class MapManager {
             this.container.style.bottom = '20px';
             this.container.style.right = '20px';
             this.container.style.borderRadius = '50%';
-
-            // Do not hide display immediately to allow transition, handled by CSS or timeout?
-            // Actually, keep it block for transition, CSS handles opacity/size.
-            // But if we want it to disappear from clicks...
-            // Let's rely on CSS transition for now, but remove the high z-index.
         }
     }
 

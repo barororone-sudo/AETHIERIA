@@ -19,39 +19,34 @@ export class UIManager {
             return;
         }
 
-        // Inject Menu HTML dynamically to ensure it exists
+        // Inject Menu HTML dynamically with new structure
         this.menu.innerHTML = `
-            <div class="menu-container glass-panel" style="display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 40px;">
-                <h1 style="color: white; text-shadow: 0 0 10px #fff; font-size: 48px; margin: 0;">PAUSED</h1>
-                <div style="display: flex; gap: 40px; align-items: flex-start;">
-                        <button id="resume-btn" style="padding: 15px 30px; font-size: 20px; cursor: pointer; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 5px;">RESUME</button>
-                        <button id="save-btn" style="padding: 15px 30px; font-size: 20px; cursor: pointer; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 5px;">SAVE GAME</button>
-                        <button id="download-btn" style="padding: 15px 30px; font-size: 20px; cursor: pointer; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 5px;">DOWNLOAD SAVE</button>
-                        <button id="quit-btn" style="padding: 15px 30px; font-size: 20px; cursor: pointer; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 5px;">QUIT TO TITLE</button>
+            <div class="pause-menu-container">
+                <!-- Left Column: Actions -->
+                <div class="action-buttons">
+                    <button id="resume-btn" class="btn-action">REPRENDRE</button>
+                    <button id="save-btn" class="btn-action">SAUVEGARDER</button>
+                    <button id="download-btn" class="btn-action">TÉLÉCHARGER</button>
+                    <button id="quit-btn" class="btn-action btn-quit">QUITTER</button>
+                </div>
+
+                <!-- Right Column: Inventory & Stats -->
+                <div class="right-panel">
+                    <div class="inventory-section">
+                        <div class="section-header">INVENTAIRE</div>
+                        <div id="inventory-grid"></div>
                     </div>
-                    <div class="inventory-section" style="background: rgba(0,0,0,0.5); padding: 20px; border-radius: 10px;">
-                        <h2 style="color: #ddd; margin-top: 0;">INVENTORY</h2>
-                        <div id="inventory-grid" style="display: grid; grid-template-columns: repeat(4, 50px); gap: 5px;"></div>
-                    </div>
-                    <div class="stats-section" style="background: rgba(0,0,0,0.5); padding: 20px; border-radius: 10px;">
-                        <h2 style="color: #ddd; margin-top: 0;">STATS</h2>
-                        <div id="stats-content" style="color: #aaa;"></div>
+                    
+                    <div class="stats-section">
+                        <div class="section-header">STATISTIQUES</div>
+                        <div id="stats-content"></div>
                     </div>
                 </div>
             </div>
         `;
 
-        // Re-style menu container
-        this.menu.style.display = 'none';
-        this.menu.style.position = 'fixed';
-        this.menu.style.top = '0';
-        this.menu.style.left = '0';
-        this.menu.style.width = '100%';
-        this.menu.style.height = '100%';
-        this.menu.style.background = 'rgba(0,0,0,0.8)';
-        this.menu.style.zIndex = '1000';
-        this.menu.style.justifyContent = 'center';
-        this.menu.style.alignItems = 'center';
+        // Remove old manual styling override since CSS handles it
+        this.menu.style.cssText = '';
 
         // Get references AFTER injection
         this.grid = document.getElementById('inventory-grid');
@@ -265,10 +260,19 @@ export class UIManager {
                     trashBtn.onclick = async (e) => {
                         e.stopPropagation(); // Prevent card click
                         if (confirm(`Supprimer la sauvegarde Partie ${info.id} ? Cette action est irréversible.`)) {
-                            await this.game.saveManager.deleteSlot(info.id);
-                            // Refresh UI
-                            container.remove();
-                            this.createSlotSelectionUI();
+                            try {
+                                console.log(`Attempting to delete slot ${info.id}...`);
+                                await this.game.saveManager.deleteSlot(info.id);
+                                console.log(`Slot ${info.id} deleted. Refreshing UI...`);
+
+                                // Refresh UI
+                                container.remove();
+                                // Add small delay to ensure server processed delete
+                                setTimeout(() => this.createSlotSelectionUI(), 100);
+                            } catch (error) {
+                                console.error("Update Delete Failed:", error);
+                                alert("Erreur lors de la suppression !");
+                            }
                         }
                     };
                     cardWrapper.appendChild(trashBtn);
@@ -388,16 +392,16 @@ export class UIManager {
         this.menu.style.display = this.isOpen ? 'flex' : 'none';
 
         if (this.isOpen) {
+            this.menu.style.zIndex = '10000'; // Force On Top
             document.exitPointerLock();
             this.renderInventory();
             this.renderStats();
 
-            // Blur Effect
+            // Blur Effect on Canvas
             const canvas = document.querySelector('canvas');
             if (canvas) canvas.style.filter = 'blur(5px)';
 
-            this.menu.style.backgroundColor = 'rgba(20, 20, 30, 0.8)'; // Paimon Style Dark Blue
-            this.menu.style.backdropFilter = 'blur(10px)';
+            // Note: Menu styles (bg, backdrop) are now in CSS #pause-menu
         } else {
             const canvas = document.querySelector('canvas');
             if (canvas) canvas.style.filter = 'none';
@@ -823,5 +827,158 @@ export class UIManager {
         };
 
         document.addEventListener('keydown', this.keyboardHandler);
+    }
+
+    // --- CINEMATIC & TUTORIAL UI ---
+
+    showCinematicText(text, duration = 3000) {
+        if (!this.cinematicOverlay) {
+            this.cinematicOverlay = document.createElement('div');
+            this.cinematicOverlay.id = 'cinematic-overlay';
+            this.cinematicOverlay.style.position = 'fixed';
+            this.cinematicOverlay.style.top = '0';
+            this.cinematicOverlay.style.left = '0';
+            this.cinematicOverlay.style.width = '100%';
+            this.cinematicOverlay.style.height = '100%';
+            this.cinematicOverlay.style.backgroundColor = 'black';
+            this.cinematicOverlay.style.display = 'flex';
+            this.cinematicOverlay.style.justifyContent = 'center';
+            this.cinematicOverlay.style.alignItems = 'center';
+            this.cinematicOverlay.style.zIndex = '5000';
+            this.cinematicOverlay.style.transition = 'opacity 1s';
+            document.body.appendChild(this.cinematicOverlay);
+
+            this.cinematicText = document.createElement('p');
+            this.cinematicText.style.color = '#ddd';
+            this.cinematicText.style.fontFamily = 'Cinzel, serif';
+            this.cinematicText.style.fontSize = '28px';
+            this.cinematicText.style.maxWidth = '800px';
+            this.cinematicText.style.textAlign = 'center';
+            this.cinematicText.style.lineHeight = '1.6';
+            this.cinematicText.style.opacity = '0';
+            this.cinematicText.style.transition = 'opacity 1s';
+            this.cinematicOverlay.appendChild(this.cinematicText);
+        }
+
+        this.cinematicOverlay.style.display = 'flex';
+        this.cinematicOverlay.style.opacity = '1';
+
+        this.cinematicText.innerText = text;
+
+        // Force reflow
+        void this.cinematicText.offsetWidth;
+
+        this.cinematicText.style.opacity = '1';
+
+        setTimeout(() => {
+            if (this.cinematicText) this.cinematicText.style.opacity = '0';
+        }, duration - 500);
+    }
+
+    hideCinematicOverlay() {
+        if (this.cinematicOverlay) {
+            this.cinematicOverlay.style.opacity = '0';
+            // Force removal after transition
+            setTimeout(() => {
+                this.cinematicOverlay.style.display = 'none';
+                if (this.cinematicText) this.cinematicText.innerText = "";
+
+                // RESTORE UI ELEMENTS
+                const hearts = document.getElementById('hearts-container');
+                if (hearts) hearts.style.display = 'flex';
+                this.showMinimap();
+            }, 1000);
+        }
+    }
+
+    showTutorialInstruction(text) {
+        if (!this.tutorialBox) {
+            this.tutorialBox = document.createElement('div');
+            this.tutorialBox.id = 'tutorial-box';
+            this.tutorialBox.style.position = 'fixed';
+            this.tutorialBox.style.top = '20%';
+            this.tutorialBox.style.left = '50%';
+            this.tutorialBox.style.transform = 'translate(-50%, -50%)';
+            this.tutorialBox.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+            this.tutorialBox.style.padding = '20px 40px';
+            this.tutorialBox.style.borderRadius = '10px';
+            this.tutorialBox.style.border = '1px solid rgba(255, 255, 255, 0.3)';
+            this.tutorialBox.style.color = '#00ffcc';
+            this.tutorialBox.style.fontFamily = 'sans-serif';
+            this.tutorialBox.style.fontSize = '24px';
+            this.tutorialBox.style.textAlign = 'center';
+            this.tutorialBox.style.zIndex = '4000';
+            this.tutorialBox.style.pointerEvents = 'none';
+            this.tutorialBox.style.boxShadow = '0 0 20px rgba(0, 255, 204, 0.2)';
+            document.body.appendChild(this.tutorialBox);
+        }
+        this.tutorialBox.innerHTML = text;
+        this.tutorialBox.style.display = 'block';
+
+        this.tutorialBox.animate([
+            { transform: 'translate(-50%, -50%) scale(0.95)', opacity: 0.9 },
+            { transform: 'translate(-50%, -50%) scale(1.05)', opacity: 1 }
+        ], {
+            duration: 1000,
+            iterations: Infinity,
+            direction: 'alternate',
+            easing: 'ease-in-out'
+        });
+    }
+
+    hideTutorialInstruction() {
+        if (this.tutorialBox) {
+            this.tutorialBox.style.display = 'none';
+            this.tutorialBox.getAnimations().forEach(anim => anim.cancel());
+        }
+    }
+
+    showTitle(title, subtitle, duration = 5000) {
+        const container = document.createElement('div');
+        container.style.position = 'fixed';
+        container.style.top = '40%';
+        container.style.left = '50%';
+        container.style.transform = 'translate(-50%, -50%)';
+        container.style.textAlign = 'center';
+        container.style.pointerEvents = 'none';
+        container.style.zIndex = '4500';
+        container.style.textShadow = '0 0 20px rgba(0,0,0,0.8)';
+
+        const h1 = document.createElement('h1');
+        h1.innerText = title;
+        h1.style.color = 'white';
+        h1.style.fontFamily = 'Cinzel, serif';
+        h1.style.fontSize = '80px';
+        h1.style.margin = '0';
+        h1.style.opacity = '0';
+        h1.style.transform = 'scale(0.8)';
+        h1.style.transition = 'all 2s ease-out';
+
+        const p = document.createElement('p');
+        p.innerText = subtitle;
+        p.style.color = '#ffaa00';
+        p.style.fontFamily = 'Cinzel, serif';
+        p.style.fontSize = '30px';
+        p.style.margin = '10px 0 0 0';
+        p.style.opacity = '0';
+        p.style.transform = 'translateY(20px)';
+        p.style.transition = 'all 2s ease-out 0.5s';
+
+        container.appendChild(h1);
+        container.appendChild(p);
+        document.body.appendChild(container);
+
+        requestAnimationFrame(() => {
+            h1.style.opacity = '1';
+            h1.style.transform = 'scale(1)';
+            p.style.opacity = '1';
+            p.style.transform = 'translateY(0)';
+        });
+
+        setTimeout(() => {
+            container.style.transition = 'opacity 2s';
+            container.style.opacity = '0';
+            setTimeout(() => container.remove(), 2000);
+        }, duration);
     }
 }

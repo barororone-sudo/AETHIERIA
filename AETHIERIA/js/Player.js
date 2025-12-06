@@ -95,9 +95,14 @@ export class Player {
         // Audio & Input
         this.audio = game.audio || null;
         this.inputLocked = false;
+        this.isInTutorial = false; // Flag for tutorial limitations
 
         // Register Input Callbacks
         this.input.onToggleMap = () => {
+            if (this.isInTutorial) {
+                if (this.game.ui) this.game.ui.showToast("Carte indisponible pendant le tutoriel.");
+                return;
+            }
             if (this.game.ui && this.game.ui.mapManager) {
                 this.game.ui.mapManager.toggleMap();
             }
@@ -242,130 +247,247 @@ export class Player {
         // Cleanup existing
         if (this.mesh) {
             this.world.scene.remove(this.mesh);
+            // Traverse and dispose geometry/materials
+            this.mesh.traverse((child) => {
+                // @ts-ignore
+                if (child.isMesh) {
+                    // @ts-ignore
+                    if (child.geometry) child.geometry.dispose();
+                    // @ts-ignore
+                    if (child.material) {
+                        // @ts-ignore
+                        if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+                        // @ts-ignore
+                        else child.material.dispose();
+                    }
+                }
+            });
         }
 
         this.mesh = new THREE.Group();
         this.world.scene.add(this.mesh);
 
-        // --- CYBER-BOT AVATAR ---
+        // --- PALETTE ---
+        const cPrimary = new THREE.Color(this.characterData.palette[1]); // Dark Body
+        const cSecondary = new THREE.Color(this.characterData.palette[0]); // Light Armor
+        const cAccent = new THREE.Color(this.characterData.palette[2]); // Neon
 
-        // 1. Body (Black Box -> Palette[1])
-        const bodyGeo = new THREE.BoxGeometry(0.6, 1.2, 0.4);
-        const bodyMat = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(this.characterData.palette[1]),
-            roughness: 0.7,
-            metalness: 0.5
-        });
-        this.bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
-        this.bodyMesh.position.y = 0.6; // Center pivot at feet
-        this.bodyMesh.castShadow = true;
-        this.bodyMesh.receiveShadow = true;
+        const matBody = new THREE.MeshStandardMaterial({ color: cPrimary, roughness: 0.7, metalness: 0.5 });
+        const matArmor = new THREE.MeshStandardMaterial({ color: cSecondary, roughness: 0.5, metalness: 0.7 });
+        const matJoint = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 }); // Dark Grey Joints
+        const matNeon = new THREE.MeshStandardMaterial({ color: cAccent, emissive: cAccent, emissiveIntensity: 2.0 });
+
+        // --- 1. TORSO (Root of Body) ---
+        // Torso Group
+        this.bodyMesh = new THREE.Group();
+        this.bodyMesh.position.y = 0.95; // Hip height
         this.mesh.add(this.bodyMesh);
 
-        // 2. Visor (Neon Red Eye -> Palette[2])
-        const visorGeo = new THREE.BoxGeometry(0.4, 0.1, 0.1);
-        const visorMat = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(this.characterData.palette[2]),
-            emissive: new THREE.Color(this.characterData.palette[2]),
-            emissiveIntensity: 2.0
-        });
-        this.visor = new THREE.Mesh(visorGeo, visorMat);
-        this.visor.position.set(0, 0.3, 0.2); // Front of face
-        this.bodyMesh.add(this.visor);
+        // Torso Geometry
+        const torsoGeo = new THREE.BoxGeometry(0.4, 0.5, 0.25);
+        const torso = new THREE.Mesh(torsoGeo, matBody);
+        torso.position.y = 0.25; // Sit on top of hips
+        torso.castShadow = true;
+        this.bodyMesh.add(torso);
 
-        // 3. Floating Hands (Rayman Style -> Palette[0])
-        const handGeo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
-        const handMat = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(this.characterData.palette[0]),
-            emissive: new THREE.Color(this.characterData.palette[0]),
-            emissiveIntensity: 0.5
-        });
+        // Chest Plate (Armor)
+        const chestGeo = new THREE.BoxGeometry(0.42, 0.3, 0.27);
+        const chest = new THREE.Mesh(chestGeo, matArmor);
+        chest.position.y = 0.35;
+        torso.add(chest);
+
+        // Core (Neon Heart)
+        const coreGeo = new THREE.BoxGeometry(0.1, 0.1, 0.05);
+        const core = new THREE.Mesh(coreGeo, matNeon);
+        core.position.set(0, 0.35, 0.15);
+        torso.add(core);
+
+        // --- 2. HEAD ---
+        this.head = new THREE.Group();
+        this.head.position.set(0, 0.55, 0); // Neck
+        this.bodyMesh.add(this.head);
+
+        const headGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+        const headMesh = new THREE.Mesh(headGeo, matBody);
+        headMesh.position.y = 0.15; // Pivot at base of neck
+        headMesh.castShadow = true;
+        this.head.add(headMesh);
+
+        // Visor
+        const visorGeo = new THREE.BoxGeometry(0.25, 0.08, 0.05);
+        const visor = new THREE.Mesh(visorGeo, matNeon);
+        visor.position.set(0, 0.15, 0.16); // Front of face
+        this.head.add(visor);
+
+        // --- 3. ARMS ---
+        const armW = 0.12;
+        const armL = 0.35;
+        const armD = 0.12;
+
+        // LEFT ARM
+        this.leftArm = new THREE.Group();
+        this.leftArm.position.set(-0.28, 0.45, 0); // Shoulder
+        this.bodyMesh.add(this.leftArm);
+
+        const lUpperGeo = new THREE.BoxGeometry(armW, armL, armD);
+        const lUpper = new THREE.Mesh(lUpperGeo, matArmor);
+        lUpper.position.y = -armL / 2;
+        lUpper.castShadow = true;
+        this.leftArm.add(lUpper);
+
+        // Left Forearm
+        this.leftForeArm = new THREE.Group();
+        this.leftForeArm.position.y = -armL; // Elbow
+        this.leftArm.add(this.leftForeArm);
+
+        const lLowerGeo = new THREE.BoxGeometry(armW * 0.8, armL * 0.9, armD * 0.8);
+        const lLower = new THREE.Mesh(lLowerGeo, matBody);
+        lLower.position.y = -armL * 0.45;
+        lLower.castShadow = true;
+        this.leftForeArm.add(lLower);
 
         // Left Hand
-        this.leftHand = new THREE.Mesh(handGeo, handMat);
-        this.leftHand.position.set(-0.5, 0.0, 0); // Relative to body center (which is at 0.6Y)
-        this.bodyMesh.add(this.leftHand);
+        const handGeo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+        this.leftHand = new THREE.Mesh(handGeo, matJoint);
+        this.leftHand.position.y = -armL * 0.9;
+        this.leftForeArm.add(this.leftHand);
 
-        // Right Hand (Weapon Slot)
-        this.rightHand = new THREE.Mesh(handGeo, handMat);
-        this.rightHand.position.set(0.5, 0.0, 0);
-        this.bodyMesh.add(this.rightHand);
+        // RIGHT ARM
+        this.rightArm = new THREE.Group();
+        this.rightArm.position.set(0.28, 0.45, 0); // Shoulder
+        this.bodyMesh.add(this.rightArm);
 
-        // Weapon Slot Attachment
+        const rUpperGeo = new THREE.BoxGeometry(armW, armL, armD);
+        const rUpper = new THREE.Mesh(rUpperGeo, matArmor);
+        rUpper.position.y = -armL / 2;
+        rUpper.castShadow = true;
+        this.rightArm.add(rUpper);
+
+        // Right Forearm
+        this.rightForeArm = new THREE.Group();
+        this.rightForeArm.position.y = -armL; // Elbow
+        this.rightArm.add(this.rightForeArm);
+
+        const rLowerGeo = new THREE.BoxGeometry(armW * 0.8, armL * 0.9, armD * 0.8);
+        const rLower = new THREE.Mesh(rLowerGeo, matBody);
+        rLower.position.y = -armL * 0.45;
+        rLower.castShadow = true;
+        this.rightForeArm.add(rLower);
+
+        // Right Hand
+        this.rightHand = new THREE.Mesh(handGeo, matJoint);
+        this.rightHand.position.y = -armL * 0.9;
+        this.rightForeArm.add(this.rightHand);
+
+        // Weapon Slot
         this.weaponSlot = new THREE.Group();
-        // Rotate weapon slot to align sword correctly (Standard swords point UP)
         this.weaponSlot.rotation.x = Math.PI / 2;
         this.rightHand.add(this.weaponSlot);
 
-        // 4. Ambient Glow (PointLight)
-        const light = new THREE.PointLight(this.characterData.palette[2], 2, 5);
+        // --- 4. LEGS ---
+        const legW = 0.14;
+        const legL = 0.45;
+        const legD = 0.14;
+
+        // LEFT LEG
+        this.leftLeg = new THREE.Group();
+        this.leftLeg.position.set(-0.15, 0.0, 0); // Hip socket
+        this.bodyMesh.add(this.leftLeg);
+
+        const lThighGeo = new THREE.BoxGeometry(legW, legL, legD);
+        const lThigh = new THREE.Mesh(lThighGeo, matArmor);
+        lThigh.position.y = -legL / 2;
+        lThigh.castShadow = true;
+        this.leftLeg.add(lThigh);
+
+        // Left Shin
+        this.leftShin = new THREE.Group();
+        this.leftShin.position.y = -legL; // Knee
+        this.leftLeg.add(this.leftShin);
+
+        const lShinGeo = new THREE.BoxGeometry(legW * 0.8, legL, legD * 0.8);
+        const lShin = new THREE.Mesh(lShinGeo, matBody);
+        lShin.position.y = -legL / 2;
+        lShin.castShadow = true;
+        this.leftShin.add(lShin);
+
+        // Left Foot
+        const footGeo = new THREE.BoxGeometry(0.12, 0.1, 0.2);
+        this.leftFoot = new THREE.Mesh(footGeo, matJoint);
+        this.leftFoot.position.set(0, -legL, 0.05); // Offset forward
+        this.leftShin.add(this.leftFoot);
+
+        // RIGHT LEG
+        this.rightLeg = new THREE.Group();
+        this.rightLeg.position.set(0.15, 0.0, 0); // Hip socket
+        this.bodyMesh.add(this.rightLeg);
+
+        const rThighGeo = new THREE.BoxGeometry(legW, legL, legD);
+        const rThigh = new THREE.Mesh(rThighGeo, matArmor);
+        rThigh.position.y = -legL / 2;
+        rThigh.castShadow = true;
+        this.rightLeg.add(rThigh);
+
+        // Right Shin
+        this.rightShin = new THREE.Group();
+        this.rightShin.position.y = -legL; // Knee
+        this.rightLeg.add(this.rightShin);
+
+        const rShinGeo = new THREE.BoxGeometry(legW * 0.8, legL, legD * 0.8);
+        const rShin = new THREE.Mesh(rShinGeo, matBody);
+        rShin.position.y = -legL / 2;
+        rShin.castShadow = true;
+        this.rightShin.add(rShin);
+
+        // Right Foot
+        this.rightFoot = new THREE.Mesh(footGeo, matJoint);
+        this.rightFoot.position.set(0, -legL, 0.05);
+        this.rightShin.add(this.rightFoot);
+
+        // --- 5. ATTACHMENTS ---
+        // Light
+        const light = new THREE.PointLight(cAccent, 2, 5);
         light.position.set(0, 1, 0);
         this.mesh.add(light);
 
-        // 5. Glider (Energy Wings) - "Neon Stylized" Design
+        // Glider
         this.gliderMesh = new THREE.Group();
-        this.gliderMesh.position.set(0, 0.8, -0.35); // On back, relative to body center
+        this.gliderMesh.position.set(0, 0.3, -0.15); // On back
         this.gliderMesh.visible = false;
 
-        // Central Unit (Compact Tech Pack)
-        const packGeo = new THREE.BoxGeometry(0.3, 0.4, 0.15); // Smaller pack
+        // Pack
+        const packGeo = new THREE.BoxGeometry(0.3, 0.4, 0.15);
         const packMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.3, metalness: 0.8 });
         const pack = new THREE.Mesh(packGeo, packMat);
         this.gliderMesh.add(pack);
 
-        // Neon Glow Material
-        const wingMat = new THREE.MeshStandardMaterial({
-            color: 0xff0000, // DEBUG: RED
-            emissive: 0xff0000,
-            emissiveIntensity: 3.0, // High Glow
-            transparent: true,
-            opacity: 0.9,
-            side: THREE.FrontSide // FIX: FrontSide prevents Seeing BLUE screen if clipped inside
-        });
-
-        // Wing Geometry (Smaller, Swept Back)
+        // Wings
+        const wingMat = new THREE.MeshStandardMaterial({ color: cAccent, emissive: cAccent, emissiveIntensity: 3.0, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
         const wingGeo = new THREE.BufferGeometry();
-        // Modern swept-wing shape, much smaller spread
         const wingVerts = new Float32Array([
-            0, 0, 0,       // Root
-            -1.2, 0.2, 0.3, // Tip (Shorter spread: 1.2 vs 2.5)
-            -0.3, -0.2, 0.2, // Back edge
-
-            0, 0, 0,
-            -1.2, 0.2, 0.3,
-            -0.3, 0.1, -0.1 // Front edge
+            0, 0, 0, -1.2, 0.2, 0.3, -0.3, -0.2, 0.2,
+            0, 0, 0, -1.2, 0.2, 0.3, -0.3, 0.1, -0.1
         ]);
         wingGeo.setAttribute('position', new THREE.BufferAttribute(wingVerts, 3));
-        wingGeo.computeVertexNormals();
-
         const lWing = new THREE.Mesh(wingGeo, wingMat);
         this.gliderMesh.add(lWing);
-
-        // Right Wing (Mirrored)
         const rWing = lWing.clone();
         rWing.scale.set(-1, 1, 1);
         this.gliderMesh.add(rWing);
 
         this.bodyMesh.add(this.gliderMesh);
 
-        // 6. Shield Group (Surfboard / Back)
+        // Shield
         this.shieldGroup = new THREE.Group();
-
-        // Shield Visual
         const shieldGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.1, 16);
-        const shieldMat = new THREE.MeshStandardMaterial({
-            color: 0x8B4513, // Wood
-            roughness: 0.8
-        });
+        const shieldMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.8 });
         this.shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
-        this.shieldMesh.rotation.x = Math.PI / 2; // Flat
+        this.shieldMesh.rotation.x = Math.PI / 2;
         this.shieldGroup.add(this.shieldMesh);
+        this.shieldGroup.position.set(0, 0.1, -0.2); // On Back
+        this.bodyMesh.add(this.shieldGroup);
 
-        // Default Position: On Back
-        this.shieldGroup.position.set(0, 0.0, -0.35); // Relative to bodyMesh center
-        this.bodyMesh.add(this.shieldGroup); // Attach to body by default
-
-        // Equip Weapon immediately
+        // Equip Weapon
         this.equipWeapon('assets/sword_iron.glb');
     }
 
@@ -729,7 +851,7 @@ export class Player {
                 }
 
                 // Landing Assist: Force down if close to ground but not grounded yet
-                if (this.mesh && this.world && this.world.terrainManager && this.world.terrainManager.group && this.body.velocity.y < 0 && this.body.velocity.y > -10) {
+                if (this.mesh && this.world && this.world.terrainManager && this.world.terrainManager.group && this.body.velocity.y < 0 && this.body.velocity.y > -5) {
                     // Simple raycast check for "almost grounded"
                     const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 0.5, 0));
                     const raycaster = new THREE.Raycaster(rayOrigin, new THREE.Vector3(0, -1, 0), 0, 1.5); // Check slightly further than checkGround
@@ -1140,146 +1262,175 @@ export class Player {
      * @param {number} dt
      */
     updateVisuals(dt) {
-        if (!this.mesh || !this.bodyMesh || !this.leftHand || !this.rightHand) return;
+        if (!this.mesh) return;
 
-        const time = Date.now() * 0.001;
+        // Smooth Time for animations
+        const time = Date.now() * 0.01;
 
-        // Reset base transforms
         let targetRotX = 0;
         let targetRotY = 0;
         let targetRotZ = 0;
-        let targetPosY = 0.6; // Default height
+        let targetPosY = 0.95; // Base Hip Height
 
-        // Hand targets (relative to body)
-        let leftHandPos = new THREE.Vector3(-0.5, 0, 0);
-        let rightHandPos = new THREE.Vector3(0.5, 0, 0);
-        let leftHandRot = new THREE.Euler(0, 0, 0);
-        let rightHandRot = new THREE.Euler(0, 0, 0);
+        // Reset Limbs (Lerp targets)
+        let lArmRot = { x: 0, y: 0, z: 0 }; // Left Shoulder
+        let rArmRot = { x: 0, y: 0, z: 0 }; // Right Shoulder
+        let lLegRot = { x: 0, y: 0, z: 0 }; // Left Hip
+        let rLegRot = { x: 0, y: 0, z: 0 }; // Right Hip
+        let lKneeRot = 0;
+        let rKneeRot = 0;
+        let lElbowRot = -0.1; // Slight natural bend
+        let rElbowRot = -0.1;
 
-        // --- STATE MACHINE VISUALS ---
+        const lerpFactor = dt * 10;
 
-        if (this.gliderMesh) this.gliderMesh.visible = false; // Hide by default - STRICT RESET
+        // SURF Check (Shield)
+        if (this.state !== 'SURF' && this.shieldGroup && this.shieldGroup.parent !== this.bodyMesh && this.bodyMesh) {
+            this.bodyMesh.add(this.shieldGroup);
+            this.shieldGroup.position.set(0, 0.1, -0.2);
+            this.shieldGroup.rotation.set(0, 0, 0);
+        }
 
+        // State Machine for Visuals
         switch (this.state) {
-            case 'GUARD':
-                // Body Upright
-                targetRotX = 0;
-
-                // Shield in front
-                if (this.shieldGroup) {
-                    this.shieldGroup.position.set(0, 0.2, 0.5); // In front of chest
-                    this.shieldGroup.rotation.set(0, 0, 0);
-                }
-                break;
-
             case 'GLIDE':
-                // Superman Pose
-                targetRotX = 1.2; // ~70 deg (Prevent camera clipping into wings)
-                targetPosY = 0.0; // Align with hitbox center
+                targetRotX = 0.5; // Lean forward
+                targetPosY = 0.95;
 
-                // Arms T-Pose / Wings
-                leftHandPos.set(-0.8, 0, 0.2);
-                rightHandPos.set(0.8, 0, 0.2);
+                // T-Pose / Superman
+                lArmRot.z = 0.2; // Wings out
+                rArmRot.z = -0.2;
+                lArmRot.x = -1.5; // Forward
+                rArmRot.x = -1.5;
 
-                // Glide Particles (Wind Trail)
-                if (Math.random() > 0.7) {
-                    const offset = new THREE.Vector3((Math.random() - 0.5) * 1, 0, (Math.random() - 0.5) * 1);
-                    this.spawnHitParticles(this.mesh.position.clone().add(offset));
-                }
+                // Legs drag
+                lLegRot.x = 0.5;
+                rLegRot.x = 0.5;
 
                 if (this.gliderMesh) this.gliderMesh.visible = true;
                 break;
 
             case 'DIVE':
-                // Head Down
-                targetRotX = -Math.PI / 2;
-                targetPosY = 0.0;
+                targetRotX = -1.5; // Head down
+                targetPosY = 0.95;
 
-                // Arms along body
-                leftHandPos.set(-0.4, 0.5, 0);
-                rightHandPos.set(0.4, 0.5, 0);
-
-                // Trail Effect (Simple particles)
-                if (Math.random() > 0.5) {
-                    this.spawnHitParticles(this.mesh.position.clone().add(new THREE.Vector3(0, 1, 0)), 0x00ffff); // Cyan
-                }
+                // Streamline
+                lArmRot.x = -3.0; // Up (relative to body)
+                rArmRot.x = -3.0;
                 break;
 
             case 'SURF':
-                // Skater Pose
                 targetRotY = -Math.PI / 2; // Sideways
-                targetRotX = -0.35; // Lean back (-20 deg)
-                targetPosY = 0.3; // Crouch
+                targetRotX = -0.2;
+                targetPosY = 0.7; // Low
 
-                // Balance Arms
-                leftHandPos.set(-0.6, 0.2, -0.2); // Back arm up
-                rightHandPos.set(0.6, -0.1, 0.2); // Front arm down
+                // Balance
+                lArmRot.z = 1.0;
+                rArmRot.z = -0.5;
+                lLegRot.x = 0.5; // Bent
+                rLegRot.x = -0.5;
 
-                // Shield under feet (Re-parent to Root Mesh)
+                // Shield Logic
                 if (this.shieldGroup && this.shieldGroup.parent !== this.mesh) {
                     this.mesh.attach(this.shieldGroup);
-                    this.shieldGroup.position.set(0, -0.5, 0); // Under feet
-                    this.shieldGroup.rotation.set(0, 0, 0); // Flat
+                    this.shieldGroup.position.set(0, -0.9, 0); // Under feet
+                    this.shieldGroup.rotation.set(0, 0, 0);
                 }
-                break; // Properly break SURF case
-
+                break;
 
             case 'RUN':
             case 'WALK':
-                // Normal Run
-                targetRotX = Math.min(this.currentSpeed * 0.1, 0.4);
+                targetRotX = Math.min(this.currentSpeed * 0.05, 0.2); // Lean
+                targetPosY = 0.95 + Math.sin(time * 2) * 0.02; // Bob
 
-                // Standard Arm Swing
-                const walkSpeed = this.currentSpeed * 1.5;
-                leftHandPos.z = Math.sin(time * walkSpeed) * 0.5;
-                rightHandPos.z = Math.cos(time * walkSpeed) * 0.5;
+                // Walk Cycle
+                const runSpeed = this.currentSpeed * 1.5;
+                const legAmp = this.state === 'RUN' ? 1.0 : 0.6;
+                const armAmp = this.state === 'RUN' ? 1.2 : 0.6;
+
+                // Legs (Antiphase)
+                lLegRot.x = Math.cos(time * runSpeed) * legAmp;
+                rLegRot.x = Math.cos(time * runSpeed + Math.PI) * legAmp;
+
+                // Knees (Simple bob)
+                lKneeRot = Math.abs(Math.sin(time * runSpeed)) * legAmp;
+                rKneeRot = Math.abs(Math.sin(time * runSpeed + Math.PI)) * legAmp;
+
+                // Arms (Opposite to Legs)
+                lArmRot.x = Math.cos(time * runSpeed + Math.PI) * armAmp;
+                rArmRot.x = Math.cos(time * runSpeed) * armAmp;
+                lArmRot.z = 0.1; // Clear body
+                rArmRot.z = -0.1;
+
+                lElbowRot = -1.5; // Fixed running arms? Or dynamic?
+                if (this.state === 'WALK') {
+                    lElbowRot = -0.2;
+                    rElbowRot = -0.2;
+                } else {
+                    lElbowRot = -1.5;
+                    rElbowRot = -1.5;
+                }
                 break;
 
             case 'IDLE':
             case 'AIR':
-                // Hover Idle
-                const hoverY = Math.sin(time * 3) * 0.05;
-                targetPosY = 0.6 + hoverY;
+                if (this.state === 'AIR') {
+                    // Jump pose
+                    lLegRot.x = 0.2;
+                    rLegRot.x = -0.4; // One leg up
+                    lArmRot.z = 0.5; // Balance
+                    rArmRot.z = -0.5;
+                } else {
+                    // Breathing
+                    targetPosY = 0.95 + Math.sin(time * 0.5) * 0.01;
+                    lArmRot.z = 0.05 + Math.sin(time * 0.5) * 0.02;
+                    rArmRot.z = -0.05 - Math.sin(time * 0.5) * 0.02;
+                }
+                break;
+            case 'GUARD':
                 targetRotX = 0;
-
-                // Breathing Arms
-                leftHandPos.y = Math.sin(time * 2) * 0.02;
-                rightHandPos.y = Math.cos(time * 2) * 0.02;
+                lArmRot.x = -0.5;
+                rArmRot.x = -0.5;
                 break;
         }
 
-        // --- APPLY TRANSFORMS (LERP for smoothness) ---
-        const lerpFactor = dt * 10;
-
-        // Body
-        // Body
-        // Only apply Y rotation if NOT surfing (Surf handles its own sideways rotation)
+        // Apply Rotations (Lerp)
         if (this.state !== 'SURF') {
             this.bodyMesh.rotation.y = THREE.MathUtils.lerp(this.bodyMesh.rotation.y, targetRotY, lerpFactor);
         } else {
-            this.bodyMesh.rotation.y = targetRotY; // Snap or lerp to sideways
+            this.bodyMesh.rotation.y = targetRotY;
         }
-
         this.bodyMesh.rotation.x = THREE.MathUtils.lerp(this.bodyMesh.rotation.x, targetRotX, lerpFactor);
-        this.bodyMesh.rotation.z = THREE.MathUtils.lerp(this.bodyMesh.rotation.z, targetRotZ, lerpFactor);
         this.bodyMesh.position.y = THREE.MathUtils.lerp(this.bodyMesh.position.y, targetPosY, lerpFactor);
 
-        // Hands (Base Position + Animation Offset)
-        // Note: Attack animation overrides right hand, so handle that separately
+        // Limbs
+        this.animateLimb(this.leftArm, lArmRot, lerpFactor);
+        this.animateLimb(this.rightArm, rArmRot, lerpFactor);
+        this.animateLimb(this.leftLeg, lLegRot, lerpFactor);
+        this.animateLimb(this.rightLeg, rLegRot, lerpFactor);
 
+        // Knees / Elbows (X rotation only usually)
+        if (this.leftForeArm) this.leftForeArm.rotation.x = THREE.MathUtils.lerp(this.leftForeArm.rotation.x, lElbowRot, lerpFactor);
+        if (this.rightForeArm) this.rightForeArm.rotation.x = THREE.MathUtils.lerp(this.rightForeArm.rotation.x, rElbowRot, lerpFactor);
+        if (this.leftShin) this.leftShin.rotation.x = THREE.MathUtils.lerp(this.leftShin.rotation.x, lKneeRot, lerpFactor);
+        if (this.rightShin) this.rightShin.rotation.x = THREE.MathUtils.lerp(this.rightShin.rotation.x, rKneeRot, lerpFactor);
+
+        // Attack Overrides (Simplistic)
         if (this.isAttacking) {
             this.updateAttackVisuals(dt);
-
-            // Apply Left Hand only
-            this.leftHand.position.lerp(leftHandPos, lerpFactor);
-        } else {
-            this.leftHand.position.lerp(leftHandPos, lerpFactor);
-            this.rightHand.position.lerp(rightHandPos, lerpFactor);
-
-            // Reset rotations if not attacking
-            this.rightHand.rotation.set(0, 0, 0);
-            this.leftHand.rotation.set(0, 0, 0);
         }
+    }
+
+    /**
+     * @param {THREE.Object3D} limb 
+     * @param {{x: number, y: number, z: number}} targetRot 
+     * @param {number} lerp 
+     */
+    animateLimb(limb, targetRot, lerp) {
+        if (!limb) return;
+        limb.rotation.x = THREE.MathUtils.lerp(limb.rotation.x, targetRot.x, lerp);
+        limb.rotation.y = THREE.MathUtils.lerp(limb.rotation.y, targetRot.y, lerp);
+        limb.rotation.z = THREE.MathUtils.lerp(limb.rotation.z, targetRot.z, lerp);
     }
 
     /**
