@@ -17,6 +17,9 @@ export class MapManager {
         this.icons = new Map(); // Map of object ID -> DOM Element
         this.isBigMap = false;
 
+        // Quest Marker Logic
+        this.activeQuestMarker = null; // { x, z }
+
         // View State (Replaces old transform/offset logic)
         this.viewState = {
             x: 0,
@@ -30,6 +33,14 @@ export class MapManager {
 
         // Pending icons to load
         this.pendingIcons = [];
+    }
+
+    setQuestMarker(x, z) {
+        this.activeQuestMarker = { x, z };
+    }
+
+    removeQuestMarker() {
+        this.activeQuestMarker = null;
     }
 
     init() {
@@ -204,6 +215,44 @@ export class MapManager {
         // 1. Update Icon Positions (Pure Map Coords)
         this.updatePlayerIcon();
         this.updateEnemyIcons();
+
+        // Quest Marker
+        if (this.activeQuestMarker) {
+            let icon = this.icons.get('quest_marker');
+            if (!icon) {
+                icon = document.createElement('div');
+                icon.className = 'map-icon-quest';
+                Object.assign(icon.style, {
+                    width: '16px', height: '16px',
+                    backgroundColor: 'gold',
+                    border: '2px solid white',
+                    borderRadius: '50%',
+                    position: 'absolute',
+                    transform: 'translate(-50%, -50%)',
+                    zIndex: '20',
+                    pointerEvents: 'none',
+                    boxShadow: '0 0 10px gold'
+                });
+                this.iconLayer.appendChild(icon);
+                this.icons.set('quest_marker', icon);
+            }
+
+            const pos = this.worldToMap(this.activeQuestMarker.x, this.activeQuestMarker.z);
+            icon.style.left = `${pos.x}px`;
+            icon.style.top = `${pos.y}px`;
+
+            // Inverse Scale
+            const scale = this.isBigMap ? this.viewState.scale : 1;
+            const invScale = 1 / Math.max(0.1, scale);
+            icon.style.transform = `translate(-50%, -50%) scale(${invScale})`; // Keep constant size
+        } else {
+            const icon = this.icons.get('quest_marker');
+            if (icon) {
+                icon.remove();
+                this.icons.delete('quest_marker');
+            }
+        }
+
         if (this.revealAnimation) this.updateRevealAnimation(dt);
 
         // 2. LOD / CSS
@@ -399,6 +448,7 @@ export class MapManager {
 
     revealZone(x, z, r) {
         if (!this.fogCtx) return;
+        // console.log(`Map: Revealing Zone at (${x}, ${z}) R=${r}`);
         const pos = this.worldToMap(x, z);
         const mapR = r * this.scale;
 
@@ -527,6 +577,19 @@ export class MapManager {
             this.container.style.right = '20px';
             this.container.style.borderRadius = '50%';
         }
+    }
+
+    playMapUnlockAnimation() {
+        // Visual Flare Effect on Minimap?
+        // For now, let's just do a big reveal pulse
+        if (this.container) {
+            this.container.style.transition = 'box-shadow 0.5s ease-out';
+            this.container.style.boxShadow = '0 0 50px 20px #00ccff';
+            setTimeout(() => {
+                this.container.style.boxShadow = '';
+            }, 1000);
+        }
+        this.revealZone(0, 0, 1000);
     }
 
     show() {

@@ -346,9 +346,8 @@ export class Player {
         lLower.castShadow = true;
         this.leftForeArm.add(lLower);
 
-        // Left Hand
-        const handGeo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
-        this.leftHand = new THREE.Mesh(handGeo, matJoint);
+        // Left Hand (Invisible Anchor)
+        this.leftHand = new THREE.Group();
         this.leftHand.position.y = -armL * 0.9;
         this.leftForeArm.add(this.leftHand);
 
@@ -374,8 +373,8 @@ export class Player {
         rLower.castShadow = true;
         this.rightForeArm.add(rLower);
 
-        // Right Hand
-        this.rightHand = new THREE.Mesh(handGeo, matJoint);
+        // Right Hand (Invisible Anchor)
+        this.rightHand = new THREE.Group();
         this.rightHand.position.y = -armL * 0.9;
         this.rightForeArm.add(this.rightHand);
 
@@ -545,16 +544,30 @@ export class Player {
     update(dt) {
         if (!this.mesh || !this.body) return 1;
 
-        // Interaction (F Key)
+        // Interaction (E Key)
         if (this.input.keys.interact) {
+            // Prevent new interaction if dialogue is open
+            if (this.game.dialogueManager && this.game.dialogueManager.isActive) {
+                // Let DialogueManager handle the input in its update()
+                this.input.keys.interact = false; // Consume key to prevent stuck state
+                return;
+            }
+
+            console.log("Player: Interact Key Pressed");
             if (this.world) {
-                const target = this.world.getClosestInteractable(this.mesh.position, 3.0);
+                console.log("Player: Requesting Interactable from World...");
+                const target = this.world.getClosestInteractable(this.mesh.position, 5.0);
                 if (target) {
+                    console.log("Player: Interactable Found:", target);
                     if (typeof target.interact === 'function') {
                         target.interact();
                     } else if (target.userData && typeof target.userData.interact === 'function') {
                         target.userData.interact();
+                    } else {
+                        console.warn("Player: Target has no interact method", target);
                     }
+                } else {
+                    console.log("Player: No interactable in range (3.0)");
                 }
             }
             this.input.keys.interact = false; // Debounce
@@ -1419,6 +1432,13 @@ export class Player {
 
         // Attack Overrides (Simplistic)
         if (this.isAttacking) {
+            // FORCE RIGHT ARM POSITIONS FOR ATTACK
+            // This prevents the walk/run cycle from overriding the attack animation
+            rArmRot.x = -0.5; // Lift arm
+            rArmRot.z = -0.5; // Clear body
+            rElbowRot = -0.5; // Bend slightly
+
+            // Let updateAttackVisuals handle the rest (swinging the sword/hand)
             this.updateAttackVisuals(dt);
         }
     }

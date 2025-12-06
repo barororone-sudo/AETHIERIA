@@ -68,7 +68,7 @@ export class Input {
             case 'ShiftRight':
                 this.keys.sprint = isDown;
                 break;
-            case 'KeyF':
+            case 'KeyE':
                 this.keys.interact = isDown;
                 break;
             case 'KeyP':

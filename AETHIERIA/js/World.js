@@ -8,6 +8,7 @@ import { NPC } from './NPC.js';
 import { Tower } from './world/Tower.js';
 import { MonsterFactory } from './MonsterFactory.js';
 import { TerrainManager } from './world/TerrainManager.js';
+import { Chest } from './world/Chest.js';
 
 export class World {
     constructor(game) {
@@ -74,6 +75,7 @@ export class World {
 
         // --- GAMEPLAY OBJECTS ---
         this.interactables = [];
+        this.chests = []; // Store Chest instances
         this.generateFogGrid();
         // this.createWall(this.defaultMaterial); // Removed for procedural generation focus
         // this.createArena(new THREE.Vector3(0, 0.5, -40)); // Removed for procedural generation focus
@@ -119,114 +121,12 @@ export class World {
         return 0;
     }
 
-    /**
-     * @param {THREE.Vector3} position 
-     * @param {number} radius 
-     */
-    getClosestInteractable(position, radius) {
-        let closest = null;
-        let minDist = radius;
-
-        // Check Interactables (Chests, Towers, etc.)
-        if (this.interactables) {
-            for (const obj of this.interactables) {
-                const pos = obj.position || obj.mesh.position;
-                const dist = position.distanceTo(pos);
-                if (dist < minDist) {
-                    minDist = dist;
-                    closest = obj;
-                }
-            }
-        }
-
-        // Check NPCs
-        if (this.npcs) {
-            for (const npc of this.npcs) {
-                const dist = position.distanceTo(npc.mesh.position);
-                if (dist < minDist) {
-                    minDist = dist;
-                    closest = npc;
-                }
-            }
-        }
-
-        return closest;
-    }
-
-    init() {
-        // Called after all managers are created
-        this.loadPrologue();
-    }
-
-    loadPrologue() {
-        // Spawn Lumina (Guide)
-        const luminaData = this.game.data.getDialogue('lumina_intro');
-        if (luminaData) {
-            const lumina = new NPC(this.game, this, new THREE.Vector3(5, 20, 5), 'lumina_intro');
-            lumina.name = "Lumina"; // Override default
-            this.npcs.push(lumina);
-        }
-
-        // Spawn Chest with Sword
-        this.spawnChest(new THREE.Vector3(15, 0.5, 10), 'sword_01');
-
-        // Spawn Chest with Glider
-        this.spawnChest(new THREE.Vector3(25, 0.5, 10), 'glider');
-
-        // Spawn Guardian (Boss) - Initially inactive or distant?
-        // Let's keep the Golem spawn for now but maybe move it
-        this.spawnGolem(new CANNON.Vec3(0, 20, -40)); // Raised from 5 to 10 to prevent floor clipping
-
-        // Map Towers
-        this.spawnTower(50, 50, 'tower_central');
-        this.spawnTower(-100, 100, 'tower_north_west');
-        this.spawnTower(150, -50, 'tower_south_east');
-    }
-
-    spawnChest(position, itemId) {
-        // Visuals
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshStandardMaterial({ color: 0x8B4513 }); // Brown
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.copy(position);
-        this.scene.add(mesh);
-
-        // Physics
-        const shape = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
-        const body = new CANNON.Body({ mass: 0 });
-        body.addShape(shape);
-        body.position.copy(position);
-        this.physicsWorld.addBody(body);
-
-        // Interaction Logic (Simplified)
-        mesh.userData = {
-            type: 'chest',
-            itemId: itemId,
-            interact: () => {
-                // console.log(`Opening chest with ${itemId}`);
-                this.game.player.inventory.addItem(itemId, 1);
-                this.scene.remove(mesh); // Poof
-                // Show notification
-                this.game.ui.showToast(`Obtenu: ${this.game.data.getItem(itemId).name}`);
-
-                // Update Dialogue State if needed
-                // Update Quest System
-                this.game.story.notify('ITEM_PICKUP', itemId);
-
-                // Keep Glider logic separate for now (mechanic vs narrative), or move to Story too if desired.
-                // For this task, I am only removing the Narrative Hardcode (sword/lumina).
-            }
-        };
-        this.interactables.push(mesh);
-    }
-
     setupLights() {
         // EMERGENCY LIGHT
         const emergencyLight = new THREE.AmbientLight(0xffffff, 1.0);
         this.scene.add(emergencyLight);
 
-        this.ambientLight = new THREE.AmbientLight(0xffffff, 0.2); // Lower base ambient
-        this.scene.add(this.ambientLight);
+        this.ambientLight = new THREE.AmbientLight(0xffffff, 0.8); // RADICAL FIX: High ambient light
 
         // SUN
         this.sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -253,49 +153,49 @@ export class World {
 
     createSky() {
         const vertexShader = `
-            varying vec3 vWorldPosition;
-            void main() {
-                vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-                vWorldPosition = worldPosition.xyz;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `;
+        varying vec3 vWorldPosition;
+        void main() {
+            vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+            vWorldPosition = worldPosition.xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `;
         const fragmentShader = `
-            varying vec3 vWorldPosition;
-            uniform vec3 topColor;
-            uniform vec3 bottomColor;
-            uniform float offset;
-            uniform float exponent;
-            uniform float time;
+        varying vec3 vWorldPosition;
+        uniform vec3 topColor;
+        uniform vec3 bottomColor;
+        uniform float offset;
+        uniform float exponent;
+        uniform float time;
 
-            // Simple Star Noise
-            float rand(vec2 co){
-                return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
-            }
+        // Simple Star Noise
+        float rand(vec2 co){
+            return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+        }
 
-            void main() {
-                float h = normalize(vWorldPosition + vec3(0, offset, 0)).y;
-                float mixVal = max(pow(max(h, 0.0), exponent), 0.0);
-                vec3 sky = mix(bottomColor, topColor, mixVal);
+        void main() {
+            float h = normalize(vWorldPosition + vec3(0, offset, 0)).y;
+            float mixVal = max(pow(max(h, 0.0), exponent), 0.0);
+            vec3 sky = mix(bottomColor, topColor, mixVal);
+            
+            // Stars (only visible when dark)
+            float brightness = length(topColor);
+            if (brightness < 0.5) {
+                float starThreshold = 0.995;
+                float r = rand(gl_FragCoord.xy * 0.001); // Screen space noise for twinkling? No, world space better
+                // Let's use direction for fixed stars
+                vec3 dir = normalize(vWorldPosition);
+                float s = rand(dir.xz * 100.0 + dir.y * 100.0);
                 
-                // Stars (only visible when dark)
-                float brightness = length(topColor);
-                if (brightness < 0.5) {
-                    float starThreshold = 0.995;
-                    float r = rand(gl_FragCoord.xy * 0.001); // Screen space noise for twinkling? No, world space better
-                    // Let's use direction for fixed stars
-                    vec3 dir = normalize(vWorldPosition);
-                    float s = rand(dir.xz * 100.0 + dir.y * 100.0);
-                    
-                    if (s > starThreshold) {
-                        float twinkle = sin(time * 2.0 + s * 100.0) * 0.5 + 0.5;
-                        sky += vec3(twinkle) * (1.0 - brightness * 2.0); // Fade out as it gets brighter
-                    }
+                if (s > starThreshold) {
+                    float twinkle = sin(time * 2.0 + s * 100.0) * 0.5 + 0.5;
+                    sky += vec3(twinkle) * (1.0 - brightness * 2.0); // Fade out as it gets brighter
                 }
-
-                gl_FragColor = vec4(sky, 1.0);
             }
-        `;
+
+            gl_FragColor = vec4(sky, 1.0);
+        }
+    `;
         const uniforms = {
             topColor: { value: new THREE.Color(0x0077ff) },
             bottomColor: { value: new THREE.Color(0xffffff) },
@@ -343,44 +243,44 @@ export class World {
 
         // Water Shader
         const vertexShader = `
-            uniform float time;
-            varying vec2 vUv;
-            varying float vWave;
+        uniform float time;
+        varying vec2 vUv;
+        varying float vWave;
+        
+        void main() {
+            vUv = uv;
+            vec3 pos = position;
             
-            void main() {
-                vUv = uv;
-                vec3 pos = position;
-                
-                // Gerstner-like Waves
-                float wave1 = sin(pos.x * 0.05 + time * 1.0) * 0.5;
-                float wave2 = cos(pos.y * 0.05 + time * 0.8) * 0.5; // y is z here before rotation? No, plane is XY.
-                // Actually plane is XY, rotated -90 X later. So pos.y is "North".
-                
-                pos.z += wave1 + wave2; // Z is height in PlaneGeometry
-                vWave = pos.z;
-                
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-            }
-        `;
+            // Gerstner-like Waves
+            float wave1 = sin(pos.x * 0.05 + time * 1.0) * 0.5;
+            float wave2 = cos(pos.y * 0.05 + time * 0.8) * 0.5; // y is z here before rotation? No, plane is XY.
+            // Actually plane is XY, rotated -90 X later. So pos.y is "North".
+            
+            pos.z += wave1 + wave2; // Z is height in PlaneGeometry
+            vWave = pos.z;
+            
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+        }
+    `;
 
         const fragmentShader = `
-            uniform float time;
-            uniform vec3 colorDeep;
-            uniform vec3 colorShallow;
-            varying vec2 vUv;
-            varying float vWave;
+        uniform float time;
+        uniform vec3 colorDeep;
+        uniform vec3 colorShallow;
+        varying vec2 vUv;
+        varying float vWave;
+        
+        void main() {
+            // Mix colors based on wave height
+            vec3 color = mix(colorDeep, colorShallow, vWave * 0.5 + 0.5);
             
-            void main() {
-                // Mix colors based on wave height
-                vec3 color = mix(colorDeep, colorShallow, vWave * 0.5 + 0.5);
-                
-                // Foam lines
-                float foam = step(0.8, sin(vUv.x * 100.0 + time) * sin(vUv.y * 100.0 + time));
-                color += vec3(foam * 0.1);
+            // Foam lines
+            float foam = step(0.8, sin(vUv.x * 100.0 + time) * sin(vUv.y * 100.0 + time));
+            color += vec3(foam * 0.1);
 
-                gl_FragColor = vec4(color, 0.8);
-            }
-        `;
+            gl_FragColor = vec4(color, 0.8);
+        }
+    `;
 
         const material = new THREE.ShaderMaterial({
             vertexShader,
@@ -470,66 +370,66 @@ export class World {
 
         const material = new THREE.ShaderMaterial({
             vertexShader: `
-                uniform float time;
-                varying vec2 vUv;
-                varying float vHeight;
+            uniform float time;
+            varying vec2 vUv;
+            varying float vHeight;
+            
+            // Simple Noise
+            float rand(vec2 n) { 
+                return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);
+            }
+
+            float noise(vec2 p){
+                vec2 ip = floor(p);
+                vec2 u = fract(p);
+                u = u*u*(3.0-2.0*u);
+                float res = mix(
+                    mix(rand(ip), rand(ip+vec2(1.0,0.0)), u.x),
+                    mix(rand(ip+vec2(0.0,1.0)), rand(ip+vec2(1.0,1.0)), u.x), u.y);
+                return res*res;
+            }
+
+            void main() {
+                vUv = uv;
+                vHeight = position.y;
+                vec3 pos = position;
                 
-                // Simple Noise
-                float rand(vec2 n) { 
-                    return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);
-                }
-
-                float noise(vec2 p){
-                    vec2 ip = floor(p);
-                    vec2 u = fract(p);
-                    u = u*u*(3.0-2.0*u);
-                    float res = mix(
-                        mix(rand(ip), rand(ip+vec2(1.0,0.0)), u.x),
-                        mix(rand(ip+vec2(0.0,1.0)), rand(ip+vec2(1.0,1.0)), u.x), u.y);
-                    return res*res;
-                }
-
-                void main() {
-                    vUv = uv;
-                    vHeight = position.y;
-                    vec3 pos = position;
-                    
-                    // Wind Effect
-                    vec4 worldPosition = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-                    
-                    // Large scale wind waves
-                    float windWave = sin(time * 0.5 + worldPosition.x * 0.05 + worldPosition.z * 0.05);
-                    
-                    // Small detailed noise
-                    float n = noise(worldPosition.xz * 0.2 + time * 1.0);
-                    
-                    // Combine
-                    float wind = (windWave * 0.5 + n * 0.5) * 0.5;
-                    
-                    // Apply wind only to top of grass, non-linearly
-                    float bend = pow(uv.y, 2.0);
-                    pos.x += wind * bend * 2.0;
-                    pos.z += wind * bend * 0.5;
-                    
-                    // Droop effect when wind blows hard
-                    pos.y -= abs(wind) * bend * 0.3;
-                    
-                    vec4 finalPos = instanceMatrix * vec4(pos, 1.0);
-                    gl_Position = projectionMatrix * viewMatrix * finalPos;
-                }
-            `,
+                // Wind Effect
+                vec4 worldPosition = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+                
+                // Large scale wind waves
+                float windWave = sin(time * 0.5 + worldPosition.x * 0.05 + worldPosition.z * 0.05);
+                
+                // Small detailed noise
+                float n = noise(worldPosition.xz * 0.2 + time * 1.0);
+                
+                // Combine
+                float wind = (windWave * 0.5 + n * 0.5) * 0.5;
+                
+                // Apply wind only to top of grass, non-linearly
+                float bend = pow(uv.y, 2.0);
+                pos.x += wind * bend * 2.0;
+                pos.z += wind * bend * 0.5;
+                
+                // Droop effect when wind blows hard
+                pos.y -= abs(wind) * bend * 0.3;
+                
+                vec4 finalPos = instanceMatrix * vec4(pos, 1.0);
+                gl_Position = projectionMatrix * viewMatrix * finalPos;
+            }
+        `,
             fragmentShader: `
-                varying vec2 vUv;
-                varying float vHeight;
-                uniform vec3 colorTop;
-                uniform vec3 colorBottom;
-                
-                void main() {
-                    vec3 color = mix(colorBottom, colorTop, vUv.y);
-                    color *= smoothstep(0.0, 0.4, vUv.y + 0.2);
-                    gl_FragColor = vec4(color, 1.0);
-                }
-            `,
+            varying vec2 vUv;
+            varying float vHeight;
+            uniform vec3 colorTop;
+            uniform vec3 colorBottom;
+            
+            void main() {
+                vec3 color = mix(colorBottom, colorTop, vUv.y);
+                color *= smoothstep(0.0, 0.4, vUv.y + 0.2);
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `,
             uniforms: {
                 time: { value: 0 },
                 colorTop: { value: new THREE.Color(0x8bc34a) },
@@ -644,55 +544,6 @@ export class World {
         const tower = new Tower(this, x, z, id, y);
         this.towers.push(tower);
         this.interactables.push(tower);
-    }
-
-    spawnChest(position, itemId) {
-        if (this.terrainManager) {
-            const y = this.terrainManager.getGlobalHeight(position.x, position.z);
-            position.y = y + 0.5; // Half height
-        }
-
-        // Visuals
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.copy(position);
-        this.scene.add(mesh);
-
-        // Physics
-        const shape = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
-        const body = new CANNON.Body({ mass: 0 });
-        body.addShape(shape);
-        body.position.copy(position);
-        this.physicsWorld.addBody(body);
-
-        // Interaction Logic
-        mesh.userData = {
-            type: 'chest',
-            itemId: itemId,
-            interact: () => {
-                console.log(`Opening chest with ${itemId}`);
-                this.game.player.inventory.addItem(itemId, 1);
-                this.scene.remove(mesh);
-                this.physicsWorld.removeBody(body); // Remove physics too
-                this.game.ui.showToast(`Obtenu: ${this.game.data.getItem(itemId).name}`);
-
-                if (itemId === 'sword_01') {
-                    const lumina = this.npcs.find(n => n.name === 'Lumina');
-                    if (lumina) lumina.dialogueData = 'lumina_sword_found';
-                }
-                if (itemId === 'glider') {
-                    this.game.player.unlockGlider();
-                }
-            }
-        };
-        this.interactables.push(mesh);
-    }
-
-    spawnLoot(position) {
-        if (!this.loot) this.loot = [];
-
-        const geometry = new THREE.DodecahedronGeometry(0.3);
         const material = new THREE.MeshBasicMaterial({ color: 0xFFD700 });
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.copy(position);
@@ -746,6 +597,30 @@ export class World {
     }
 
 
+
+
+    init() {
+        this.loadPrologue();
+    }
+
+    loadPrologue() {
+        // Spawn Lumina (Guide)
+        const luminaPos = new THREE.Vector3(5, 0, 5);
+        if (this.terrainManager) {
+            luminaPos.y = this.terrainManager.getGlobalHeight(luminaPos.x, luminaPos.z);
+        }
+        const lumina = new NPC(this.game, this, 'Lumina', luminaPos, 'lumina_intro');
+        this.npcs.push(lumina);
+
+        // Spawn Starting Chest
+        const chestPos = new THREE.Vector3(8, 0, 8);
+        if (this.terrainManager) {
+            chestPos.y = this.terrainManager.getGlobalHeight(chestPos.x, chestPos.z);
+        }
+        // New Chest Class Usage
+        const chest = new Chest(this.game, this, chestPos, 'sword_01');
+        this.chests.push(chest);
+    }
 
     generateFogGrid() {
         this.fogGrid = [];
@@ -858,6 +733,7 @@ export class World {
         }
 
         // Update Sky Mesh Uniforms
+        // Update Sky Mesh Uniforms
         if (this.skyMesh) {
             this.skyMesh.position.copy(playerPos); // Sky follows player
             this.skyMesh.material.uniforms.time.value = time;
@@ -881,6 +757,10 @@ export class World {
 
         if (this.npcs) {
             this.npcs.forEach(npc => npc.update(dt));
+        }
+
+        if (this.chests) {
+            this.chests.forEach(chest => chest.update(dt));
         }
 
         if (this.towers) {

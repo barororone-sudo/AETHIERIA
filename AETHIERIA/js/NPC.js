@@ -2,12 +2,12 @@
 import * as THREE from 'three';
 
 export class NPC {
-    constructor(game, world, position, dialogueData) {
+    constructor(game, world, name, position, dialogueData) {
         this.game = game;
         this.world = world;
+        this.name = name;
         this.position = position;
         this.dialogueData = dialogueData;
-        this.name = "Ancien";
         this.interactionRadius = 3.0;
 
         this.interactionRadius = 3.0;
@@ -112,7 +112,7 @@ export class NPC {
             this.indicator.style.display = 'block';
 
             if (dist < this.interactionRadius) {
-                this.indicator.innerText = 'F'; // Prompt to interact
+                this.indicator.innerText = 'E'; // Prompt to interact
                 this.indicator.style.color = '#00ff00';
             } else {
                 this.indicator.innerText = '!';

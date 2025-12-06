@@ -37,5 +37,20 @@ export const DialoguesDb = {
         end: {
             text: "Que le code soit avec toi."
         }
+    },
+    'lumina_act1_end': {
+        start: {
+            text: "Tour activée. Analyse des données... Terminé. Je capte un signal étrange venant de la Forêt à l'Est.",
+            next: 'act1_2'
+        },
+        act1_2: {
+            text: "C'est une signature énergétique corrompue. Nous devons enquêter.",
+            choices: [
+                { text: "En route pour la Forêt.", next: 'end' }
+            ]
+        },
+        end: {
+            text: "Reste sur tes gardes. Les ombres cachent bien des dangers."
+        }
     }
 };

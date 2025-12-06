@@ -876,19 +876,21 @@ export class UIManager {
     }
 
     hideCinematicOverlay() {
-        if (this.cinematicOverlay) {
-            this.cinematicOverlay.style.opacity = '0';
-            // Force removal after transition
-            setTimeout(() => {
-                this.cinematicOverlay.style.display = 'none';
-                if (this.cinematicText) this.cinematicText.innerText = "";
+        // HIDE LOADING SCREEN (Failsafe)
+        const loader = document.getElementById('loading-screen');
+        if (loader) loader.style.display = 'none';
 
-                // RESTORE UI ELEMENTS
-                const hearts = document.getElementById('hearts-container');
-                if (hearts) hearts.style.display = 'flex';
-                this.showMinimap();
-            }, 1000);
-        }
+        // FORCE REMOVE CINEMATIC OVERLAY
+        const overlay = document.getElementById('cinematic-overlay');
+        if (overlay) overlay.remove();
+
+        // Also clear reference to avoid errors
+        this.cinematicOverlay = null;
+
+        // RESTORE UI ELEMENTS
+        const hearts = document.getElementById('hearts-container');
+        if (hearts) hearts.style.display = 'flex';
+        this.showMinimap();
     }
 
     showTutorialInstruction(text) {

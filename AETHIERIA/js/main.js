@@ -173,8 +173,6 @@ export class Game {
             await this.saveManager.save(); // Create initial save immediately
         }
 
-        // Removed duplicate save call
-
         this.ui.hideMainMenu();
         // Hide Loading Screen if it's still there
         const loadingScreen = document.getElementById('loading-screen');
@@ -189,12 +187,14 @@ export class Game {
             // New Game -> Cinematic + Tutorial
             if (this.story) this.story.startNewGameSequence();
         } else {
-            // Load Game -> Just Fade In (if we had a fade) and play
-            // We could reuse hideCinematicOverlay just in case
             this.ui.hideCinematicOverlay();
         }
 
         this.ui.showMinimap(); // Show Map only when game starts
+
+        // --- KICKSTART GAME LOOP ---
+        console.log("STARTING GAME LOOP...");
+        this.animate(0);
     }
 
     initPostProcessing() {
@@ -221,8 +221,6 @@ export class Game {
 
         if (!this.debugMeshes) this.debugMeshes = [];
 
-        // Simple pool or recreate? Recreate is slow but easy.
-        // Let's reuse.
         let meshIndex = 0;
         const bodies = this.world.physicsWorld.bodies;
 
@@ -247,8 +245,6 @@ export class Game {
                     this.debugMeshes.push(mesh);
                 }
 
-                // Sync position/rotation
-                // Body pos + Shape offset (simplified, assuming center)
                 mesh.position.copy(body.position);
                 mesh.quaternion.copy(body.quaternion);
                 mesh.visible = true;
@@ -256,7 +252,6 @@ export class Game {
             }
         }
 
-        // Hide unused
         for (let i = meshIndex; i < this.debugMeshes.length; i++) {
             this.debugMeshes[i].visible = false;
         }
@@ -268,77 +263,43 @@ export class Game {
     animate(currentTime) {
         if (!this.isRunning) return;
 
-        requestAnimationFrame(this.animate);
+        requestAnimationFrame(this.animate.bind(this));
 
         // --- FPS THROTTLE ---
         if (!this.lastFrameTime) this.lastFrameTime = currentTime;
         const elapsed = currentTime - this.lastFrameTime;
 
         if (elapsed < this.frameInterval) return;
-
-        // Adjust lastFrameTime to target interval, but don't spiral behind
         this.lastFrameTime = currentTime - (elapsed % this.frameInterval);
 
         let dt = this.clock.getDelta();
-        if (dt > 0.1) dt = 0.1; // Clamp dt
+        if (dt > 0.1) dt = 0.1;
 
-        // If Paused, skip logic updates but keep rendering (and UI)
         if (this.isPaused) {
             if (this.ui) this.ui.update(dt);
-            // Render with Composer (Post-Processing)
-            if (this.composer) {
-                this.composer.render();
-            } else if (this.world) {
-                this.renderer.instance.render(this.world.scene, this.camera);
-            }
+            if (this.world) this.renderer.instance.render(this.world.scene, this.camera);
             return;
         }
 
-        // Player updates and returns timeScale (for Bullet Time)
+        // Logic Updates
         let timeScale = 1;
-        if (this.player) {
-            timeScale = this.player.update(dt);
-        }
+        if (this.player) timeScale = this.player.update(dt);
 
-        // DEBUG: Check Camera and Player
-        // Throttled Log
-        if (!this.logTimer) this.logTimer = 0;
-        this.logTimer += dt;
-        if (this.logTimer > 2.0) {
-            this.logTimer = 0;
-            console.log("CamPos:", this.camera.position);
-            if (this.player && this.player.mesh) console.log("PlayerPos:", this.player.mesh.position);
-        }
-
-        // World updates with scaled time (physics, enemies)
         try {
             if (this.world) this.world.update(dt * timeScale, this.player ? this.player.body : null);
         } catch (e) {
             console.warn("Erreur World:", e);
         }
 
-        // Physics Debug
         this.updatePhysicsDebug();
 
         try {
             if (this.ui) this.ui.update(dt);
-        } catch (e) {
-            console.warn("Erreur UI:", e);
-        }
-
-        try {
             if (this.story) this.story.update(dt);
-        } catch (e) {
-            console.warn("Erreur Story:", e);
-        }
-
-        try {
             if (this.dialogueManager) this.dialogueManager.update(dt);
-        } catch (e) {
-            console.warn("Erreur Dialogue:", e);
-        }
+        } catch (e) { }
 
-        // Render with Composer (Post-Processing)
+        // Render
         if (this.composer) {
             this.composer.render();
         } else if (this.world) {
@@ -348,16 +309,13 @@ export class Game {
 
     dispose() {
         this.isRunning = false;
-        // Dispose Renderer
         if (this.renderer && this.renderer.instance) {
             this.renderer.instance.dispose();
             this.renderer.instance.forceContextLoss();
         }
-        // Dispose Composer
         if (this.composer) {
             this.composer.dispose();
         }
-        // Dispose World (Geometries/Materials)
         if (this.world) {
             this.world.scene.traverse((object) => {
                 // @ts-ignore

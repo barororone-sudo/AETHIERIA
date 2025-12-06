@@ -1,23 +1,20 @@
 {
   "position": {
-    "x": 0,
-    "y": 50,
-    "z": 0
+    "x": -9.754450502439052,
+    "y": 1.8570797784121638,
+    "z": 6.95303398003675
   },
   "stats": {
-    "hp": 64,
+    "hp": 63,
     "stamina": 100
   },
   "story": {
-    "state": "TUTORIAL"
+    "state": "PLAYING"
   },
   "world": {
+    "time": 0,
     "fog": [],
-    "towers": {
-      "tower_central": false,
-      "tower_north_west": false,
-      "tower_south_east": false
-    }
+    "towers": {}
   },
-  "timestamp": 1765057058547
+  "timestamp": 1765063271392
 }

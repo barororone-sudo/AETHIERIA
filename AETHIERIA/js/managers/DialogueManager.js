@@ -162,7 +162,7 @@ export class DialogueManager {
         if (!this.isActive) return;
 
         if (this.isTyping) {
-            if (code === 'KeyF' || code === 'Space') {
+            if (code === 'KeyE' || code === 'KeyF' || code === 'Space') {
                 // Instant finish
                 clearInterval(this.textTimer);
                 this.ui.text.textContent = this.fullText; // Need to store this
@@ -180,12 +180,12 @@ export class DialogueManager {
             } else if (code === 'ArrowDown' || code === 'KeyS') {
                 this.selectedChoiceIndex = (this.selectedChoiceIndex + 1) % this.currentChoices.length;
                 this.updateChoiceVisuals();
-            } else if (code === 'KeyF' || code === 'Enter' || code === 'Space') {
+            } else if (code === 'KeyE' || code === 'KeyF' || code === 'Enter' || code === 'Space') {
                 this.handleChoice(this.currentChoices[this.selectedChoiceIndex]);
             }
         } else {
             // Next Bubble
-            if (code === 'KeyF' || code === 'Enter' || code === 'Space') {
+            if (code === 'KeyE' || code === 'KeyF' || code === 'Enter' || code === 'Space') {
                 this.showNode(this.currentNode.next || null);
             }
         }
