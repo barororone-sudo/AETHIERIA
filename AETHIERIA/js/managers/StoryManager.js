@@ -219,4 +219,71 @@ export class StoryManager {
         this.beam.position.y = 50;
         this.game.world.scene.add(this.beam);
     }
+
+    // --- EVENT-DRIVEN QUEST SYSTEM ---
+
+    /**
+     * Notify the StoryManager of an event (e.g., ITEM_PICKUP, ENEMY_KILL, TALK).
+     * @param {string} eventType - The type of event (e.g., 'ITEM_PICKUP')
+     * @param {string} targetId - The ID of the target (e.g., 'sword_01')
+     */
+    notify(eventType, targetId) {
+        console.log(`Story Event: ${eventType} -> ${targetId}`);
+
+        this.activeQuests.forEach(quest => {
+            if (quest.state !== 'IN_PROGRESS') return;
+
+            // Check all steps (some quests might have parallel steps)
+            quest.steps.forEach(step => {
+                if (!step.isCompleted && step.targetType === eventType && step.targetId === targetId) {
+                    step.isCompleted = true;
+                    console.log(`Quest Step Completed: ${quest.id} -> ${step.id}`);
+
+                    this.game.ui.showToast(`Objectif mis à jour : ${quest.title}`);
+
+                    // Execute Callback (Side Effects)
+                    if (step.onComplete) {
+                        try {
+                            step.onComplete(this.game);
+                        } catch (err) {
+                            console.warn(`Error in quest step callback: ${err}`);
+                        }
+                    }
+
+                    // Check if whole quest is done
+                    this.checkQuestCompletion(quest);
+                }
+            });
+        });
+    }
+
+    /**
+     * Check if a quest is fully completed.
+     * @param {Object} quest 
+     */
+    checkQuestCompletion(quest) {
+        const allCompleted = quest.steps.every(step => step.isCompleted);
+        if (allCompleted) {
+            quest.state = 'COMPLETED';
+            console.log(`Quest Completed: ${quest.title}`);
+            this.game.ui.showToast(`Quête Terminée : ${quest.title}`);
+            this.completedQuests.push(quest);
+
+            // Remove from active
+            const index = this.activeQuests.indexOf(quest);
+            if (index > -1) this.activeQuests.splice(index, 1);
+
+            // Give Rewards
+            if (quest.rewards) {
+                if (quest.rewards.gold) {
+                    // this.game.player.gold += quest.rewards.gold;
+                }
+                if (quest.rewards.items) {
+                    quest.rewards.items.forEach(itemId => {
+                        console.log(`Reward: ${itemId}`);
+                    });
+                }
+            }
+        }
+    }
 }

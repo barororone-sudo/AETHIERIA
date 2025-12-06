@@ -5,7 +5,7 @@
     "z": 0
   },
   "stats": {
-    "hp": 67,
+    "hp": 64,
     "stamina": 100
   },
   "story": {
@@ -19,5 +19,5 @@
       "tower_south_east": false
     }
   },
-  "timestamp": 1765055760198
+  "timestamp": 1765057058547
 }

@@ -210,11 +210,11 @@ export class World {
                 this.game.ui.showToast(`Obtenu: ${this.game.data.getItem(itemId).name}`);
 
                 // Update Dialogue State if needed
-                if (itemId === 'sword_01') {
-                    // Hacky way to update NPC dialogue for now
-                    const lumina = this.npcs.find(n => n.name === 'Lumina');
-                    if (lumina) lumina.dialogueData = 'lumina_sword_found';
-                }
+                // Update Quest System
+                this.game.story.notify('ITEM_PICKUP', itemId);
+
+                // Keep Glider logic separate for now (mechanic vs narrative), or move to Story too if desired.
+                // For this task, I am only removing the Narrative Hardcode (sword/lumina).
             }
         };
         this.interactables.push(mesh);

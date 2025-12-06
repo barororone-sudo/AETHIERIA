@@ -1395,13 +1395,15 @@ export class Player {
         }
 
         // Apply Rotations (Lerp)
-        if (this.state !== 'SURF') {
-            this.bodyMesh.rotation.y = THREE.MathUtils.lerp(this.bodyMesh.rotation.y, targetRotY, lerpFactor);
-        } else {
-            this.bodyMesh.rotation.y = targetRotY;
+        if (this.bodyMesh) {
+            if (this.state !== 'SURF') {
+                this.bodyMesh.rotation.y = THREE.MathUtils.lerp(this.bodyMesh.rotation.y, targetRotY, lerpFactor);
+            } else {
+                this.bodyMesh.rotation.y = targetRotY;
+            }
+            this.bodyMesh.rotation.x = THREE.MathUtils.lerp(this.bodyMesh.rotation.x, targetRotX, lerpFactor);
+            this.bodyMesh.position.y = THREE.MathUtils.lerp(this.bodyMesh.position.y, targetPosY, lerpFactor);
         }
-        this.bodyMesh.rotation.x = THREE.MathUtils.lerp(this.bodyMesh.rotation.x, targetRotX, lerpFactor);
-        this.bodyMesh.position.y = THREE.MathUtils.lerp(this.bodyMesh.position.y, targetPosY, lerpFactor);
 
         // Limbs
         this.animateLimb(this.leftArm, lArmRot, lerpFactor);
@@ -1422,7 +1424,7 @@ export class Player {
     }
 
     /**
-     * @param {THREE.Object3D} limb 
+     * @param {THREE.Object3D|undefined} limb 
      * @param {{x: number, y: number, z: number}} targetRot 
      * @param {number} lerp 
      */
