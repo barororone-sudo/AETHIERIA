@@ -1,59 +1,21 @@
 {
   "position": {
-    "x": -572.063531110798,
-    "y": 4.711390799492539,
-    "z": -144.20242137261422
+    "x": -12.075284704930532,
+    "y": 0.9999253952647826,
+    "z": 20.011213761010374
   },
   "stats": {
-    "hp": 60,
-    "stamina": 99
+    "hp": 50,
+    "stamina": 100
   },
   "level": {
     "level": 1,
-    "currentXp": 100
+    "currentXp": 0
   },
   "story": {
     "state": "PLAYING",
-    "currentAct": 2,
+    "currentAct": 1,
     "activeQuests": [
-      {
-        "id": "quest_002",
-        "title": "L'Appel de la Forêt",
-        "description": "Une aura étrange émane de l'ouest. Enquêtez.",
-        "steps": [
-          {
-            "id": "enter_forest",
-            "description": "Pénétrez dans la Forêt des Murmures",
-            "targetPos": {
-              "x": -120,
-              "y": 0,
-              "z": 100
-            },
-            "targetType": "ENTER_ZONE",
-            "targetId": "forest_whispers",
-            "isCompleted": false
-          },
-          {
-            "id": "find_shrine",
-            "description": "Trouvez l'Autel Ancien",
-            "targetPos": {
-              "x": -250,
-              "y": 0,
-              "z": 150
-            },
-            "targetType": "INTERACT",
-            "targetId": "forest_shrine",
-            "isCompleted": false
-          }
-        ],
-        "rewards": {
-          "exp": 200,
-          "item": "bow_01"
-        },
-        "state": "IN_PROGRESS"
-      }
-    ],
-    "completedQuests": [
       {
         "id": "quest_001",
         "title": "L'Éveil",
@@ -81,7 +43,7 @@
               "y": 5,
               "z": -40
             },
-            "isCompleted": true
+            "isCompleted": false
           },
           {
             "id": "q1_step3",
@@ -93,26 +55,27 @@
               "y": 0,
               "z": 50
             },
-            "isCompleted": true
+            "isCompleted": false
           }
         ],
         "rewards": {
           "exp": 100,
           "item": null
         },
-        "state": "COMPLETED"
+        "state": "IN_PROGRESS"
       }
     ],
-    "bossSpawned": true,
-    "guardianHp": -760,
+    "completedQuests": [],
+    "bossSpawned": false,
+    "guardianHp": null,
     "tutorialStep": 4
   },
   "world": {
     "time": 0,
     "fog": [],
     "towers": {
-      "tower_central": true
+      "tower_central": false
     }
   },
-  "timestamp": 1765099957708
+  "timestamp": 1765105989595
 }

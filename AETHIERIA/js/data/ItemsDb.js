@@ -1,37 +1,170 @@
+
+export const WeaponType = {
+    SWORD: 'SWORD',
+    GREATSWORD: 'GREATSWORD',
+    DAGGER: 'DAGGER',
+    SPEAR: 'SPEAR'
+};
+
+export const Rarity = {
+    COMMON: 1,
+    UNCOMMON: 2,
+    RARE: 3,
+    EPIC: 4,
+    LEGENDARY: 5
+};
+
 export const ItemsDb = [
+    // --- STARTER WEAPON ---
     {
-        id: 'sword_01', // ID MATCHING QUESTS
-        name: 'Épée Rouillée',
+        id: 'sword_starter',
+        name: 'Épée d\'Entraînement',
         type: 'WEAPON',
-        stats: {
-            damage: 10,
-            attackSpeed: 1.0
+        weaponType: WeaponType.SWORD,
+        rarity: Rarity.COMMON,
+        // Procedural Generation Data
+        visualStats: {
+            color: '#888888',
+            bladeLength: 0.8,
+            guardType: 'SIMPLE',
+            emissive: 0
         },
-        icon: '🗡️', // Placeholder
-        color: '#8B4513',
-        description: "Une lame d'ancien modèle, ébréchée par des siècles d'oubli. Elle pèse lourd du poids du passé."
+        stats: {
+            damage: 8,
+            speed: 1.0,
+            critChance: 0.05
+        },
+        description: "Une lame simple pour commencer l'aventure."
+    },
+
+    // --- SWORDS ---
+    {
+        id: 'sword_steel',
+        name: 'Lame d\'Acier',
+        type: 'WEAPON',
+        weaponType: WeaponType.SWORD,
+        rarity: Rarity.UNCOMMON,
+        visualStats: {
+            color: '#C0C0C0',
+            bladeLength: 0.9,
+            guardType: 'CROSS',
+            emissive: 0
+        },
+        stats: {
+            damage: 15,
+            speed: 1.1,
+            critChance: 0.10
+        },
+        description: "Forgée dans un acier résistant."
     },
     {
-        id: 'pulse_baton',
-        name: 'Bâton d\'Impulsion',
+        id: 'sword_plasma',
+        name: 'Sabre Plasma',
         type: 'WEAPON',
-        stats: {
-            damage: 18,
-            attackSpeed: 1.2
+        weaponType: WeaponType.SWORD,
+        rarity: Rarity.EPIC,
+        visualStats: {
+            color: '#00FFFF',
+            bladeLength: 1.0,
+            guardType: 'TECH',
+            emissive: 2.0 // Glow
         },
-        icon: '⚡',
-        color: '#00FFFF',
-        description: "Une arme technologique qui vibre d'une faible énergie bleue. Conçue pour la pacification, détournée pour la guerre."
+        stats: {
+            damage: 35,
+            speed: 1.3,
+            critChance: 0.25
+        },
+        description: "Une technologie avancée qui coupe à travers l'armure."
+    },
+
+    // --- GREATSWORDS (Heavy, Slow) ---
+    {
+        id: 'greatsword_iron',
+        name: 'Espadon de Fer',
+        type: 'WEAPON',
+        weaponType: WeaponType.GREATSWORD,
+        rarity: Rarity.COMMON,
+        visualStats: {
+            color: '#555555',
+            bladeLength: 1.6,
+            guardType: 'HEAVY',
+            emissive: 0
+        },
+        stats: {
+            damage: 25,
+            speed: 0.6,
+            critChance: 0.10
+        },
+        description: "Lourd et brutale."
+    },
+    {
+        id: 'greatsword_magma',
+        name: 'Tranche-Montagne',
+        type: 'WEAPON',
+        weaponType: WeaponType.GREATSWORD,
+        rarity: Rarity.LEGENDARY,
+        visualStats: {
+            color: '#FF4400',
+            bladeLength: 1.8,
+            guardType: 'SPIKED',
+            emissive: 1.5
+        },
+        stats: {
+            damage: 60,
+            speed: 0.5,
+            critChance: 0.40
+        },
+        description: "Fait trembler la terre à chaque coup."
+    },
+
+    // --- DAGGERS (Fast, Low Base Dmg, High Crit) ---
+    {
+        id: 'dagger_thief',
+        name: 'Surin de Voleur',
+        type: 'WEAPON',
+        weaponType: WeaponType.DAGGER,
+        rarity: Rarity.COMMON,
+        visualStats: {
+            color: '#444444',
+            bladeLength: 0.4,
+            guardType: 'NONE',
+            emissive: 0
+        },
+        stats: {
+            damage: 5,
+            speed: 2.5,
+            critChance: 0.30
+        },
+        description: "Parfait pour les attaques sournoises."
+    },
+    {
+        id: 'dagger_void',
+        name: 'Croc du Néant',
+        type: 'WEAPON',
+        weaponType: WeaponType.DAGGER,
+        rarity: Rarity.RARE,
+        visualStats: {
+            color: '#9900FF',
+            bladeLength: 0.5,
+            guardType: 'CURVED',
+            emissive: 1.0
+        },
+        stats: {
+            damage: 12,
+            speed: 2.8,
+            critChance: 0.50
+        },
+        description: "Vibre d'une énergie sombre."
     },
     {
         id: 'potion_health',
         name: 'Potion de Soin',
         type: 'CONSUMABLE',
-        effect: { heal: 50 },
-        icon: '🧪',
-        color: '#ff4444',
-        description: "Une fiole rouge vif. Restaure 50 PV."
+        visualStats: { color: '#FF0000' },
+        stats: { heal: 50 },
+        description: "Restaure 50 PV."
     }
 ];
 
 export const getItemById = (id) => ItemsDb.find(i => i.id === id);
+

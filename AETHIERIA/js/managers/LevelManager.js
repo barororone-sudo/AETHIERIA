@@ -43,16 +43,21 @@ export class LevelManager {
         const p = this.game.player;
         if (!p) return;
 
-        // Stat Growth
-        p.maxHp += 20;
+        // Exponential Growth (5%)
+        const growthFactor = 1.05;
+
+        // HP Growth
+        p.maxHp = Math.floor(p.maxHp * growthFactor);
         p.hp = p.maxHp; // Full Heal
-        p.stats.attack += 2;
-        p.stats.defense += 1;
+
+        // Stat Growth
+        p.stats.attack = Math.floor(p.stats.attack * growthFactor) + 1; // Ensure at least +1
+        p.stats.defense = Math.floor(p.stats.defense * growthFactor) + 1;
 
         // Update UI Hearts
         this.game.ui.updateHearts(p.hp, p.maxHp);
 
-        console.log(`Level Up! New Level: ${this.level}. Stats improved.`);
+        console.log(`Level Up! New Level: ${this.level}. Stats: HP=${p.maxHp}, ATK=${p.stats.attack}`);
     }
 
     // Save/Load Support (to be called by SaveManager)

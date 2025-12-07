@@ -190,118 +190,84 @@ export class UIManager {
                 cardWrapper.style.position = 'relative';
 
                 const card = document.createElement('div');
-                card.className = 'slot-card'; // For keyboard navigation selector
-                card.setAttribute('tabindex', '0'); // Make focusable
-                card.style.width = '250px';
-                card.style.height = '350px';
-                card.style.background = 'linear-gradient(180deg, rgba(30,30,40,1) 0%, rgba(20,20,30,1) 100%)';
-                card.style.border = '2px solid #444';
-                card.style.borderRadius = '15px';
-                card.style.display = 'flex';
-                card.style.flexDirection = 'column';
-                card.style.alignItems = 'center';
-                card.style.justifyContent = 'center';
-                card.style.cursor = 'pointer';
-                card.style.transition = 'all 0.3s';
-                card.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
-                card.style.overflow = 'hidden';
-
-                // Hover Effect
-                card.onmouseenter = () => {
-                    card.style.transform = 'translateY(-10px) scale(1.05)';
-                    card.style.border = '2px solid #ffd700';
-                    card.style.boxShadow = '0 0 30px rgba(255, 215, 0, 0.3)';
-                };
-                card.onmouseleave = () => {
-                    card.style.transform = 'translateY(0) scale(1.0)';
-                    card.style.border = '2px solid #444';
-                    card.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
-                };
-
-                // Content
-                const slotTitle = document.createElement('h2');
-                slotTitle.innerText = `PARTIE ${info.id}`;
-                slotTitle.style.color = '#aaa';
-                slotTitle.style.marginBottom = '20px';
-                card.appendChild(slotTitle);
+                card.className = info.exists ? 'slot-card' : 'slot-card empty';
+                card.setAttribute('tabindex', '0'); // Focusable
 
                 if (info.exists) {
-                    // Info
-                    const details = document.createElement('div');
-                    details.style.textAlign = 'center';
-                    details.style.color = 'white';
-                    details.innerHTML = `
-                    <p style="font-size: 24px; color: #ffd700; margin: 10px 0;">Niveau ${info.level}</p>
-                    <p style="font-size: 14px; color: #888; margin: 5px 0;">${info.location}</p>
-                    <p style="font-size: 12px; color: #666; margin-top: 20px;">${info.date}</p>
-                `;
-                    card.appendChild(details);
+                    // --- POPULATED HERO CARD ---
 
-                    // Trash Button (Outside Card to avoid click conflict, or inside with stopPropagation)
+                    // Avatar (Placeholder gradient or image)
+                    // In a real app, this would be a screenshot or character render
+                    // We'll use a dynamic gradient based on ID for variety
+                    const avatar = document.createElement('div');
+                    avatar.className = 'slot-avatar';
+                    // Unique hue per slot
+                    const hue = info.id * 60;
+                    avatar.style.background = `linear-gradient(to bottom, hsl(${hue}, 50%, 20%), hsl(${hue}, 60%, 10%))`;
+                    avatar.innerHTML = `<div style="width:100%; height:100%; display:flex; justify-content:center; align-items:center; opacity:0.3; font-size:80px;">⚔️</div>`;
+                    card.appendChild(avatar);
+
+                    // Content
+                    const content = document.createElement('div');
+                    content.className = 'slot-content';
+                    content.innerHTML = `
+                        <h2 class="slot-title">HÉROS ${info.id}</h2>
+                        <div class="slot-level">NIVEAU ${info.level}</div>
+                        <div class="slot-meta">
+                            <span>📅 ${info.date.split(' ')[0]}</span>
+                            <span>📍 ${info.location}</span>
+                        </div>
+                    `;
+                    card.appendChild(content);
+
+                    // Delete Button
                     const trashBtn = document.createElement('button');
-                    trashBtn.innerHTML = '🗑️';
-                    trashBtn.style.position = 'absolute';
-                    trashBtn.style.top = '-10px';
-                    trashBtn.style.right = '-10px';
-                    trashBtn.style.width = '40px';
-                    trashBtn.style.height = '40px';
-                    trashBtn.style.borderRadius = '50%';
-                    trashBtn.style.border = 'none';
-                    trashBtn.style.background = '#ff4444';
-                    trashBtn.style.color = 'white';
-                    trashBtn.style.fontSize = '20px';
-                    trashBtn.style.cursor = 'pointer';
-                    trashBtn.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
-                    trashBtn.style.display = 'flex';
-                    trashBtn.style.alignItems = 'center';
-                    trashBtn.style.justifyContent = 'center';
-                    trashBtn.style.zIndex = '10';
+                    trashBtn.className = 'delete-slot-btn';
+                    trashBtn.innerHTML = '✕';
+                    trashBtn.title = "Supprimer le Héros";
 
                     trashBtn.onclick = async (e) => {
-                        e.stopPropagation(); // Prevent card click
-                        if (confirm(`Supprimer la sauvegarde Partie ${info.id} ? Cette action est irréversible.`)) {
+                        e.stopPropagation();
+                        // Custom Confirm could go here, staying with native for safety/speed
+                        if (confirm(`⚠ SUPPRIMER HÉROS ${info.id} ?\nCette action est définitive.`)) {
                             try {
-                                console.log(`Attempting to delete slot ${info.id}...`);
                                 await this.game.saveManager.deleteSlot(info.id);
-                                console.log(`Slot ${info.id} deleted. Refreshing UI...`);
-
-                                // Refresh UI
                                 container.remove();
-                                // Add small delay to ensure server processed delete
                                 setTimeout(() => this.createSlotSelectionUI(), 100);
                             } catch (error) {
-                                console.error("Update Delete Failed:", error);
-                                alert("Erreur lors de la suppression !");
+                                console.error("Delete Failed:", error);
                             }
                         }
                     };
                     cardWrapper.appendChild(trashBtn);
 
                 } else {
-                    // Empty
-                    const empty = document.createElement('div');
-                    empty.innerText = '+ Nouvelle Partie';
-                    empty.style.color = '#666';
-                    empty.style.fontSize = '20px';
-                    empty.style.border = '2px dashed #444';
-                    empty.style.padding = '20px';
-                    empty.style.borderRadius = '10px';
-                    card.appendChild(empty);
+                    // --- EMPTY CARD (NEW GAME) ---
+                    card.innerHTML = `
+                        <div class="add-hero-icon">+</div>
+                        <div class="slot-content">
+                            <h2 class="slot-title" style="color: #666; text-shadow:none;">NOUVEAU</h2>
+                            <div class="slot-level" style="color:#444;">CRÉER UNE LÉGENDE</div>
+                        </div>
+                    `;
                 }
 
-                // Click Handler (Select Slot)
+                // Click Handler
                 card.onclick = () => {
+                    // Play start sound?
+                    // this.playSound('ui_confirm');
+
                     this.game.saveManager.selectSlot(info.id);
-
                     container.style.opacity = '0';
-                    setTimeout(() => container.remove(), 500);
-
+                    setTimeout(() => container.remove(), 400); // Wait for transition
                     this.createMainMenu();
                 };
 
+                // Add to wrapper then container
                 cardWrapper.appendChild(card);
                 slotsContainer.appendChild(cardWrapper);
             });
+
             document.body.appendChild(container);
             this.setupKeyboardNavigation(container);
         };
@@ -715,16 +681,30 @@ export class UIManager {
         }
     }
 
-    update(dt) {
-        const p = this.game.player;
+    /**
+     * @param {number|Player} [dtOrPlayer]
+     */
+    update(dtOrPlayer) {
+        let dt = 0;
+        let p = this.game.player;
+
+        if (typeof dtOrPlayer === 'number') {
+            dt = dtOrPlayer;
+        } else if (dtOrPlayer && dtOrPlayer.constructor && dtOrPlayer.constructor.name === 'Player') {
+            p = dtOrPlayer;
+        } else if (dtOrPlayer && typeof dtOrPlayer === 'object') {
+            // Fallback if safe check above fails
+            p = dtOrPlayer;
+        }
+
         if (p) {
             this.updateStamina(p.stamina, p.maxStamina);
             this.updateHearts(p.hp, p.maxHp);
-        }
 
-        // Update Crosshair Visibility
-        if (this.game.player.combat) {
-            this.crosshair.style.display = this.game.player.combat.isAiming ? 'block' : 'none';
+            // Update Crosshair Visibility
+            if (p.combat) {
+                this.crosshair.style.display = p.combat.isAiming ? 'block' : 'none';
+            }
         }
 
         // Update Minimap
