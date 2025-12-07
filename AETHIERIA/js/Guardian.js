@@ -9,6 +9,7 @@ export class Guardian extends Enemy {
         this.maxHp = 500;
         this.hp = 500;
         this.name = "Guardian";
+        this.hitRadius = 3.0; // Large hitbox for large enemy
 
         // Stagger System
         this.stagger = 0;
@@ -94,6 +95,11 @@ export class Guardian extends Enemy {
             }
             this.updateStaggerUI();
         }
+
+        // Direct UI Update
+        if (this.game && this.game.ui) {
+            this.game.ui.updateBossBar(this.hp, this.maxHp, "Gardien Ancestral");
+        }
     }
 
     enterStaggerState() {
@@ -122,19 +128,32 @@ export class Guardian extends Enemy {
         this.updateStaggerUI();
     }
 
+    die() {
+        console.log("Guardian Defeated!");
+        if (this.game.ui) this.game.ui.hideBossBar();
+        this.game.story.notify('KILL_ENEMY', 'guardian_golem');
+        super.die();
+    }
+
     update(dt, playerPosition) {
-        if (this.isStaggered) return;
+        // Fallback: If fell through world, respawn up
+        if (this.body.position.y < -10) {
+            this.body.position.set(0, 10, -40);
+            this.body.velocity.set(0, 0, 0);
+            console.warn("Guardian fell through world. Resetting position.");
+        }
 
         super.update(dt, playerPosition);
 
-        // Custom Guardian AI
-        // Rotate eye to look at player
-        if (playerPosition) {
-            // Local rotation logic is tricky with nested meshes, 
-            // but the whole body rotates in Enemy.js update (if we didn't override it? No, Enemy.js updates mesh from body)
-            // Enemy.js sets velocity.
-
-            // Let's make the eye track specifically if we want
+        // Re-apply Stagger Rotation (override super.update's sync)
+        if (this.isStaggered) {
+            this.mesh.rotation.z = 0.5;
+            this.eye.material.color.setHex(0x555555);
+        } else {
+            // Normal Eye Tracking (if not staggered)
+            if (playerPosition) {
+                this.eye.lookAt(playerPosition);
+            }
         }
 
         // Stagger decay

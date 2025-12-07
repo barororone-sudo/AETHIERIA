@@ -84,8 +84,10 @@ export class SaveManager {
         const data = {
             position: { x: player.body.position.x, y: player.body.position.y, z: player.body.position.z },
             inventory: player.inventory.items,
+            inventory: player.inventory.items,
             stats: { hp: player.hp, stamina: player.stamina },
-            story: { state: this.game.story ? this.game.story.state : 'START' },
+            level: player.levelManager ? player.levelManager.getData() : { level: 1 },
+            story: this.game.story ? this.game.story.getData() : { state: 'START' },
             world: {
                 time: this.game.world.time,
                 fog: this.game.world.fogGrid ?
@@ -158,13 +160,14 @@ export class SaveManager {
                 player.stamina = data.stats.stamina || 100;
             }
 
+            // Restore Level
+            if (data.level && player.levelManager) {
+                player.levelManager.loadData(data.level);
+            }
+
             // Restore Story
             if (data.story && this.game.story) {
-                this.game.story.state = data.story.state;
-                if (this.game.story.state === 'VICTORY') {
-                    this.game.story.guardian = null;
-                    if (this.game.ui) this.game.ui.hideBossBar();
-                }
+                this.game.story.loadData(data.story);
             }
 
             // Restore World

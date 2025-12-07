@@ -537,11 +537,13 @@ export class UIManager {
     renderStats() {
         const p = this.game.player;
         this.stats.innerHTML = `
+            <p><strong>Niveau:</strong> ${p.levelManager ? p.levelManager.level : 1}</p>
+            <p><strong>XP:</strong> ${p.levelManager ? p.levelManager.currentXp : 0} / ${p.levelManager ? p.levelManager.xpToNextLevel : 1000}</p>
+            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.2); margin: 5px 0;">
             <p><strong>HP:</strong> ${Math.floor(p.hp)} / ${p.maxHp}</p>
             <p><strong>Stamina:</strong> ${Math.floor(p.stamina)} / ${p.maxStamina}</p>
-            <p><strong>ATK:</strong> ${p.stats.attack}</p>
-            <p><strong>ATK:</strong> ${p.stats.attack}</p>
-            <p><strong>DEF:</strong> ${p.stats.defense}</p>
+            <p><strong>Attaque:</strong> ${p.stats.attack}</p>
+            <p><strong>Défense:</strong> ${p.stats.defense}</p>
         `;
         this.updateHearts(p.hp, p.maxHp);
     }
@@ -587,6 +589,64 @@ export class UIManager {
             this.heartsContainer.appendChild(heart);
         }
     }
+
+    // --- LEVELING UI ---
+
+    initXpBar() {
+        this.xpContainer = document.createElement('div');
+        this.xpContainer.id = 'xp-container';
+        this.xpContainer.style.position = 'absolute';
+        this.xpContainer.style.bottom = '0';
+        this.xpContainer.style.left = '0';
+        this.xpContainer.style.width = '100%';
+        this.xpContainer.style.height = '6px';
+        this.xpContainer.style.background = 'rgba(0,0,0,0.5)';
+        this.xpContainer.style.zIndex = '900'; // Below UI elements but above game
+
+        this.xpBar = document.createElement('div');
+        this.xpBar.style.width = '0%';
+        this.xpBar.style.height = '100%';
+        this.xpBar.style.background = 'linear-gradient(90deg, #9b59b6, #f1c40f)'; // Purple to Gold
+        this.xpBar.style.transition = 'width 0.5s ease-out';
+        this.xpBar.style.boxShadow = '0 0 10px rgba(241, 196, 15, 0.5)';
+
+        this.xpContainer.appendChild(this.xpBar);
+        document.body.appendChild(this.xpContainer);
+    }
+
+    updateXpBar(current, max, level) {
+        if (!this.xpContainer) this.initXpBar();
+        const pct = Math.min(100, (current / max) * 100);
+        this.xpBar.style.width = `${pct}%`;
+    }
+
+    showLevelUpToast(level) {
+        const toast = document.createElement('div');
+        toast.innerHTML = `<h1 style="color: #ffd700; font-size: 60px; margin: 0; text-shadow: 0 0 30px #ffaa00;">NIVEAU ${level} !</h1><p style="color: white; font-size: 20px;">Stats augmentées</p>`;
+        toast.style.position = 'absolute';
+        toast.style.top = '30%';
+        toast.style.left = '50%';
+        toast.style.transform = 'translate(-50%, -50%) scale(0.5)';
+        toast.style.opacity = '0';
+        toast.style.textAlign = 'center';
+        toast.style.zIndex = '10000';
+        toast.style.transition = 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+
+        document.body.appendChild(toast);
+
+        // Animate In
+        requestAnimationFrame(() => {
+            toast.style.opacity = '1';
+            toast.style.transform = 'translate(-50%, -50%) scale(1.0)';
+        });
+
+        // Remove
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translate(-50%, -50%) scale(1.5)';
+            setTimeout(() => toast.remove(), 500);
+        }, 3000);
+    }
     initCrosshair() {
         this.crosshair = document.createElement('div');
         this.crosshair.id = 'crosshair';
@@ -607,6 +667,15 @@ export class UIManager {
             </svg>
         `;
         document.body.appendChild(this.crosshair);
+    }
+
+    playSound(id) {
+        if (this.game.audio && this.game.audio.playSFX) {
+            this.game.audio.playSFX(id);
+        } else {
+            // Fallback / Log
+            // console.log("Playing Sound:", id);
+        }
     }
 
     showInteractionPrompt(text) {
@@ -979,7 +1048,7 @@ export class UIManager {
         h1.style.transition = 'all 2s ease-out';
 
         const p = document.createElement('p');
-        p.innerText = subtitle;
+        p.innerText = subtitle || "";
         p.style.color = '#ffaa00';
         p.style.fontFamily = 'Cinzel, serif';
         p.style.fontSize = '30px';
@@ -987,6 +1056,8 @@ export class UIManager {
         p.style.opacity = '0';
         p.style.transform = 'translateY(20px)';
         p.style.transition = 'all 2s ease-out 0.5s';
+
+        if (!subtitle) p.style.display = 'none';
 
         container.appendChild(h1);
         container.appendChild(p);

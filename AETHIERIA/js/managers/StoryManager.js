@@ -148,6 +148,71 @@ export class StoryManager {
         this.game.ui.showTutorialInstruction(text);
     }
 
+    hideTutorialInstruction() {
+        if (this.tutorialOverlay) this.tutorialOverlay.style.opacity = '0';
+    }
+
+    // --- LEVELING UI ---
+
+    initXpBar() {
+        this.xpContainer = document.createElement('div');
+        this.xpContainer.id = 'xp-container';
+        this.xpContainer.style.position = 'absolute';
+        this.xpContainer.style.bottom = '0';
+        this.xpContainer.style.left = '0';
+        this.xpContainer.style.width = '100%';
+        this.xpContainer.style.height = '6px';
+        this.xpContainer.style.background = 'rgba(0,0,0,0.5)';
+        this.xpContainer.style.zIndex = '900'; // Below UI elements but above game
+
+        this.xpBar = document.createElement('div');
+        this.xpBar.style.width = '0%';
+        this.xpBar.style.height = '100%';
+        this.xpBar.style.background = 'linear-gradient(90deg, #9b59b6, #f1c40f)'; // Purple to Gold
+        this.xpBar.style.transition = 'width 0.5s ease-out';
+        this.xpBar.style.boxShadow = '0 0 10px rgba(241, 196, 15, 0.5)';
+
+        this.xpContainer.appendChild(this.xpBar);
+        document.body.appendChild(this.xpContainer);
+    }
+
+    updateXpBar(current, max, level) {
+        if (!this.xpContainer) this.initXpBar();
+        const pct = Math.min(100, (current / max) * 100);
+        this.xpBar.style.width = `${pct}%`;
+    }
+
+    showLevelUpToast(level) {
+        const toast = document.createElement('div');
+        toast.innerHTML = `<h1 style="color: #ffd700; font-size: 60px; margin: 0; text-shadow: 0 0 30px #ffaa00;">NIVEAU ${level} !</h1><p style="color: white; font-size: 20px;">Stats augmentées</p>`;
+        toast.style.position = 'absolute';
+        toast.style.top = '30%';
+        toast.style.left = '50%';
+        toast.style.transform = 'translate(-50%, -50%) scale(0.5)';
+        toast.style.opacity = '0';
+        toast.style.textAlign = 'center';
+        toast.style.zIndex = '10000';
+        toast.style.transition = 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+
+        document.body.appendChild(toast);
+
+        // Animate In
+        requestAnimationFrame(() => {
+            toast.style.opacity = '1';
+            toast.style.transform = 'translate(-50%, -50%) scale(1.0)';
+        });
+
+        // Play Sound?
+        // if (this.game.audio) this.game.audio.playSound('levelup');
+
+        // Remove
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translate(-50%, -50%) scale(1.5)';
+            setTimeout(() => toast.remove(), 500);
+        }, 3000);
+    }
+
     endTutorial() {
         console.log("Tutorial Completed.");
         this.state = 'PLAYING';
@@ -248,23 +313,22 @@ export class StoryManager {
                 const dist = this.game.player.body.position.distanceTo(triggerZone);
 
                 if (dist < 30 && !this.bossSpawned) {
-                    this.bossSpawned = true; // Simple flag instead of separate state var
                     this.spawnGuardian();
-                    if (this.beam) {
-                        this.game.world.scene.remove(this.beam);
-                        this.beam.geometry.dispose();
-                    }
                 }
+            }
+        }
 
-                if (this.bossSpawned && this.guardian) {
-                    if (this.guardian.isDead) {
-                        this.finishAct1Boss();
-                        q1.steps[1].isCompleted = true;
-                    } else {
-                        // Update Boss Bar
-                        this.game.ui.updateBossBar(this.guardian.hp, this.guardian.maxHp, "Gardien Ancestral");
-                    }
-                }
+        // Zone Checks
+        this.checkZoneEntry(this.game.player.mesh.position);
+    }
+
+    checkZoneEntry(pos) {
+        // Forest Zone: x: -100 to -300, z: 50 to 250
+        if (pos.x < -100 && pos.x > -300 && pos.z > 50 && pos.z < 250) {
+            if (!this.enteredForest && this.currentAct === 2) {
+                this.enteredForest = true;
+                this.game.displaySubtitle("L'air est lourd ici... La Forêt des Murmures.");
+                this.notify('ENTER_ZONE', 'forest_whispers');
             }
         }
     }
@@ -275,10 +339,24 @@ export class StoryManager {
     }
 
     spawnGuardian() {
-        if (this.game.world.golem) {
-            this.game.world.scene.remove(this.game.world.golem.mesh);
-            this.game.world.physicsWorld.removeBody(this.game.world.golem.body);
+        if (this.bossSpawned) return; // Prevention
+        this.bossSpawned = true;
+
+        // Aggressive Cleanup: Remove any existing Golem or Guardian to prevent duplicates
+        if (this.game.world.enemies) {
+            for (let i = this.game.world.enemies.length - 1; i >= 0; i--) {
+                const enemy = this.game.world.enemies[i];
+                // Check by name or position proximity
+                if (enemy.name === 'Golem' || enemy.name === 'Guardian' || enemy.name === 'Gardien') {
+                    if (enemy.mesh) this.game.world.scene.remove(enemy.mesh);
+                    if (enemy.body) this.game.world.physicsWorld.removeBody(enemy.body);
+                    this.game.world.enemies.splice(i, 1);
+                    console.log(`Cleaned up residual enemy: ${enemy.name}`);
+                }
+            }
         }
+        this.game.world.golem = null; // Clear direct ref
+
         this.guardian = new Guardian(this.game.world, new THREE.Vector3(0, 10, -40));
         this.game.world.enemies.push(this.guardian);
         this.game.ui.updateBossBar(this.guardian.hp, this.guardian.maxHp, "Gardien Ancestral");
@@ -286,19 +364,38 @@ export class StoryManager {
     }
 
     createObjectiveBeam(position) {
-        const geometry = new THREE.CylinderGeometry(0.5, 0.5, 100, 8, 1, true);
+        const geometry = new THREE.CylinderGeometry(0.5, 0.5, 200, 8, 1, true);
         const material = new THREE.MeshBasicMaterial({
             color: 0xFFD700,
             transparent: true,
-            opacity: 0.5,
+            opacity: 0.4,
             side: THREE.DoubleSide,
             depthWrite: false,
             blending: THREE.AdditiveBlending
         });
         this.beam = new THREE.Mesh(geometry, material);
         this.beam.position.copy(position);
-        this.beam.position.y = 50;
+        this.beam.position.y = 100; // Half height
         this.game.world.scene.add(this.beam);
+    }
+
+    triggerMapReveal(x, z) {
+        if (!this.game.ui) return;
+
+        // 1. UI Animation (Flash + Unlock)
+        if (this.game.ui.playMapUnlockAnimation) {
+            this.game.ui.playMapUnlockAnimation();
+        }
+
+        // 2. Reveal Zone on Map
+        if (this.game.ui.revealRegion) {
+            this.game.ui.revealRegion(x, z, 1000);
+        }
+
+        // 3. Dialogue
+        if (this.game.dialogueManager) {
+            this.game.dialogueManager.startDialogue('lumina_act1_end');
+        }
     }
 
     removeObjectiveBeam() {
@@ -349,15 +446,14 @@ export class StoryManager {
         this.activeQuests.forEach(quest => {
             if (quest.state !== 'IN_PROGRESS') return;
 
-            // Check Step
-            quest.steps.forEach(step => {
-                // If not done, match event logic
-                if (!step.isCompleted) {
-                    if (step.targetType === eventType && step.targetId === targetId) {
-                        this.completeStep(quest, step);
-                    }
+            // Sequential Logic: Only check current step
+            const currentStep = quest.steps.find(s => !s.isCompleted);
+
+            if (currentStep) {
+                if (currentStep.targetType === eventType && currentStep.targetId === targetId) {
+                    this.completeStep(quest, currentStep);
                 }
-            });
+            }
         });
     }
 
@@ -415,7 +511,12 @@ export class StoryManager {
         const idx = this.activeQuests.indexOf(quest);
         if (idx > -1) this.activeQuests.splice(idx, 1);
 
-        // Rewards logic here... but skipping for brevity
+        // Rewards logic
+        if (quest.rewards && quest.rewards.exp) {
+            if (this.game.player.levelManager) {
+                this.game.player.levelManager.addXp(quest.rewards.exp);
+            }
+        }
 
         // Act Transition Logic
         if (quest.id === 'quest_001') {
@@ -426,7 +527,7 @@ export class StoryManager {
     startAct2() {
         console.log("STARTING ACT 2: LES OMBRES");
         this.currentAct = 2;
-        this.game.ui.showTitle(this.context.ACTS.ACT_2);
+        this.game.ui.showTitle("ACTE II", this.context.ACTS.ACT_2);
 
         // Add Quest 2
         const q2 = getQuestById('quest_002');
@@ -438,6 +539,71 @@ export class StoryManager {
 
             // Set Marker
             this.updateObjectiveMarker(newQuest.steps[0]);
+        }
+    }
+    // --- SAVE / LOAD SYSTEM ---
+
+    getData() {
+        return {
+            state: this.state,
+            currentAct: this.currentAct,
+            activeQuests: this.activeQuests,
+            completedQuests: this.completedQuests,
+            bossSpawned: this.bossSpawned || false,
+            guardianHp: this.guardian ? this.guardian.hp : null,
+            tutorialStep: this.tutorialStep // Save Tutorial Step
+        };
+    }
+
+    loadData(data) {
+        if (!data) return;
+
+        this.state = data.state || 'IDLE';
+
+        // If restoring persistent data
+        if (data.currentAct) this.currentAct = data.currentAct;
+        if (data.activeQuests) this.activeQuests = data.activeQuests;
+        if (data.completedQuests) this.completedQuests = data.completedQuests;
+        if (data.bossSpawned) this.bossSpawned = data.bossSpawned;
+        if (data.tutorialStep) this.tutorialStep = data.tutorialStep;
+
+        // Restore Tutorial UI
+        if (this.state === 'TUTORIAL') {
+            this.game.player.isInTutorial = true;
+            this.game.ui.hideCinematicOverlay();
+
+            if (this.tutorialStep === 1) this.game.ui.showTutorialInstruction("Utilisez Z, Q, S, D pour vous déplacer.");
+            else if (this.tutorialStep === 2) this.game.ui.showTutorialInstruction("Bien. Appuyez sur ESPACE pour sauter.");
+            else if (this.tutorialStep === 3) this.game.ui.showTutorialInstruction("Maintenant, attaquez avec CLIC GAUCHE.");
+        }
+
+        // Re-initialize Quest State
+        if (this.state === 'PLAYING') {
+            console.log("Restoring Quest State...");
+
+            // Re-spawn Boss if needed
+            if (this.bossSpawned && !this.guardian && this.activeQuests.find(q => q.id === 'quest_001' && q.state === 'IN_PROGRESS')) {
+                // If boss was spawned but not dead (checked via quest step), respawn him
+                const q1 = this.activeQuests.find(q => q.id === 'quest_001');
+                if (!q1.steps[1].isCompleted) {
+                    this.spawnGuardian();
+                    // Restore HP
+                    if (data.guardianHp && this.guardian) {
+                        this.guardian.hp = data.guardianHp;
+                        this.game.ui.updateBossBar(this.guardian.hp, this.guardian.maxHp, "Gardien Ancestral");
+                    }
+                }
+            }
+
+            // Restore Markers for Active Quests
+            this.activeQuests.forEach(quest => {
+                if (quest.state === 'IN_PROGRESS') {
+                    const currentStep = quest.steps.find(s => !s.isCompleted);
+                    if (currentStep) {
+                        this.updateObjectiveMarker(currentStep);
+                    }
+                }
+            });
         }
     }
 }

@@ -9,6 +9,7 @@ import { Tower } from './world/Tower.js';
 import { MonsterFactory } from './MonsterFactory.js';
 import { TerrainManager } from './world/TerrainManager.js';
 import { Chest } from './world/Chest.js';
+import { ForestGenerator } from './world/ForestGenerator.js';
 
 export class World {
     constructor(game) {
@@ -92,12 +93,15 @@ export class World {
         // --- NPCS ---
         this.npcs = [];
 
-
         // UPDRAFTS
         this.updrafts = [];
 
         // TOWERS
         this.towers = [];
+        this.spawnTowers();
+
+        // FOREST (Act 2)
+        this.generateForest();
 
         // LOOT
         this.loot = [];
@@ -105,6 +109,56 @@ export class World {
         // Day/Night Cycle
         this.gameTime = 0.25; // Start at 6am (0.25)
         this.dayDuration = 1440; // 24 minutes in seconds
+    }
+
+    spawnTowers() {
+        // Tower 1 (Quest Objective)
+        const tower1Pos = new THREE.Vector3(50, 0, 50);
+        if (this.terrainManager) {
+            tower1Pos.y = this.terrainManager.getGlobalHeight(tower1Pos.x, tower1Pos.z);
+        }
+        // Constructor: world, x, z, id, y
+        new Tower(this, tower1Pos.x, tower1Pos.z, 'tower_central', tower1Pos.y);
+    }
+
+    generateForest() {
+        this.forest = new ForestGenerator(this);
+        this.forest.generate();
+    }
+
+    /**
+     * @param {THREE.Vector3} position
+     */
+    spawnLoot(position) {
+        // Minimal implementation to prevent crash
+        // Spawn a visual particle or orb
+        const geo = new THREE.SphereGeometry(0.3, 8, 8);
+        const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // HP Orb color
+        const loot = new THREE.Mesh(geo, mat);
+        loot.position.copy(position);
+        loot.position.y += 0.5;
+        this.scene.add(loot);
+
+        // Simple floating animation
+        const animate = () => {
+            if (!loot.parent) return; // Removed
+            loot.position.y += Math.sin(Date.now() * 0.005) * 0.01;
+            loot.rotation.y += 0.05;
+
+            // Proximity pickup logic could go here
+            if (this.game && this.game.player && this.game.player.mesh) {
+                const dist = this.game.player.mesh.position.distanceTo(loot.position);
+                if (dist < 2.0) {
+                    this.scene.remove(loot);
+                    this.game.player.hp = Math.min(this.game.player.hp + 10, this.game.player.maxHp);
+                    if (this.game.ui) this.game.ui.update(this.game.player);
+                    this.game.ui.playSound('ui_ding');
+                } else {
+                    requestAnimationFrame(animate);
+                }
+            }
+        };
+        requestAnimationFrame(animate);
     }
 
     /**

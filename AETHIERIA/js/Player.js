@@ -14,6 +14,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { ToonMaterial } from './materials/ToonMaterial.js';
 import { generateCharacter } from './character.js';
+import { LevelManager } from './managers/LevelManager.js';
 
 /**
  * @typedef {Object} Limb
@@ -112,6 +113,7 @@ export class Player {
 
         // Combat System
         /** @type {Combat} */ this.combat = new Combat(this);
+        /** @type {LevelManager} */ this.levelManager = new LevelManager(game);
         this.swordTrail = null;
 
         // Audio & Input
@@ -1083,7 +1085,7 @@ export class Player {
 
                 // Air Control
                 // Gravity Adjustment (Floatier Fall)
-                this.body.velocity.y -= 15 * dt; // Gravity (User Request: -15)
+                this.body.velocity.y -= 12 * dt; // Gravity (Reduced from 15)
 
                 if (inputLen > 0) {
                     this.body.velocity.x += input.x * dt * 5;
@@ -1184,18 +1186,18 @@ export class Player {
                 }
 
                 if (slopeAngle < 10) {
-                    // Flat ground: High Friction (Stop)
-                    this.body.linearDamping = 0.8;
+                    // Flat ground: Low Friction (Allow coasting)
+                    this.body.linearDamping = 0.2;
                 } else {
-                    // Slope: Low Friction (Slide)
+                    // Slope: Very Low Friction (Slide)
                     this.body.linearDamping = 0.01;
                 }
 
-                // Input Steering (only slight influence)
+                // Input Steering (Stronger influence)
                 if (inputLen > 0) {
                     const surfDir = input.clone().normalize();
-                    this.body.velocity.x += surfDir.x * dt * 5;
-                    this.body.velocity.z += surfDir.z * dt * 5;
+                    this.body.velocity.x += surfDir.x * dt * 20; // Increased from 5
+                    this.body.velocity.z += surfDir.z * dt * 20;
                 }
                 break;
 
@@ -1298,6 +1300,11 @@ export class Player {
         let targetRotZ = 0;
         let targetPosY = 0.95; // Base Hip Height
 
+        // Glider Visibility Reset
+        if (this.gliderMesh) {
+            this.gliderMesh.visible = (this.state === 'GLIDE');
+        }
+
         // Reset Limbs (Lerp targets)
         let lArmRot = { x: 0, y: 0, z: 0 }; // Left Shoulder
         let rArmRot = { x: 0, y: 0, z: 0 }; // Right Shoulder
@@ -1332,8 +1339,6 @@ export class Player {
                 // Legs drag
                 lLegRot.x = 0.5;
                 rLegRot.x = 0.5;
-
-                if (this.gliderMesh) this.gliderMesh.visible = true;
                 break;
 
             case 'DIVE':

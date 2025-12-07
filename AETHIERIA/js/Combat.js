@@ -237,7 +237,10 @@ export class Combat {
         enemies.forEach(enemy => {
             if (!this.player.body) return;
             const dist = this.player.body.position.distanceTo(enemy.body.position);
-            if (dist < 3) {
+            // Dynamic Hitbox: Base Range (3) + Enemy Size (hitRadius or 0)
+            const range = 3.0 + (enemy.hitRadius || 0);
+
+            if (dist < range) {
                 // Calculate Knockback Direction (Player -> Enemy)
                 const direction = new THREE.Vector3().subVectors(enemy.body.position, this.player.body.position).normalize();
 

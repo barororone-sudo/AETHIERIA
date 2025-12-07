@@ -55,6 +55,9 @@ export class Tower {
         if (this.world.towers) {
             this.world.towers.push(this);
         }
+        if (this.world.interactables) {
+            this.world.interactables.push(this);
+        }
     }
 
     update(dt) {
@@ -79,7 +82,7 @@ export class Tower {
         }
         this.interactBtn = document.createElement('button');
         this.interactBtn.id = 'interact-btn';
-        this.interactBtn.innerText = "[F] ACTIVER";
+        this.interactBtn.innerText = "[E] ACTIVER";
         Object.assign(this.interactBtn.style, {
             position: 'fixed',
             top: '50%',
@@ -140,6 +143,11 @@ export class Tower {
         const targetRot = dummyCam.quaternion;
 
         this.game.player.inputLocked = true; // Lock Player
+
+        // Notify Story
+        if (this.game.story) {
+            this.game.story.notify('INTERACT', this.id);
+        }
 
         let progress = 0;
         const duration = 2.0; // 2 seconds fly

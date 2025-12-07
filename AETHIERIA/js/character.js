@@ -35,7 +35,7 @@ export function generateCharacter(seed = Math.random().toString(36).slice(2)) {
     }));
 
     const stats = {
-        hp: rrange(arch.stats.hp),
+        hp: Math.round(rrange(arch.stats.hp) / 20) * 20,
         atk: rrange(arch.stats.atk),
         def: rrange(arch.stats.def),
         mastery: rrange(arch.stats.mastery),

@@ -6,6 +6,7 @@ import { Chemistry, Elements } from './Chemistry.js';
 export class Enemy {
     constructor(world, position, element = null, mesh = null) {
         this.world = world;
+        this.game = world.game;
         this.hp = 100;
         this.maxHp = 100;
         this.element = element;

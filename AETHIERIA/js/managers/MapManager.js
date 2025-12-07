@@ -244,7 +244,11 @@ export class MapManager {
             // Inverse Scale
             const scale = this.isBigMap ? this.viewState.scale : 1;
             const invScale = 1 / Math.max(0.1, scale);
-            icon.style.transform = `translate(-50%, -50%) scale(${invScale})`; // Keep constant size
+
+            // Pulsation Effect
+            const pulse = 1.0 + Math.sin(Date.now() * 0.005) * 0.2;
+
+            icon.style.transform = `translate(-50%, -50%) scale(${invScale * pulse})`;
         } else {
             const icon = this.icons.get('quest_marker');
             if (icon) {
