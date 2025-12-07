@@ -1,6 +1,6 @@
 export const ItemsDb = [
     {
-        id: 'rusty_sword',
+        id: 'sword_01', // ID MATCHING QUESTS
         name: 'Épée Rouillée',
         type: 'WEAPON',
         stats: {
@@ -22,6 +22,15 @@ export const ItemsDb = [
         icon: '⚡',
         color: '#00FFFF',
         description: "Une arme technologique qui vibre d'une faible énergie bleue. Conçue pour la pacification, détournée pour la guerre."
+    },
+    {
+        id: 'potion_health',
+        name: 'Potion de Soin',
+        type: 'CONSUMABLE',
+        effect: { heal: 50 },
+        icon: '🧪',
+        color: '#ff4444',
+        description: "Une fiole rouge vif. Restaure 50 PV."
     }
 ];
 

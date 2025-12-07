@@ -1,5 +1,5 @@
 // js/managers/InventoryManager.js
-import { Items, ItemType } from '../data/Items.js';
+import { ItemType } from '../data/Items.js';
 
 export class InventoryManager {
     constructor(player) {
@@ -9,9 +9,11 @@ export class InventoryManager {
     }
 
     addItem(itemId, count = 1) {
-        const itemDef = Items[itemId];
+        // Use DataManager
+        const itemDef = this.player.game.data.getItem(itemId);
+
         if (!itemDef) {
-            console.error(`Item ${itemId} not found!`);
+            console.error(`Item ${itemId} not found in DB!`);
             return false;
         }
 
@@ -56,7 +58,8 @@ export class InventoryManager {
         const slot = this.slots[index];
         if (!slot) return;
 
-        const itemDef = Items[slot.id];
+        const itemDef = this.player.game.data.getItem(slot.id);
+        if (!itemDef) return;
 
         if (itemDef.type === ItemType.CONSUMABLE) {
             if (itemDef.effect.heal) {

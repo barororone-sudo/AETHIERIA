@@ -212,9 +212,10 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.4);
-    /* Dark Overlay */
-    backdrop-filter: blur(8px);
+    background: rgba(0, 0, 0, 0.2);
+    /* Very light dim */
+    /* Remove blur from full screen so Map is clear */
+    /* backdrop-filter: blur(8px); */
     display: none;
     /* Flex when active */
     justify-content: center;

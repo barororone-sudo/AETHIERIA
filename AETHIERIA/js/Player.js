@@ -27,6 +27,28 @@ export class Player {
      * @param {THREE.PerspectiveCamera} camera
      */
     constructor(game, camera) {
+        // --- TYPE DEFINITIONS for TS ---
+        /** @type {THREE.Group} */ this.mesh;
+        /** @type {THREE.Group} */ this.bodyMesh;
+        /** @type {THREE.Group} */ this.head;
+        /** @type {THREE.Group} */ this.leftArm;
+        /** @type {THREE.Group} */ this.rightArm;
+        /** @type {THREE.Group} */ this.leftForeArm;
+        /** @type {THREE.Group} */ this.rightForeArm;
+        /** @type {THREE.Group} */ this.leftHand;
+        /** @type {THREE.Group} */ this.rightHand;
+        /** @type {THREE.Group} */ this.leftLeg;
+        /** @type {THREE.Group} */ this.rightLeg;
+        /** @type {THREE.Group} */ this.leftShin;
+        /** @type {THREE.Group} */ this.rightShin;
+        /** @type {THREE.Mesh} */ this.leftFoot;
+        /** @type {THREE.Mesh} */ this.rightFoot;
+        /** @type {THREE.Group} */ this.weaponSlot;
+        /** @type {THREE.Group} */ this.gliderMesh;
+        /** @type {THREE.Group} */ this.shieldGroup;
+        /** @type {THREE.Mesh} */ this.shieldMesh;
+        /** @type {CANNON.Body} */ this.body;
+
         this.game = game;
         this.world = game.world;
         this.camera = camera;
@@ -108,6 +130,23 @@ export class Player {
             }
         };
 
+        /** @type {number} */ this.VISUAL_OFFSET_Y = 0.0;
+
+        // Visuals (Initialized in initVisuals)
+        this.initInput();
+        this.initUI(); // Now binds character data
+        this.initPhysics();
+        this.initVisuals();
+
+        // Initialize Combat (after visuals)
+        if (this.combat) this.combat.init();
+
+        // Animation State
+        this.isAttacking = false;
+        this.attackTimer = 0;
+        this.attackDuration = 0;
+        this.currentComboIndex = 0;
+
         // Timers
         this.hitStopTimer = 0;
         /** @type {number} */ this.shakeTimer = 0;
@@ -116,33 +155,6 @@ export class Player {
         // Abilities
         // this.canGlide = false; // REMOVED duplicate
         /** @type {boolean} */ this.canSurf = true;
-
-        /** @type {number} */ this.VISUAL_OFFSET_Y = 0.0;
-
-        // Visuals (Initialized in initVisuals)
-        /** @type {THREE.Group|null} */ this.mesh = null;
-        /** @type {THREE.Group|null} */ this.weaponSlot = null; // Weapon Attachment
-        /** @type {THREE.Group|null} */ this.shieldGroup = null; // Shield Attachment
-
-        /** @type {SwordTrail|null} */ this.swordTrail = null;
-
-        // Give starter items
-        this.inventory.addItem('sword_iron', 1);
-        this.inventory.addItem('potion_health', 5);
-
-        // Attack Animation State
-        this.isAttacking = false;
-        this.attackTimer = 0;
-        this.attackDuration = 0.3;
-        this.currentComboIndex = 0;
-
-        this.initInput();
-        this.initUI(); // Now binds character data
-        this.initPhysics();
-        this.initVisuals();
-
-        // Initialize Combat (after visuals)
-        if (this.combat) this.combat.init();
     }
 
     /**
@@ -240,6 +252,7 @@ export class Player {
 
         this.world.physicsWorld.addBody(this.body);
     }
+
 
     initVisuals() {
         if (!this.world) return;
@@ -1425,10 +1438,17 @@ export class Player {
         this.animateLimb(this.rightLeg, rLegRot, lerpFactor);
 
         // Knees / Elbows (X rotation only usually)
-        if (this.leftForeArm) this.leftForeArm.rotation.x = THREE.MathUtils.lerp(this.leftForeArm.rotation.x, lElbowRot, lerpFactor);
-        if (this.rightForeArm) this.rightForeArm.rotation.x = THREE.MathUtils.lerp(this.rightForeArm.rotation.x, rElbowRot, lerpFactor);
-        if (this.leftShin) this.leftShin.rotation.x = THREE.MathUtils.lerp(this.leftShin.rotation.x, lKneeRot, lerpFactor);
-        if (this.rightShin) this.rightShin.rotation.x = THREE.MathUtils.lerp(this.rightShin.rotation.x, rKneeRot, lerpFactor);
+        const leftForeArm = this.leftForeArm;
+        if (leftForeArm) leftForeArm.rotation.x = THREE.MathUtils.lerp(leftForeArm.rotation.x, lElbowRot, lerpFactor);
+
+        const rightForeArm = this.rightForeArm;
+        if (rightForeArm) rightForeArm.rotation.x = THREE.MathUtils.lerp(rightForeArm.rotation.x, rElbowRot, lerpFactor);
+
+        const leftShin = this.leftShin;
+        if (leftShin) leftShin.rotation.x = THREE.MathUtils.lerp(leftShin.rotation.x, lKneeRot, lerpFactor);
+
+        const rightShin = this.rightShin;
+        if (rightShin) rightShin.rotation.x = THREE.MathUtils.lerp(rightShin.rotation.x, rKneeRot, lerpFactor);
 
         // Attack Overrides (Simplistic)
         if (this.isAttacking) {
@@ -1459,21 +1479,22 @@ export class Player {
      * @param {number} dt
      */
     updateAttackVisuals(dt) {
-        if (!this.rightHand) return;
+        const rightHand = this.rightHand; // Capture to local var for TS narrowing
+        if (!rightHand) return;
 
         this.attackTimer += dt;
         const progress = Math.min(this.attackTimer / this.attackDuration, 1.0);
         const t = 1 - (1 - progress) * (1 - progress); // EaseOutQuad
 
         if (this.currentComboIndex === 0) {
-            this.rightHand.rotation.y = THREE.MathUtils.lerp(-Math.PI / 2, Math.PI / 2, t);
-            this.rightHand.position.z = 0.5 * Math.sin(t * Math.PI);
+            rightHand.rotation.y = THREE.MathUtils.lerp(-Math.PI / 2, Math.PI / 2, t);
+            rightHand.position.z = 0.5 * Math.sin(t * Math.PI);
         } else if (this.currentComboIndex === 1) {
-            this.rightHand.rotation.y = THREE.MathUtils.lerp(Math.PI / 2, -Math.PI / 2, t);
-            this.rightHand.position.z = 0.5 * Math.sin(t * Math.PI);
+            rightHand.rotation.y = THREE.MathUtils.lerp(Math.PI / 2, -Math.PI / 2, t);
+            rightHand.position.z = 0.5 * Math.sin(t * Math.PI);
         } else if (this.currentComboIndex === 2) {
-            this.rightHand.rotation.x = THREE.MathUtils.lerp(-Math.PI / 4, Math.PI / 2, t);
-            this.rightHand.position.y = 0.5 - t * 0.5;
+            rightHand.rotation.x = THREE.MathUtils.lerp(-Math.PI / 4, Math.PI / 2, t);
+            rightHand.position.y = 0.5 - t * 0.5;
         }
 
         if (progress >= 1.0) {
@@ -1697,10 +1718,6 @@ export class Player {
         return v;
     }
 
-
-
-
-
     getForwardVector() {
         if (!this.mesh) return new THREE.Vector3(0, 0, -1);
         const v = new THREE.Vector3(0, 0, -1);
@@ -1747,3 +1764,4 @@ export class Player {
         }
     }
 }
+

@@ -135,7 +135,8 @@ export class Chest {
         this.game.player.inventory.addItem(this.itemId, 1);
 
         // 4. Notify UI & Story
-        const itemName = this.game.data.getItem(this.itemId).name || this.itemId;
+        const item = this.game.data.getItem(this.itemId);
+        const itemName = item ? item.name : this.itemId;
         this.game.ui.showToast(`Obtenu: ${itemName}`);
         this.game.story.notify('ITEM_PICKUP', this.itemId);
     }

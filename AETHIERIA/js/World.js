@@ -666,6 +666,17 @@ export class World {
             }
         }
 
+        // Check Chests
+        if (this.chests) {
+            for (const chest of this.chests) {
+                const dist = position.distanceTo(chest.mesh.position);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = chest;
+                }
+            }
+        }
+
         // Check Generic Interactables
         if (this.interactables) {
             for (const obj of this.interactables) {

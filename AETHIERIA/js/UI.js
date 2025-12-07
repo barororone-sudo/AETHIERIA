@@ -392,10 +392,13 @@ export class UIManager {
         this.menu.style.display = this.isOpen ? 'flex' : 'none';
 
         if (this.isOpen) {
-            this.menu.style.zIndex = '10000'; // Force On Top
+            this.menu.style.zIndex = '5000'; // Force On Top (higher than map 2000)
             document.exitPointerLock();
             this.renderInventory();
             this.renderStats();
+
+            // Hide Minimap when Inventory is open
+            if (this.mapManager) this.mapManager.hide();
 
             // Blur Effect on Canvas
             const canvas = document.querySelector('canvas');
@@ -405,6 +408,9 @@ export class UIManager {
         } else {
             const canvas = document.querySelector('canvas');
             if (canvas) canvas.style.filter = 'none';
+
+            // Restore Minimap
+            if (this.mapManager) this.mapManager.show();
 
             // Removed automatic pointer lock request to avoid "User Gesture" errors.
             // Player must click to regain focus.
@@ -420,6 +426,22 @@ export class UIManager {
             el.className = 'inventory-slot';
 
             if (slot) {
+                // Fetch Data
+                const item = this.game.data.getItem(slot.id);
+                if (item) {
+                    el.innerHTML = `<div style="font-size: 24px;">${item.icon || '?'}</div>`;
+                    if (slot.count > 1) {
+                        el.innerHTML += `<div style="position:absolute; bottom:2px; right:5px; font-size:12px; font-weight:bold; color:white;">${slot.count}</div>`;
+                    }
+                    // Tooltip (Simple Title)
+                    el.title = item.name;
+
+                    // Rarity/Color Border override
+                    if (item.color) {
+                        el.style.borderColor = item.color;
+                    }
+                }
+
                 el.onclick = () => {
                     this.game.player.inventory.useItem(index);
                     this.renderInventory(); // Refresh
