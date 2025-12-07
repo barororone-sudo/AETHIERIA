@@ -13,7 +13,8 @@ export class Input {
             interact: false,
             confirm: false,
             p: false,
-            map: false
+            map: false,
+            lock: false
         };
 
         this.init();
@@ -79,7 +80,10 @@ export class Input {
                 this.keys.confirm = isDown;
                 if (e.code === 'Space') this.keys.jump = isDown; // Keep Jump on Space too
                 break;
-
+            case 'Tab':
+                e.preventDefault();
+                this.keys.lock = isDown;
+                break;
         }
     }
 }

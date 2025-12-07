@@ -27,6 +27,10 @@ export class Combat {
         this.attackProgress = 0;
         this.isAttacking = false;
 
+        // Z-Targeting
+        /** @type {import('./Enemy.js').Enemy | null} */ this.lockedTarget = null;
+        this.reticle = null; // Visual Indicator
+
         // PoolManager initialized in init()
         /** @type {PoolManager|null} */ this.pool = null;
     }
@@ -37,17 +41,44 @@ export class Combat {
             this.initPools();
         }
         this.initWeapon();
+        this.initReticle();
+    }
+
+    initReticle() {
+        // Simple Ring for Targeting
+        const geo = new THREE.RingGeometry(0.3, 0.35, 32);
+        const mat = new THREE.MeshBasicMaterial({ color: 0xffff00, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
+        this.reticle = new THREE.Mesh(geo, mat);
+        this.reticle.rotation.x = -Math.PI / 2;
+        this.reticle.visible = false;
+        if (this.player.world) this.player.world.scene.add(this.reticle);
     }
 
     initPools() {
         if (!this.pool) return;
 
-        this.pool.register('arrow', () => {
+        // Arrow Factory Helper
+        /** @param {THREE.ColorRepresentation} color */
+        const createArrow = (color) => {
+            const grp = new THREE.Group();
             const geo = new THREE.CylinderGeometry(0.05, 0.05, 1.0);
             geo.rotateX(Math.PI / 2);
-            const mat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-            return new THREE.Mesh(geo, mat);
-        }, 20);
+            const mat = new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.5 });
+            const mesh = new THREE.Mesh(geo, mat);
+            grp.add(mesh);
+            return grp; // Return Group to match expectance? Or Mesh? PoolManager handles Object3D.
+            // Actually let's return Mesh for simplicity if physics body matches.
+            return mesh;
+        };
+
+        this.pool.register('arrow', () => createArrow(0x8B4513), 20); // Normal
+        this.pool.register('arrow_pyro', () => createArrow(0xFF0000), 10);
+        this.pool.register('arrow_cryo', () => createArrow(0x00FFFF), 10);
+        this.pool.register('arrow_electro', () => createArrow(0xFFFF00), 10);
+        this.pool.register('arrow_anemo', () => createArrow(0x88FF88), 10);
+        this.pool.register('arrow_hydro', () => createArrow(0x0000FF), 10);
+        this.pool.register('arrow_dendro', () => createArrow(0x008800), 10);
+        this.pool.register('arrow_dark', () => createArrow(0x220022), 10);
 
         this.pool.register('fireball', () => {
             const geo = new THREE.SphereGeometry(0.3);
@@ -91,6 +122,97 @@ export class Combat {
         }
 
         this.updateProjectiles(dt);
+        this.updateLock(dt);
+    }
+
+    /**
+     * @param {number} dt
+     */
+    updateLock(dt) {
+        if (this.lockedTarget) {
+            // Check validity
+            if (this.lockedTarget.isDead || !this.lockedTarget.mesh) {
+                this.unlock();
+                return;
+            }
+
+            // Check Distance
+            const dist = this.player.mesh.position.distanceTo(this.lockedTarget.mesh.position);
+            if (dist > 20) { // Max lock range
+                this.unlock();
+                return;
+            }
+
+            // Update Reticle
+            if (this.reticle) {
+                this.reticle.visible = true;
+                this.reticle.position.copy(this.lockedTarget.mesh.position);
+                this.reticle.position.y += this.lockedTarget.height || 1.0;
+                this.reticle.rotation.z += dt * 2; // Spin
+                // Pulse
+                const s = 1.0 + Math.sin(performance.now() * 0.01) * 0.2;
+                this.reticle.scale.set(s, s, s);
+                this.reticle.lookAt(this.player.camera.position);
+            }
+        } else {
+            if (this.reticle) this.reticle.visible = false;
+        }
+    }
+
+    toggleLock() {
+        if (this.lockedTarget) {
+            this.unlock();
+        } else {
+            this.lockClosest();
+        }
+    }
+
+    unlock() {
+        this.lockedTarget = null;
+        if (this.reticle) this.reticle.visible = false;
+        // Optionally reset camera? Player.js handles that based on existence of lockedTarget
+    }
+
+    lockClosest() {
+        if (!this.player.world || !this.player.world.enemies) return;
+
+        const enemies = this.player.world.enemies.filter(e => !e.isDead);
+        const playerPos = this.player.mesh.position;
+        const camDir = new THREE.Vector3();
+        this.player.camera.getWorldDirection(camDir);
+
+        /** @type {import('./Enemy.js').Enemy | null} */
+        let closest = null;
+        let minScore = 999;
+
+        // Combine Distance + Angle for "Best Target"
+        enemies.forEach(e => {
+            const disp = e.mesh.position.clone().sub(playerPos);
+            const dist = disp.length();
+            if (dist > 15) return; // Too far
+
+            disp.normalize();
+            const angle = camDir.angleTo(disp);
+            if (angle > Math.PI / 2) return; // Behind camera
+
+            // Score: Distance (weighted) + Angle (weighted)
+            // Preference for things in front of camera
+            const score = dist + (angle * 10);
+
+            if (score < minScore) {
+                minScore = score;
+                closest = e;
+            }
+        });
+
+        if (closest) {
+            this.lockedTarget = closest;
+            // @ts-ignore
+            console.log("Locked on:", closest.name || "Enemy");
+        } else {
+            // Recenter Camera if no target?
+            // this.player.resetCameraBehind();
+        }
     }
 
     /**
@@ -201,6 +323,19 @@ export class Combat {
         // @ts-ignore
         if (this.player.audio) this.player.audio.playSFX('sword');
 
+        // Play Procedural Animation
+        if (this.player.animator) {
+            const animName = `ATTACK_${this.comboStep + 1}`;
+            this.player.animator.play(animName, 1.2); // 1.2x speed
+        }
+
+        // Trigger Weapon Trail
+        if (this.player.visuals) {
+            this.player.visuals.startTrail();
+            // Stop trail after delay
+            setTimeout(() => { if (this.player.visuals) this.player.visuals.stopTrail(); }, 300);
+        }
+
         // @ts-ignore
         if (this.player.triggerAttackVisuals) this.player.triggerAttackVisuals(this.comboStep);
 
@@ -221,7 +356,18 @@ export class Combat {
         enemies.forEach(enemy => {
             if (!this.player.body) return;
             const dist = this.player.body.position.distanceTo(enemy.body.position);
-            const range = 3.0 + (enemy.hitRadius || 0);
+
+            let weaponRange = 3.0;
+            if (this.player.equippedWeapon) {
+                switch (this.player.equippedWeapon.weaponType) {
+                    case 'SPEAR': weaponRange = 4.5; break;
+                    case 'GREATSWORD': weaponRange = 4.0; break;
+                    case 'DAGGER': weaponRange = 2.0; break;
+                    case 'DOUBLE_BLADE': weaponRange = 3.5; break;
+                    default: weaponRange = 3.0;
+                }
+            }
+            const range = weaponRange + (enemy.hitRadius || 0);
 
             if (dist < range) {
                 const direction = new THREE.Vector3().subVectors(enemy.body.position, this.player.body.position).normalize();
@@ -247,10 +393,18 @@ export class Combat {
                     this.player.game.ui.showDamage(hitPos, Math.floor(damage), isCrit);
                 }
 
+                // Spawn Particles
+                if (this.player.visuals) {
+                    const el = this.player.equippedWeapon ? this.player.equippedWeapon.element : 'NONE';
+                    this.player.visuals.spawnImpact(hitPos, el);
+                }
+
                 // @ts-ignore
                 if (this.player.spawnHitParticles) this.player.spawnHitParticles(hitPos);
                 // @ts-ignore
-                if (this.player.hitStop) this.player.hitStop(0.05);
+                if (this.player.hitStop) this.player.hitStop(0.05); // 50ms Hit Stop
+                // @ts-ignore
+                if (this.player.screenShake) this.player.screenShake(0.3, 0.2);
                 // @ts-ignore
                 if (this.player.screenShake) this.player.screenShake(0.3, 0.2);
             }
@@ -293,7 +447,13 @@ export class Combat {
         }
 
         const direction = new THREE.Vector3().subVectors(targetPoint, spawnPos).normalize();
-        const arrowMesh = this.pool.get('arrow');
+
+        let projId = 'arrow';
+        if (this.player.equippedWeapon && this.player.equippedWeapon.element) {
+            projId = `arrow_${this.player.equippedWeapon.element.toLowerCase()}`;
+        }
+
+        const arrowMesh = this.pool.get(projId) || this.pool.get('arrow');
         if (!arrowMesh) return;
 
         arrowMesh.position.copy(spawnPos);

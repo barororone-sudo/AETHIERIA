@@ -3,7 +3,9 @@ export const WeaponType = {
     SWORD: 'SWORD',
     GREATSWORD: 'GREATSWORD',
     DAGGER: 'DAGGER',
-    SPEAR: 'SPEAR'
+    SPEAR: 'SPEAR',
+    DOUBLE_BLADE: 'DOUBLE_BLADE',
+    BOW: 'BOW'
 };
 
 export const Rarity = {

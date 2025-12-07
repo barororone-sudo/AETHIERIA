@@ -11,7 +11,9 @@ export class Enemy {
         this.maxHp = 100;
         this.element = element;
         this.isFrozen = false;
+        this.isFrozen = false;
         this.VISUAL_OFFSET_Y = 0.0;
+        this.name = "Enemy";
 
         // Visuals
         if (mesh) {

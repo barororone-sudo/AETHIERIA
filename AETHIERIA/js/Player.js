@@ -12,6 +12,8 @@ import { ToonMaterial } from './materials/ToonMaterial.js';
 import { generateCharacter } from './character.js';
 import { LevelManager } from './managers/LevelManager.js';
 import { WeaponGenerator } from './generators/WeaponGenerator.js';
+import { Animator } from './components/Animator.js';
+import { Visuals } from './Visuals.js';
 
 export class Player {
     /**
@@ -134,6 +136,7 @@ export class Player {
         this.shakeTriggered = false;
 
         // Register Input Callbacks
+        // Register Input Callbacks
         this.input.onToggleMap = () => {
             if (this.isInTutorial) {
                 if (this.game.ui) this.game.ui.showToast("Carte indisponible pendant le tutoriel.");
@@ -148,6 +151,102 @@ export class Player {
         this.initVisuals();
         this.initInput();
         this.updateStats();
+
+        // Advanced Combat Components
+        this.animator = new Animator(this);
+        this.visuals = new Visuals(this);
+
+        // Define Animations
+        this.registerAnimations();
+    }
+
+    registerAnimations() {
+        if (!this.animator) return;
+
+        // Define simple poses (radians)
+        // ATTACK 1 - Horizontal Slash
+        this.animator.register('ATTACK_1', {
+            duration: 0.4,
+            keys: [
+                {
+                    t: 0.0, pose: {
+                        rightArm: { x: -2.0, y: -0.5, z: 0.5 }, // Windup
+                        torso: { x: 0, y: 0.5, z: 0 }
+                    }
+                },
+                {
+                    t: 0.15, pose: {
+                        rightArm: { x: -1.5, y: 1.5, z: 0.5 }, // Swing
+                        torso: { x: 0, y: -0.5, z: 0 }
+                    }
+                },
+                {
+                    t: 0.4, pose: {
+                        rightArm: { x: 0, y: 0, z: 0 }, // Recover
+                        torso: { x: 0, y: 0, z: 0 }
+                    }
+                }
+            ]
+        });
+
+        // ATTACK 2 - Vertical Slash
+        this.animator.register('ATTACK_2', {
+            duration: 0.4,
+            keys: [
+                {
+                    t: 0.0, pose: {
+                        rightArm: { x: -Math.PI, y: 0, z: 0 }, // Up
+                        torso: { x: 0, y: 0, z: 0 }
+                    }
+                },
+                {
+                    t: 0.2, pose: {
+                        rightArm: { x: -0.5, y: 0, z: 0 }, // Down
+                        torso: { x: 0.2, y: 0, z: 0 }
+                    }
+                },
+                {
+                    t: 0.4, pose: {
+                        rightArm: { x: 0, y: 0, z: 0 },
+                        torso: { x: 0, y: 0, z: 0 }
+                    }
+                }
+            ]
+        });
+
+        // ATTACK 3 - Spin/Thrust
+        this.animator.register('ATTACK_3', {
+            duration: 0.6,
+            keys: [
+                {
+                    t: 0.0, pose: {
+                        rightArm: { x: -1.5, y: -1.0, z: 0 },
+                        torso: { x: 0, y: 1.0, z: 0 }
+                    }
+                },
+                {
+                    t: 0.3, pose: {
+                        rightArm: { x: -1.5, y: 2.0, z: 0 },
+                        torso: { x: 0, y: -2.0, z: 0 } // Spin
+                    }
+                },
+                {
+                    t: 0.6, pose: {
+                        rightArm: { x: 0, y: 0, z: 0 },
+                        torso: { x: 0, y: 0, z: 0 }
+                    }
+                }
+            ]
+        });
+
+        // DODGE
+        this.animator.register('DODGE', {
+            duration: 0.3,
+            keys: [
+                { t: 0.0, pose: { torso: { x: 0.5, y: 0, z: 0 } } }, // Lean forward
+                { t: 0.3, pose: { torso: { x: 0, y: 0, z: 0 } } }
+            ]
+        });
     }
 
     /**
@@ -231,6 +330,14 @@ export class Player {
                 if (e.button === 2) {
                     if (this.combat.isAiming) this.combat.toggleAim();
                 }
+            }
+        });
+
+        // Z-Targeting Toggle
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Tab') {
+                e.preventDefault();
+                if (this.combat) this.combat.toggleLock();
             }
         });
     }
@@ -479,6 +586,8 @@ export class Player {
         this.updateUI();
 
         if (this.combat) this.combat.update(dt);
+        if (this.animator) this.animator.update(dt);
+        if (this.visuals) this.visuals.update(dt);
 
         if (this.state === 'AIR' && this.combat && this.combat.isAiming) {
             this.stamina -= dt * 10;
@@ -509,10 +618,20 @@ export class Player {
                 if (!grounded) {
                     this.state = 'AIR';
                 } else if (this.input.keys.jump && !this.exhausted) {
-                    this.body.velocity.y = 15;
-                    this.state = 'AIR';
-                    this.lastJumpTime = Date.now();
-                    this.hasReleasedJump = false;
+                    if (this.combat && this.combat.lockedTarget && speed > 0.1) {
+                        this.state = 'DODGE';
+                        this.lastJumpTime = Date.now();
+                        const dodgeDir = input.clone().normalize();
+                        const force = 25;
+                        this.body.velocity.x = dodgeDir.x * force;
+                        this.body.velocity.z = dodgeDir.z * force;
+                        this.body.velocity.y = 5;
+                    } else {
+                        this.body.velocity.y = 15;
+                        this.state = 'AIR';
+                        this.lastJumpTime = Date.now();
+                        this.hasReleasedJump = false;
+                    }
                 } else {
                     this.state = 'IDLE';
                 }
@@ -547,6 +666,14 @@ export class Player {
                 }
 
                 if (grounded && this.body.velocity.y <= 0) this.state = 'IDLE';
+                break;
+
+            case 'DODGE':
+                // High friction, controlled dash
+                if (Date.now() - this.lastJumpTime > 300) { // Dodge duration
+                    this.state = 'IDLE';
+                    this.body.velocity.set(0, 0, 0); // Stop sliding
+                }
                 break;
 
             case 'DIVE':
@@ -645,7 +772,13 @@ export class Player {
         const input = this.getInputVector();
         const inputLen = input.length();
         const grounded = this.checkGround();
+
         let moveDir = input.clone().normalize();
+
+        // Locked Movement Override
+        if (this.combat && this.combat.lockedTarget && grounded && this.state !== 'DODGE') {
+            // Locked strafe logic can be refined here
+        }
 
         this.body.linearDamping = 0.1;
         this.body.angularDamping = 0.9;
@@ -691,10 +824,6 @@ export class Player {
                 break;
 
             case 'SURF':
-                let slopeAngle = 0;
-                if (grounded && this.world && this.world.terrainManager) {
-                    // Simplified slope logic
-                }
                 if (inputLen > 0) {
                     this.body.velocity.x += input.x * dt * 20;
                     this.body.velocity.z += input.z * dt * 20;
@@ -737,13 +866,26 @@ export class Player {
                 break;
         }
 
-        if (inputLen > 0.1) {
+        if (inputLen > 0.1 && (!this.combat || !this.combat.lockedTarget)) {
             const angle = Math.atan2(input.x, input.z);
             let current = this.mesh.rotation.y;
             let diff = angle - current;
             while (diff > Math.PI) diff -= Math.PI * 2;
             while (diff < -Math.PI) diff += Math.PI * 2;
             this.mesh.rotation.y += diff * dt * 15;
+        } else if (this.combat && this.combat.lockedTarget && this.combat.lockedTarget.mesh) {
+            // Locked Movement (Strafing)
+            const targetPos = this.combat.lockedTarget.mesh.position;
+            const playerPos = this.mesh.position;
+            const dx = targetPos.x - playerPos.x;
+            const dz = targetPos.z - playerPos.z;
+            const angle = Math.atan2(dx, dz);
+
+            let current = this.mesh.rotation.y;
+            let diff = angle - current;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            this.mesh.rotation.y += diff * dt * 20;
         }
 
         this.mesh.position.copy(this.body.position);
@@ -755,6 +897,12 @@ export class Player {
      */
     updateVisuals(dt) {
         if (!this.mesh) return;
+
+        // If playing a procedural animation, override manual transforms
+        if (this.animator && this.animator.isPlaying) {
+            return;
+        }
+
         const time = Date.now() * 0.01;
         let targetRotX = 0, targetRotY = 0, targetPosY = 0.95;
 
@@ -809,79 +957,164 @@ export class Player {
     /**
      * @param {number} dt
      */
-    /**
-     * @param {number} dt
-     */
     updateAttackVisuals(dt) {
         if (!this.rightHand) return;
         this.attackTimer += dt;
         const progress = Math.min(this.attackTimer / this.attackDuration, 1.0);
 
-        // Easing Functions
+        // Easing Helper
+        /** @param {number} t */
+        const easeOutQuad = t => t * (2 - t);
         /** @param {number} x */
-        const easeOutBack = (x) => {
-            const c1 = 1.70158;
-            const c3 = c1 + 1;
-            return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
-        };
-        /** @param {number} x */
-        const easeInOutSine = (x) => -(Math.cos(Math.PI * x) - 1) / 2;
+        const easeInOutSine = x => -(Math.cos(Math.PI * x) - 1) / 2;
 
         const weaponType = this.equippedWeapon ? this.equippedWeapon.weaponType : 'SWORD';
+        const combo = this.currentComboIndex || 0;
 
         switch (weaponType) {
-            case 'GREATSWORD': {
-                // Phase 1: Anticipation (0-30%)
-                if (progress < 0.3) {
-                    const t = progress / 0.3;
-                    const val = easeInOutSine(t);
-                    // Wind up: Arm back, Body twist
-                    this.rightArm.rotation.x = THREE.MathUtils.lerp(-0.5, -2.0, val);
-                    this.rightArm.rotation.z = THREE.MathUtils.lerp(-0.5, 0.5, val);
-                    this.bodyMesh.rotation.y += val * -0.5;
-                }
-                // Phase 2: Impact (30-60%)
-                else if (progress < 0.6) {
-                    const t = (progress - 0.3) / 0.3;
-                    const val = easeOutBack(t);
-                    // Smash: Arm forward, Body Spin
-                    this.rightArm.rotation.x = THREE.MathUtils.lerp(-2.0, 1.0, val);
-                    this.rightArm.rotation.z = THREE.MathUtils.lerp(0.5, -0.5, val);
-                    this.bodyMesh.rotation.y += -0.5 + (Math.PI * val);
+            case 'SWORD': {
+                // Combo 1: Diagonal Right->Left
+                // Combo 2: Horizontal Left->Right
+                // Combo 3: Thrust / Overhead
+                const t = Math.sin(progress * Math.PI);
 
-                    // Screen Shake at impact point
-                    if (progress > 0.45 && !this.shakeTriggered) {
-                        this.screenShake(0.3, 0.2);
-                        this.shakeTriggered = true;
-                    }
+                if (combo === 0) {
+                    this.rightArm.rotation.x = -1.0 + t * 0.5;
+                    this.rightArm.rotation.y = -0.5 - t * 1.5; // Swipe Right to Left
+                    this.rightArm.rotation.z = -0.5 - t * 0.5;
+                } else if (combo === 1) {
+                    this.rightArm.rotation.x = -1.0 + t * 0.5;
+                    this.rightArm.rotation.y = -2.0 + t * 2.5; // Swipe Left to Right (Start from left)
+                    this.rightArm.rotation.z = -0.5 + t * 0.5;
+                } else {
+                    // Thrust
+                    const poke = easeOutQuad(progress);
+                    this.rightArm.rotation.x = -1.5;
+                    this.rightArm.rotation.y = -0.5;
+                    // @ts-ignore
+                    this.rightArm.position.z = Math.sin(progress * Math.PI) * 0.8; // Deep lunge
                 }
-                // Phase 3: Recovery (60-100%)
-                else {
-                    const t = (progress - 0.6) / 0.4;
-                    const val = easeInOutSine(t);
-                    this.rightArm.rotation.x = THREE.MathUtils.lerp(1.0, -0.5, val);
-                    // Body naturally returns via updateVisuals lerp in next frames
+                break;
+            }
+
+            case 'GREATSWORD': {
+                // Heavy, Slow
+                if (combo < 2) {
+                    // Wide Sweep
+                    // Windup
+                    if (progress < 0.4) {
+                        const t = progress / 0.4;
+                        this.rightArm.rotation.y = THREE.MathUtils.lerp(0, -1.5, t); // Wind right
+                        this.rightArm.rotation.x = -1.0;
+                    } else {
+                        // Swing
+                        const t = (progress - 0.4) / 0.6;
+                        this.rightArm.rotation.y = THREE.MathUtils.lerp(-1.5, 1.5, easeOutQuad(t));
+
+                        // Shake
+                        if (t > 0.2 && !this.shakeTriggered) {
+                            this.screenShake(0.2, 0.2);
+                            this.shakeTriggered = true;
+                        }
+                    }
+                } else {
+                    // Overhead Smash (Combo 3)
+                    if (progress < 0.4) {
+                        const t = progress / 0.4;
+                        this.rightArm.rotation.x = THREE.MathUtils.lerp(-0.5, -2.5, t); // Wind back
+                    } else {
+                        const t = (progress - 0.4) / 0.6;
+                        const val = easeOutQuad(t);
+                        this.rightArm.rotation.x = THREE.MathUtils.lerp(-2.5, 1.0, val); // Smash
+                        if (val > 0.5 && !this.shakeTriggered) {
+                            this.screenShake(0.5, 0.3); // Heavy Shake
+                            this.shakeTriggered = true;
+                        }
+                    }
                 }
                 break;
             }
 
             case 'DAGGER': {
                 // Fast Poke / Staccato
-                const t = easeOutBack(progress);
-                this.rightArm.rotation.x = THREE.MathUtils.lerp(-0.5, -1.5, t);
-                this.rightArm.rotation.z = -0.5 + Math.sin(progress * Math.PI * 2) * 0.2;
-                // Tiny forward thrust of the arm container if possible, or just rotation
-                this.rightArm.rotation.y -= t * 0.5;
+                const t = easeOutQuad(progress);
+
+                // Dual Wield Visuals
+                this.rightArm.rotation.x = -1.5;
+                this.leftArm.rotation.x = -1.5;
+
+                if (combo === 0) {
+                    // Right Stab
+                    // @ts-ignore
+                    this.rightArm.position.z = Math.sin(progress * Math.PI) * 0.5;
+                    // @ts-ignore
+                    this.leftArm.position.z = 0;
+                } else if (combo === 1) {
+                    // Left Stab
+                    // @ts-ignore
+                    this.leftArm.position.z = Math.sin(progress * Math.PI) * 0.5;
+                    // @ts-ignore
+                    this.rightArm.position.z = 0;
+                } else {
+                    // Cross Slash (Both)
+                    const xSlash = Math.sin(progress * Math.PI);
+                    this.rightArm.rotation.y = -0.5 - xSlash; // Outwards
+                    this.leftArm.rotation.y = 0.5 + xSlash;   // Outwards
+
+                    // @ts-ignore
+                    this.rightArm.position.z = xSlash * 0.3;
+                    // @ts-ignore
+                    this.leftArm.position.z = xSlash * 0.3;
+                }
                 break;
             }
 
-            case 'SWORD':
+            case 'SPEAR': {
+                const t = easeOutQuad(progress);
+                if (combo < 2) {
+                    // Piston Thrust
+                    const thrust = Math.sin(progress * Math.PI);
+                    // High vs Low?
+                    const heightBias = combo === 0 ? 0.2 : -0.2;
+
+                    this.rightArm.rotation.x = -1.5 + heightBias;
+                    // @ts-ignore
+                    this.rightArm.position.z = thrust * 0.6; // Reach
+                } else {
+                    // Spin (Combo 3)
+                    this.rightArm.rotation.x = -1.5;
+                    this.rightArm.rotation.z = t * Math.PI * 4; // 2 spins
+
+                    // Body Spin
+                    this.bodyMesh.rotation.y += dt * 10;
+                }
+                break;
+            }
+
+            case 'DOUBLE_BLADE': {
+                // Helicopter
+                if (combo === 0) {
+                    // Vertical Spin (Side)
+                    if (this.weaponSlot) this.weaponSlot.rotation.x += dt * 20;
+                    this.rightArm.rotation.z = -1.5; // Arm side
+                } else {
+                    // Horizontal Spin (Helicopter)
+                    this.rightArm.rotation.x = -1.5; // Arm forward
+                    this.rightArm.rotation.z = -1.5; // Blade Horizontal
+                    if (this.weaponSlot) this.weaponSlot.rotation.y += dt * 25; // Faster
+
+                    if (combo === 2) {
+                        this.bodyMesh.rotation.y += dt * 15; // Body Spin too
+                    }
+                }
+                break;
+            }
+
             default: {
-                // Sine Slash
+                // Fallback
                 const t = Math.sin(progress * Math.PI);
                 this.rightArm.rotation.x = -1.0 + t * 0.5;
-                this.rightArm.rotation.y = -0.5 - t * 1.5; // Horizontal swipe
-                this.rightArm.rotation.z = -0.5 - t * 0.5;
+                this.rightArm.rotation.y = -0.5 - t * 1.5;
                 break;
             }
         }
@@ -889,6 +1122,15 @@ export class Player {
         if (progress >= 1.0) {
             this.isAttacking = false;
             this.shakeTriggered = false;
+            // Reset transforms that might persist
+            // @ts-ignore
+            this.rightArm.position.z = 0;
+            // @ts-ignore
+            this.leftArm.position.z = 0; // Reset Dagger offhand
+            // Reset weapon slot rotations
+            if (this.weaponSlot) {
+                this.weaponSlot.rotation.set(Math.PI / 2, 0, 0);
+            }
         }
     }
 
@@ -939,6 +1181,31 @@ export class Player {
 
         this.camera.position.set(x, y, z);
         this.camera.lookAt(this.cameraLagPos);
+
+        // Z-Targeting Camera Override
+        if (this.combat && this.combat.lockedTarget && this.combat.lockedTarget.mesh) {
+            // Position: Behind Player, slightly offset
+            const targetPos = this.combat.lockedTarget.mesh.position.clone();
+            const playerPos = this.mesh.position.clone();
+
+            // Vector from Target to Player
+            const dir = new THREE.Vector3().subVectors(playerPos, targetPos).normalize();
+
+            // Ideal Cam Pos: PlayerPos + Direction * distance + height
+            const camDist = 6.0;
+            const camHeight = 3.0;
+            const idealPos = playerPos.clone().add(dir.multiplyScalar(camDist));
+            idealPos.y += camHeight;
+
+            // Smoothly interpolate
+            this.camera.position.lerp(idealPos, dt * 5);
+
+            // Look at Midpoint or Target?
+            // Zelda typically keeps player in foreground, target in bg.
+            // Let's look at target but biased slightly up
+            const lookAtPos = targetPos.clone().add(new THREE.Vector3(0, 1.0, 0));
+            this.camera.lookAt(lookAtPos);
+        }
 
         if (this.shakeIntensity > 0) {
             this.camera.position.x += (Math.random() - 0.5) * this.shakeIntensity;
