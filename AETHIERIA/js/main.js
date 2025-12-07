@@ -283,7 +283,10 @@ export class Game {
 
         // Logic Updates
         let timeScale = 1;
-        if (this.player) timeScale = this.player.update(dt);
+        if (this.player) {
+            const playerScale = this.player.update(dt);
+            if (typeof playerScale === 'number') timeScale = playerScale;
+        }
 
         try {
             if (this.world) this.world.update(dt * timeScale, this.player ? this.player.body : null);

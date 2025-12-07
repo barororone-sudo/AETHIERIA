@@ -8,7 +8,7 @@ export const QuestsDb = [
                 id: 'q1_step1',
                 description: "Trouver une arme pour vous défendre.",
                 targetType: 'ITEM_PICKUP',
-                targetId: 'sword_01',
+                targetId: 'sword_starter',
                 targetPos: { x: 15, y: 0.5, z: 10 },
                 isCompleted: false,
                 onComplete: (game) => {
@@ -56,7 +56,7 @@ export const QuestsDb = [
             { id: 'enter_forest', description: "Pénétrez dans la Forêt des Murmures", targetPos: { x: -120, y: 0, z: 100 }, targetType: 'ENTER_ZONE', targetId: 'forest_whispers', isCompleted: false },
             { id: 'find_shrine', description: "Trouvez l'Autel Ancien", targetPos: { x: -250, y: 0, z: 150 }, targetType: 'INTERACT', targetId: 'forest_shrine', isCompleted: false }
         ],
-        rewards: { exp: 200, item: 'bow_01' }
+        rewards: { exp: 200, item: 'sword_steel' }
     }
 
 ];

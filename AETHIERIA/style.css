@@ -411,3 +411,124 @@ body {
 #minimap-container.zoom-high .map-icon-enemy {
     display: block !important;
 }
+
+/* --- SLOT SELECTION --- */
+.slot-card {
+    width: 250px;
+    height: 350px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.slot-card:hover,
+.slot-card:focus {
+    transform: translateY(-10px) scale(1.05);
+    border-color: #ffd700;
+    box-shadow: 0 15px 40px rgba(255, 215, 0, 0.3);
+    outline: none;
+    z-index: 10;
+}
+
+.slot-card.empty {
+    border-style: dashed;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.slot-card.empty:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: white;
+}
+
+.slot-avatar {
+    height: 60%;
+    width: 100%;
+    position: relative;
+}
+
+.slot-content {
+    padding: 15px;
+    text-align: center;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+.slot-title {
+    margin: 0;
+    font-size: 24px;
+    color: white;
+    text-shadow: 0 0 10px #00aaff;
+}
+
+.slot-level {
+    font-size: 14px;
+    color: #00aaff;
+    font-weight: bold;
+    margin-top: 5px;
+    letter-spacing: 2px;
+}
+
+.slot-meta {
+    font-size: 12px;
+    color: #888;
+    margin-top: 10px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.delete-slot-btn {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #ff4444;
+    color: white;
+    border: 2px solid white;
+    font-weight: bold;
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    z-index: 20;
+}
+
+.slot-card:hover .delete-slot-btn {
+    opacity: 1;
+    top: 5px;
+    right: 5px;
+}
+
+.delete-slot-btn:hover {
+    background: red;
+    transform: scale(1.1);
+}
+
+.add-hero-icon {
+    font-size: 80px;
+    color: rgba(255, 255, 255, 0.2);
+    margin-bottom: 20px;
+    transition: transform 0.3s;
+}
+
+.slot-card.empty:hover .add-hero-icon {
+    transform: scale(1.2) rotate(90deg);
+    color: white;
+}

@@ -889,10 +889,19 @@ export class UIManager {
                     break;
 
                 case 'Enter':
+                case 'NumpadEnter':
                 case 'Space':
-                case 'KeyF': // Added F key support
-                    buttons[currentIndex].click();
+                case 'KeyE': // Added E key support
+                case 'KeyF':
+                    console.log("Keyboard Action on:", buttons[currentIndex]);
+                    if (buttons[currentIndex]) {
+                        buttons[currentIndex].click();
+                        // Visual Feedback
+                        buttons[currentIndex].style.transform = 'scale(0.95)';
+                        setTimeout(() => buttons[currentIndex].style.transform = '', 100);
+                    }
                     e.preventDefault();
+                    e.stopPropagation();
                     break;
             }
         };

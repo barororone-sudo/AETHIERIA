@@ -672,7 +672,7 @@ export class World {
             chestPos.y = this.terrainManager.getGlobalHeight(chestPos.x, chestPos.z);
         }
         // New Chest Class Usage
-        const chest = new Chest(this.game, this, chestPos, 'sword_01');
+        const chest = new Chest(this.game, this, chestPos, 'sword_starter');
         this.chests.push(chest);
     }
 

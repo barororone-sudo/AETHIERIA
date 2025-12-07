@@ -240,7 +240,8 @@ export class Combat {
 
                 enemy.takeDamage(Math.floor(damage), Elements.NONE);
 
-                const hitPos = this.player.body.position.clone().add(direction.clone().multiplyScalar(1.0));
+                const playerPos = new THREE.Vector3(this.player.body.position.x, this.player.body.position.y, this.player.body.position.z);
+                const hitPos = playerPos.add(direction.clone().multiplyScalar(1.0));
 
                 if (this.player.game.ui && this.player.game.ui.showDamage) {
                     this.player.game.ui.showDamage(hitPos, Math.floor(damage), isCrit);

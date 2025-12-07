@@ -239,13 +239,14 @@ export class StoryManager {
             this.updateObjectiveMarker(this.activeQuests[0].steps[0]);
 
             // Reveal Starting Zone (Tower 1 Area)
-            // Reveal Starting Zone (Tower 1 Area)
+            /* REMOVED: Automatic Reveal. Player must activate the Tower.
             if (this.game.ui && this.game.ui.mapManager) {
                 // Delayed reveal to ensure Map Texture is generated
                 setTimeout(() => {
                     this.game.ui.mapManager.revealZone(0, 0, 250);
                 }, 1000);
             }
+            */
         }
     }
 

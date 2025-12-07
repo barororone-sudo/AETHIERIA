@@ -42,39 +42,37 @@ export class SaveManager {
      * @param {number} id 
      */
     async deleteSlot(id) {
-        try {
-            await fetch(`/api/save/${id}`, { method: 'DELETE' });
-            console.log(`Save Slot ${id} deleted (server).`);
-        } catch (e) {
-            console.error(`Error deleting slot ${id}:`, e);
-        }
+        localStorage.removeItem(`${this.baseKey}${id}`);
+        console.log(`Save Slot ${id} deleted (localStorage).`);
     }
 
     /**
      * Returns info for all 3 slots.
-     * @returns {Array<{id: number, exists: boolean, level: number, date: string, location: string}>}
+     * @returns {Promise<Array<{id: number, exists: boolean, level: number, date: string, location: string}>>}
      */
     async getSlotsInfo() {
-        try {
-            const response = await fetch('/api/slots');
-            if (response.ok) {
-                return await response.json();
+        const slots = [];
+        for (let i = 1; i <= 3; i++) {
+            const dataStr = localStorage.getItem(`${this.baseKey}${i}`);
+            if (dataStr) {
+                try {
+                    const data = JSON.parse(dataStr);
+                    slots.push({
+                        id: i,
+                        exists: true,
+                        level: data.stats ? data.stats.level : (data.level && data.level.level ? data.level.level : 1),
+                        date: data.meta ? data.meta.date : 'Unknown',
+                        location: data.meta ? data.meta.location : 'Unknown'
+                    });
+                } catch (e) {
+                    console.warn(`Corrupt save in slot ${i}`, e);
+                    slots.push({ id: i, exists: false });
+                }
+            } else {
+                slots.push({ id: i, exists: false });
             }
-        } catch (e) {
-            console.error("Failed to fetch slots info:", e);
         }
-        // Fallback or empty if server fails
-        return [
-            { id: 1, exists: false },
-            { id: 2, exists: false },
-            { id: 3, exists: false }
-        ];
-    }
-
-    // Helper for UI compatibility if needed
-    async getSlotInfo(id) {
-        const slots = await this.getSlotsInfo();
-        return slots.find(s => s.id === id) || { exists: false };
+        return slots;
     }
 
     async save() {
@@ -83,7 +81,6 @@ export class SaveManager {
 
         const data = {
             position: { x: player.body.position.x, y: player.body.position.y, z: player.body.position.z },
-            inventory: player.inventory.items,
             inventory: player.inventory.items,
             stats: { hp: player.hp, stamina: player.stamina },
             level: player.levelManager ? player.levelManager.getData() : { level: 1 },
@@ -98,25 +95,18 @@ export class SaveManager {
                     return acc;
                 }, {}) : {}
             },
+            meta: {
+                date: new Date().toLocaleString(),
+                location: `Zone ${Math.floor(player.body.position.x / 100)}`
+            },
             timestamp: Date.now()
         };
 
         try {
-            const response = await fetch(`/api/save/${this.currentSlotId}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            });
-
-            if (response.ok) {
-                console.log(`Game Saved to Server!`);
-                if (this.game.ui && this.game.ui.showToast) {
-                    this.game.ui.showToast("Partie Sauvegardée (Serveur) !");
-                }
-            } else {
-                console.error("Save failed:", await response.text());
+            localStorage.setItem(this.getCurrentKey(), JSON.stringify(data));
+            console.log(`Game Saved to LocalStorage!`);
+            if (this.game.ui && this.game.ui.showToast) {
+                this.game.ui.showToast("Partie Sauvegardée !");
             }
         } catch (e) {
             console.error("Save error:", e);
@@ -125,16 +115,14 @@ export class SaveManager {
 
     async load() {
         try {
-            const response = await fetch(`/api/load/${this.currentSlotId}`);
+            const dataStr = localStorage.getItem(this.getCurrentKey());
 
-            if (!response.ok) {
-                console.log(`No save found on server (or error).`);
+            if (!dataStr) {
+                console.log(`No save found in LocalStorage.`);
                 return false;
             }
 
-            const data = await response.json();
-            if (data.empty) return false;
-
+            const data = JSON.parse(dataStr);
             const player = this.game.player;
 
             // Restore Position
@@ -196,10 +184,10 @@ export class SaveManager {
                 }
             }
 
-            console.log(`Game Loaded from Server!`);
+            console.log(`Game Loaded from LocalStorage!`);
             return true;
         } catch (e) {
-            console.error(`Failed to load save from server:`, e);
+            console.error(`Failed to load save from LocalStorage:`, e);
             return false;
         }
     }

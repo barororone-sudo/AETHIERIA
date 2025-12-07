@@ -97,7 +97,7 @@ export class Guardian extends Enemy {
         }
 
         // Direct UI Update
-        if (this.game && this.game.ui) {
+        if (this.game && this.game.ui && this.hp > 0) {
             this.game.ui.updateBossBar(this.hp, this.maxHp, "Gardien Ancestral");
         }
     }

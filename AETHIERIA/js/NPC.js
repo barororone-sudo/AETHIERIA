@@ -17,6 +17,9 @@ export class NPC {
     }
 
     initVisuals() {
+        if (this.world.interactables) {
+            this.world.interactables.push(this);
+        }
         this.mesh = new THREE.Group();
         this.mesh.position.copy(this.position);
 

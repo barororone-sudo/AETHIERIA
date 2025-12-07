@@ -131,6 +131,7 @@ export class Player {
         this.attackDuration = 0;
         this.currentComboIndex = 0;
         this.isAttacking = false;
+        this.shakeTriggered = false;
 
         // Register Input Callbacks
         this.input.onToggleMap = () => {
@@ -143,6 +144,9 @@ export class Player {
             }
         };
 
+        this.initPhysics();
+        this.initVisuals();
+        this.initInput();
         this.updateStats();
     }
 
@@ -232,9 +236,14 @@ export class Player {
     }
 
     initPhysics() {
-        if (!this.world) return;
+        if (!this.world) {
+            console.error("Player.initPhysics: this.world is MISSING!");
+            return;
+        }
+        console.log("Player.initPhysics: Initializing Body...");
         const radius = 0.5;
         const shape = new CANNON.Sphere(radius);
+        // Fallback if slipperyMaterial missing
         const material = this.world.slipperyMaterial || new CANNON.Material('player');
 
         this.body = new CANNON.Body({
@@ -246,11 +255,16 @@ export class Player {
             fixedRotation: true
         });
 
-        this.body.position.set(0, 50, 0);
+        this.body.position.set(0, 50, 0); // Spawn High
         this.body.ccdSpeedThreshold = 1;
         this.body.ccdIterations = 10;
 
-        this.world.physicsWorld.addBody(this.body);
+        if (this.world.physicsWorld) {
+            this.world.physicsWorld.addBody(this.body);
+            console.log("Player Body Added to Physics World");
+        } else {
+            console.error("Player.initPhysics: physicsWorld is MISSING!");
+        }
     }
 
     initVisuals() {
@@ -617,6 +631,9 @@ export class Player {
         if (!this.mesh || !this.body) return;
         this.body.wakeUp();
 
+        // Interaction Check
+        this.checkInteraction();
+
         if (this.combat && this.combat.isAttacking) {
             this.body.velocity.x = 0;
             this.body.velocity.z = 0;
@@ -792,17 +809,87 @@ export class Player {
     /**
      * @param {number} dt
      */
+    /**
+     * @param {number} dt
+     */
     updateAttackVisuals(dt) {
         if (!this.rightHand) return;
         this.attackTimer += dt;
         const progress = Math.min(this.attackTimer / this.attackDuration, 1.0);
-        /** @param {number} t */
-        function easeOutQuad(t) { return 1 - (1 - t) * (1 - t); }
-        const t = easeOutQuad(progress);
 
-        // Simple Swing
-        this.rightHand.rotation.y = THREE.MathUtils.lerp(-Math.PI / 2, Math.PI / 2, t);
-        if (progress >= 1.0) this.isAttacking = false;
+        // Easing Functions
+        /** @param {number} x */
+        const easeOutBack = (x) => {
+            const c1 = 1.70158;
+            const c3 = c1 + 1;
+            return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+        };
+        /** @param {number} x */
+        const easeInOutSine = (x) => -(Math.cos(Math.PI * x) - 1) / 2;
+
+        const weaponType = this.equippedWeapon ? this.equippedWeapon.weaponType : 'SWORD';
+
+        switch (weaponType) {
+            case 'GREATSWORD': {
+                // Phase 1: Anticipation (0-30%)
+                if (progress < 0.3) {
+                    const t = progress / 0.3;
+                    const val = easeInOutSine(t);
+                    // Wind up: Arm back, Body twist
+                    this.rightArm.rotation.x = THREE.MathUtils.lerp(-0.5, -2.0, val);
+                    this.rightArm.rotation.z = THREE.MathUtils.lerp(-0.5, 0.5, val);
+                    this.bodyMesh.rotation.y += val * -0.5;
+                }
+                // Phase 2: Impact (30-60%)
+                else if (progress < 0.6) {
+                    const t = (progress - 0.3) / 0.3;
+                    const val = easeOutBack(t);
+                    // Smash: Arm forward, Body Spin
+                    this.rightArm.rotation.x = THREE.MathUtils.lerp(-2.0, 1.0, val);
+                    this.rightArm.rotation.z = THREE.MathUtils.lerp(0.5, -0.5, val);
+                    this.bodyMesh.rotation.y += -0.5 + (Math.PI * val);
+
+                    // Screen Shake at impact point
+                    if (progress > 0.45 && !this.shakeTriggered) {
+                        this.screenShake(0.3, 0.2);
+                        this.shakeTriggered = true;
+                    }
+                }
+                // Phase 3: Recovery (60-100%)
+                else {
+                    const t = (progress - 0.6) / 0.4;
+                    const val = easeInOutSine(t);
+                    this.rightArm.rotation.x = THREE.MathUtils.lerp(1.0, -0.5, val);
+                    // Body naturally returns via updateVisuals lerp in next frames
+                }
+                break;
+            }
+
+            case 'DAGGER': {
+                // Fast Poke / Staccato
+                const t = easeOutBack(progress);
+                this.rightArm.rotation.x = THREE.MathUtils.lerp(-0.5, -1.5, t);
+                this.rightArm.rotation.z = -0.5 + Math.sin(progress * Math.PI * 2) * 0.2;
+                // Tiny forward thrust of the arm container if possible, or just rotation
+                this.rightArm.rotation.y -= t * 0.5;
+                break;
+            }
+
+            case 'SWORD':
+            default: {
+                // Sine Slash
+                const t = Math.sin(progress * Math.PI);
+                this.rightArm.rotation.x = -1.0 + t * 0.5;
+                this.rightArm.rotation.y = -0.5 - t * 1.5; // Horizontal swipe
+                this.rightArm.rotation.z = -0.5 - t * 0.5;
+                break;
+            }
+        }
+
+        if (progress >= 1.0) {
+            this.isAttacking = false;
+            this.shakeTriggered = false;
+        }
     }
 
     /**
@@ -812,7 +899,14 @@ export class Player {
         this.isAttacking = true;
         this.attackTimer = 0;
         this.currentComboIndex = comboIndex;
-        this.attackDuration = 0.3;
+        this.shakeTriggered = false;
+
+        const type = this.equippedWeapon ? this.equippedWeapon.weaponType : 'SWORD';
+        switch (type) {
+            case 'GREATSWORD': this.attackDuration = 0.9; break;
+            case 'DAGGER': this.attackDuration = 0.15; break;
+            case 'SWORD': default: this.attackDuration = 0.3; break;
+        }
     }
 
     /**
@@ -927,6 +1021,41 @@ export class Player {
      */
     spawnHitParticles(pos, color) {
         // Implementation can be added back if needed
+    }
+
+    checkInteraction() {
+        // Debounce Logic
+        if (this.input.keys.interact) {
+            if (this.interactDebounce) return;
+            this.interactDebounce = true;
+
+            // Perform Interaction
+            if (this.world && this.world.interactables) {
+                const playerPos = this.mesh.position;
+                /** @type {any} */
+                let closest = null;
+                let minDst = 999;
+
+                this.world.interactables.forEach(obj => {
+                    if (!obj.mesh) return;
+                    const d = playerPos.distanceTo(obj.mesh.position);
+                    if (d < (obj.interactionRadius || 5)) {
+                        if (d < minDst) {
+                            minDst = d;
+                            closest = obj;
+                        }
+                    }
+                });
+
+                // @ts-ignore
+                if (closest && closest.interact) {
+                    console.log("Player interacting with:", closest);
+                    closest.interact();
+                }
+            }
+        } else {
+            this.interactDebounce = false;
+        }
     }
 
     /**
