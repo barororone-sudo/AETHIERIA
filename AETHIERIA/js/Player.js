@@ -123,6 +123,10 @@ export class Player {
         /** @type {LevelManager} */ this.levelManager = new LevelManager(game);
         this.swordTrail = null;
 
+        // Animation System (for remote models)
+        /** @type {THREE.AnimationMixer | null} */ this.mixer = null;
+        /** @type {Object<string, THREE.AnimationAction>} */ this.actions = {};
+
         // Audio & Input
         this.audio = game.audio || null;
         this.inputLocked = false;
@@ -393,6 +397,238 @@ export class Player {
         this.mesh = new THREE.Group();
         this.world.scene.add(this.mesh);
 
+        // 🌐 CHECK FOR REMOTE MODEL
+        // TEMPORARILY DISABLED: Ready Player Me model loads but is invisible
+        // const remoteModel = this.game.loader?.assets?.models?.hero;
+        const remoteModel = null; // Force procedural character
+
+        if (remoteModel) {
+            console.log('🎮 Using remote character model!');
+            this.initRemoteModel(remoteModel);
+            return; // Skip procedural generation
+        }
+
+        // Check if remote loading was attempted but failed (null)
+        if (remoteModel === null) {
+            console.log('🔴 Remote model disabled - using procedural character');
+            // this.initCubeFallback();
+            // return;
+        }
+
+        console.log('🔧 Using procedural character (fallback)');
+        this.initProceduralCharacter();
+    }
+
+    initCubeFallback() {
+        console.log('🟥 Creating red cube fallback player');
+
+        // Create a simple red cube as emergency fallback
+        const cubeGeometry = new THREE.BoxGeometry(1, 2, 1);
+        const cubeMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff0000,
+            emissive: 0xff0000,
+            emissiveIntensity: 0.3,
+            roughness: 0.7,
+            metalness: 0.3
+        });
+        const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+        cube.castShadow = true;
+        cube.receiveShadow = true;
+        cube.position.y = 1;
+
+        this.mesh.add(cube);
+        this.bodyMesh = cube;
+
+        // Add a glowing point light
+        const light = new THREE.PointLight(0xff0000, 2, 5);
+        light.position.set(0, 1.5, 0);
+        this.mesh.add(light);
+
+        // Create weapon slots
+        this.weaponSlot = new THREE.Group();
+        this.weaponSlot.position.set(0.6, 1.0, 0);
+        this.mesh.add(this.weaponSlot);
+
+        this.leftWeaponSlot = new THREE.Group();
+        this.leftWeaponSlot.position.set(-0.6, 1.0, 0);
+        this.mesh.add(this.leftWeaponSlot);
+
+        console.log('✅ Cube fallback ready!');
+    }
+
+    /**
+     * @param {any} gltf
+     */
+    initRemoteModel(gltf) {
+        // Clone the scene to avoid modifying the original
+        const model = gltf.scene.clone();
+
+        console.log('🔍 DEBUG: initRemoteModel called');
+        console.log('🔍 Model children count:', model.children.length);
+
+        // 🎯 READY PLAYER ME FIX: Ces modèles sont très petits par défaut
+        // Calculer la taille du modèle pour l'ajuster automatiquement
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+
+        console.log(`📏 Model size detected: ${maxDim.toFixed(3)} units (height: ${size.y.toFixed(3)})`);
+
+        // Si le modèle est trop petit (Ready Player Me), l'agrandir
+        if (maxDim < 0.5) {
+            const targetHeight = 2.0; // Hauteur cible du personnage
+            const scale = targetHeight / size.y;
+            model.scale.set(scale, scale, scale);
+            console.log(`🔧 Model was too small (${maxDim.toFixed(3)}), scaled up by ${scale.toFixed(1)}x`);
+        } else {
+            model.scale.set(1, 1, 1);
+            console.log(`✅ Model size OK, no scaling needed`);
+        }
+
+        model.position.set(0, 0, 0);
+
+        // Enable shadows AND fix materials
+        let meshCount = 0;
+        let materialCount = 0;
+        model.traverse((/** @type {any} */ child) => {
+            if (child.isMesh) {
+                meshCount++;
+                child.castShadow = true;
+                child.receiveShadow = true;
+                child.frustumCulled = false; // Prevent culling issues
+
+                // Fix materials
+                if (child.material) {
+                    materialCount++;
+                    // Force materials to be visible
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach((/** @type {any} */ mat) => {
+                            mat.visible = true;
+                            mat.transparent = false;
+                            mat.opacity = 1.0;
+                            mat.side = THREE.DoubleSide;
+                            mat.needsUpdate = true;
+                        });
+                    } else {
+                        child.material.visible = true;
+                        child.material.transparent = false;
+                        child.material.opacity = 1.0;
+                        child.material.side = THREE.DoubleSide;
+                        child.material.needsUpdate = true;
+                    }
+                }
+            }
+        });
+
+        console.log(`🔍 Found ${meshCount} meshes with ${materialCount} materials`);
+
+        this.mesh.add(model);
+        this.bodyMesh = model; // Reference for animations
+
+        console.log('🎮 Remote model added to player mesh');
+        console.log(`📍 Model position: (${model.position.x}, ${model.position.y}, ${model.position.z})`);
+        console.log(`📐 Model scale: (${model.scale.x.toFixed(2)}, ${model.scale.y.toFixed(2)}, ${model.scale.z.toFixed(2)})`);
+        console.log(`👁️ Model visible: ${model.visible}`);
+        console.log(`🎯 Player mesh children: ${this.mesh.children.length}`);
+
+        // 🎬 ANIMATION SETUP
+        if (gltf.animations && gltf.animations.length > 0) {
+            console.log('📦 Found embedded animations:', gltf.animations.map((/** @type {any} */ a) => a.name));
+
+            this.mixer = new THREE.AnimationMixer(model);
+
+            // 🔍 INTELLIGENT ANIMATION MAPPING
+            gltf.animations.forEach((/** @type {any} */ clip) => {
+                const name = clip.name.toLowerCase();
+                const action = /** @type {THREE.AnimationMixer} */ (this.mixer).clipAction(clip);
+
+                // Map to player actions
+                if (name.includes('idle') || name.includes('standing')) {
+                    this.actions['Idle'] = action;
+                    console.log('✅ Mapped Idle:', clip.name);
+                }
+                else if (name.includes('run') || name.includes('jog') || name.includes('walk')) {
+                    this.actions['Run'] = action;
+                    console.log('✅ Mapped Run:', clip.name);
+                }
+                else if (name.includes('attack') || name.includes('slash') || name.includes('hit') || name.includes('strike') || name.includes('punch')) {
+                    this.actions['Attack_Sword'] = action;
+                    console.log('✅ Mapped Attack:', clip.name);
+                }
+            });
+
+            // Play idle by default
+            if (this.actions['Idle']) {
+                this.actions['Idle'].play();
+                console.log('▶️ Playing Idle animation');
+            }
+        } else {
+            // 🎬 NO EMBEDDED ANIMATIONS - APPLY EXTERNAL ANIMATIONS
+            console.log('📦 No embedded animations found');
+            console.log('🔄 Applying external animations for Ready Player Me...');
+
+            // Get external animations from AssetLoader
+            const externalAnims = this.game.loader?.assets?.animations;
+
+            if (externalAnims && Object.keys(externalAnims).length > 0) {
+                this.mixer = new THREE.AnimationMixer(model);
+
+                // Apply Idle animation
+                if (externalAnims['anim_idle'] && externalAnims['anim_idle'].length > 0) {
+                    const idleClip = externalAnims['anim_idle'][0]; // First animation in the file
+                    const idleAction = this.mixer.clipAction(idleClip);
+                    this.actions['Idle'] = idleAction;
+                    console.log('✅ Applied external Idle animation:', idleClip.name);
+                }
+
+                // Apply Run animation
+                if (externalAnims['anim_run'] && externalAnims['anim_run'].length > 0) {
+                    // Try to find a run animation, or use the second one if available
+                    const runClip = externalAnims['anim_run'].find(a =>
+                        a.name.toLowerCase().includes('run') ||
+                        a.name.toLowerCase().includes('walk')
+                    ) || externalAnims['anim_run'][1] || externalAnims['anim_run'][0];
+
+                    const runAction = this.mixer.clipAction(runClip);
+                    this.actions['Run'] = runAction;
+                    console.log('✅ Applied external Run animation:', runClip.name);
+                }
+
+                // Apply Attack animation
+                if (externalAnims['anim_attack'] && externalAnims['anim_attack'].length > 0) {
+                    const attackClip = externalAnims['anim_attack'][0];
+                    const attackAction = this.mixer.clipAction(attackClip);
+                    this.actions['Attack_Sword'] = attackAction;
+                    console.log('✅ Applied external Attack animation:', attackClip.name);
+                }
+
+                // Play idle by default
+                if (this.actions['Idle']) {
+                    this.actions['Idle'].play();
+                    console.log('▶️ Playing external Idle animation');
+                } else {
+                    console.warn('⚠️ No Idle animation available');
+                }
+
+                console.log('🎬 External animations applied successfully!');
+            } else {
+                console.warn('⚠️ No external animations loaded');
+                console.log('💡 Character will use procedural movement');
+            }
+        }
+
+        // Create weapon slots (try to find hands or use default positions)
+        this.weaponSlot = new THREE.Group();
+        this.weaponSlot.position.set(0.3, 1.0, 0);
+        this.mesh.add(this.weaponSlot);
+
+        this.leftWeaponSlot = new THREE.Group();
+        this.leftWeaponSlot.position.set(-0.3, 1.0, 0);
+        this.mesh.add(this.leftWeaponSlot);
+    }
+
+    initProceduralCharacter() {
+
         // --- PALETTE ---
         const cPrimary = new THREE.Color(this.characterData.palette[1]);
         const cSecondary = new THREE.Color(this.characterData.palette[0]);
@@ -598,6 +834,9 @@ export class Player {
         this.updateVisuals(dt);
         this.updateCamera(dt);
         this.updateUI();
+
+        // Update remote model animations
+        if (this.mixer) this.mixer.update(dt);
 
         if (this.combat) this.combat.update(dt);
         if (this.animator) this.animator.update(dt);
@@ -1455,6 +1694,7 @@ export class Player {
         const item = this.game.data.getItem(itemId);
         if (!item) return;
 
+        // Clear current weapon
         if (this.equippedWeapon) {
             while (this.weaponSlot.children.length > 0) {
                 this.weaponSlot.remove(this.weaponSlot.children[0]);
@@ -1463,28 +1703,66 @@ export class Player {
 
         this.equippedWeapon = item;
         this.updateStats();
-        console.log(`Equipping [Procedural]: ${item.name}`);
 
         if (this.game.story) {
             this.game.story.triggerEvent('EQUIP_WEAPON', { id: itemId });
         }
 
-        const meshGroup = WeaponGenerator.createWeapon(item);
-        meshGroup.rotation.x = -Math.PI / 2;
-        this.weaponSlot.add(meshGroup);
+        // ⚔️ LOAD GLB WEAPON MODEL
+        let modelKey = null;
 
+        // Map weapon types to GLB models
+        if (item.weaponType === 'SWORD' || item.weaponType === 'GREATSWORD') {
+            modelKey = 'weapon_sword';
+        } else if (item.weaponType === 'BOW') {
+            modelKey = 'weapon_bow';
+        }
+
+        if (modelKey && this.game.loader?.assets?.models?.[modelKey]) {
+            const weaponGLB = this.game.loader.assets.models[modelKey];
+            const weaponMesh = weaponGLB.scene.clone();
+
+            // Enable shadows
+            weaponMesh.traverse((/** @type {any} */ child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+
+            // Apply weapon-specific transformations for KayKit models
+            if (item.weaponType === 'SWORD' || item.weaponType === 'GREATSWORD') {
+                // KayKit sword positioning (chunky low-poly style)
+                weaponMesh.scale.set(2.0, 2.0, 2.0); // KayKit models are small
+                weaponMesh.rotation.set(-Math.PI / 2, 0, Math.PI); // Adjust for KayKit orientation
+                weaponMesh.position.set(0, 0, 0);
+            } else if (item.weaponType === 'BOW') {
+                // KayKit bow positioning
+                weaponMesh.scale.set(2.5, 2.5, 2.5); // KayKit bows are very small
+                weaponMesh.rotation.set(0, 0, -Math.PI / 2); // Rotate to be held properly
+                weaponMesh.position.set(0, 0, 0);
+            }
+
+            this.weaponSlot.add(weaponMesh);
+            console.log(`⚔️ Equipped GLB weapon: ${item.name} (${modelKey})`);
+        } else {
+            // Fallback to procedural generation if GLB not available
+            console.log(`🔧 GLB not found for ${item.weaponType}, using procedural weapon`);
+            const meshGroup = WeaponGenerator.createWeapon(item);
+            meshGroup.rotation.x = -Math.PI / 2;
+            this.weaponSlot.add(meshGroup);
+        }
+
+        // Handle dual-wield daggers
         if (this.leftWeaponSlot) {
-            // Clear left hand
             while (this.leftWeaponSlot.children.length > 0) {
                 this.leftWeaponSlot.remove(this.leftWeaponSlot.children[0]);
             }
 
-            // Dual Wield Daggers
             if (item.weaponType === 'DAGGER') {
+                // Use procedural for daggers (no GLB model yet)
                 const offHandMesh = WeaponGenerator.createWeapon(item);
                 offHandMesh.rotation.x = -Math.PI / 2;
-                // Mirror if asymmetric? Daggers usually symmetric.
-                // Just add it.
                 this.leftWeaponSlot.add(offHandMesh);
             }
         }

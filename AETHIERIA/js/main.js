@@ -76,7 +76,9 @@ export class Game {
         this.lastFrameTime = 0;
         this.isTabHidden = false;
 
-        this.animate = this.animate.bind(this);
+
+        // this.animate = this.animate.bind(this); // Temporarily commented - method defined later
+
 
         // --- ECO MODE LISTENER ---
         document.addEventListener('visibilitychange', () => {
