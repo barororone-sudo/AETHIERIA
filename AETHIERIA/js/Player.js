@@ -398,9 +398,7 @@ export class Player {
         this.world.scene.add(this.mesh);
 
         // 🌐 CHECK FOR REMOTE MODEL
-        // TEMPORARILY DISABLED: Ready Player Me model loads but is invisible
-        // const remoteModel = this.game.loader?.assets?.models?.hero;
-        const remoteModel = null; // Force procedural character
+        const remoteModel = this.game.loader?.assets?.models?.hero;
 
         if (remoteModel) {
             console.log('🎮 Using remote character model!');
@@ -410,9 +408,8 @@ export class Player {
 
         // Check if remote loading was attempted but failed (null)
         if (remoteModel === null) {
-            console.log('🔴 Remote model disabled - using procedural character');
-            // this.initCubeFallback();
-            // return;
+            console.log('🔴 Remote model failed to load - using procedural character');
+            // Fall through to procedural
         }
 
         console.log('🔧 Using procedural character (fallback)');
@@ -474,6 +471,7 @@ export class Player {
 
         console.log(`📏 Model size detected: ${maxDim.toFixed(3)} units (height: ${size.y.toFixed(3)})`);
 
+        // 1. FORCER LA TAILLE (normaliser l'échelle)
         // Si le modèle est trop petit (Ready Player Me), l'agrandir
         if (maxDim < 0.5) {
             const targetHeight = 2.0; // Hauteur cible du personnage
@@ -481,15 +479,19 @@ export class Player {
             model.scale.set(scale, scale, scale);
             console.log(`🔧 Model was too small (${maxDim.toFixed(3)}), scaled up by ${scale.toFixed(1)}x`);
         } else {
+            // Force scale to 1,1,1 for consistency
             model.scale.set(1, 1, 1);
-            console.log(`✅ Model size OK, no scaling needed`);
+            console.log(`✅ Model size OK, forcing scale to (1, 1, 1)`);
         }
 
         model.position.set(0, 0, 0);
 
-        // Enable shadows AND fix materials
+        // 2. ACTIVER LES OMBRES ET FORCER LA VISIBILITÉ
         let meshCount = 0;
         let materialCount = 0;
+        let texturedCount = 0;
+        let untexturedCount = 0;
+
         model.traverse((/** @type {any} */ child) => {
             if (child.isMesh) {
                 meshCount++;
@@ -500,35 +502,46 @@ export class Player {
                 // Fix materials
                 if (child.material) {
                     materialCount++;
-                    // Force materials to be visible
-                    if (Array.isArray(child.material)) {
-                        child.material.forEach((/** @type {any} */ mat) => {
-                            mat.visible = true;
-                            mat.transparent = false;
-                            mat.opacity = 1.0;
-                            mat.side = THREE.DoubleSide;
-                            mat.needsUpdate = true;
-                        });
-                    } else {
-                        child.material.visible = true;
-                        child.material.transparent = false;
-                        child.material.opacity = 1.0;
-                        child.material.side = THREE.DoubleSide;
-                        child.material.needsUpdate = true;
-                    }
+
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+
+                    materials.forEach((/** @type {any} */ mat) => {
+                        // Force visibility
+                        mat.visible = true;
+                        mat.transparent = false;
+                        mat.opacity = 1.0;
+                        mat.side = THREE.DoubleSide;
+                        mat.depthWrite = true;
+                        mat.depthTest = true;
+
+                        // 3. SÉCURITÉ TEXTURE : Si le modèle est noir, on voit quand même la forme
+                        if (!mat.map) {
+                            mat.color.setHex(0xFFFFFF); // Blanc si pas de texture
+                            untexturedCount++;
+                            console.log(`  ⚪ Material without texture, set to white:`, mat.name || 'unnamed');
+                        } else {
+                            texturedCount++;
+                        }
+
+                        mat.needsUpdate = true;
+                    });
                 }
             }
         });
 
         console.log(`🔍 Found ${meshCount} meshes with ${materialCount} materials`);
+        console.log(`  📷 Textured materials: ${texturedCount}`);
+        console.log(`  ⚪ Untextured materials (forced white): ${untexturedCount}`);
 
+        // 3. AJOUTER À LA SCÈNE (via player mesh group)
         this.mesh.add(model);
         this.bodyMesh = model; // Reference for animations
 
-        console.log('🎮 Remote model added to player mesh');
-        console.log(`📍 Model position: (${model.position.x}, ${model.position.y}, ${model.position.z})`);
-        console.log(`📐 Model scale: (${model.scale.x.toFixed(2)}, ${model.scale.y.toFixed(2)}, ${model.scale.z.toFixed(2)})`);
-        console.log(`👁️ Model visible: ${model.visible}`);
+        // 4. DEBUG DANS LA CONSOLE
+        console.log('🎮 Hero Model Loaded and Added');
+        console.log(`📍 Position: (${model.position.x}, ${model.position.y}, ${model.position.z})`);
+        console.log(`📐 Scale: (${model.scale.x.toFixed(2)}, ${model.scale.y.toFixed(2)}, ${model.scale.z.toFixed(2)})`);
+        console.log(`👁️ Visible: ${model.visible}`);
         console.log(`🎯 Player mesh children: ${this.mesh.children.length}`);
 
         // 🎬 ANIMATION SETUP

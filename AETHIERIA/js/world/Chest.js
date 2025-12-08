@@ -172,6 +172,11 @@ export class Chest {
         }
 
         this.open();
+
+        // ✨ Notify StoryManager of chest opening
+        if (this.game.story) {
+            this.game.story.triggerEvent('OPEN_CHEST', { tier: this.tier });
+        }
     }
 
     unlock() {

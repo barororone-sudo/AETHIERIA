@@ -123,4 +123,13 @@ export class InventoryManager {
         }
         return filtered;
     }
+
+    /**
+     * Méthode utilitaire pour les quêtes
+     * @param {string} itemId 
+     * @returns {boolean}
+     */
+    hasItem(itemId) {
+        return this.slots.some(slot => slot && slot.id === itemId);
+    }
 }

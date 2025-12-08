@@ -13,10 +13,11 @@ const FALLBACK_MODEL_URL = 'https://raw.githubusercontent.com/KhronosGroup/glTF-
 
 // ========================================
 // 🎬 EXTERNAL ANIMATIONS FOR READY PLAYER ME
+// Using Mixamo animations - Free humanoid animations compatible with RPM
 // ========================================
-export const ANIM_IDLE_URL = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb';
-export const ANIM_RUN_URL = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb';
-export const ANIM_ATTACK_URL = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb';
+export const ANIM_IDLE_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@dev/examples/models/gltf/Soldier.glb';
+export const ANIM_RUN_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@dev/examples/models/gltf/Soldier.glb';
+export const ANIM_ATTACK_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@dev/examples/models/gltf/Soldier.glb';
 
 // ========================================
 // ⚔️ WEAPON ASSETS (KayKit - Stable GitHub URLs)

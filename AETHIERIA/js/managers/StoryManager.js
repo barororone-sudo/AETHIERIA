@@ -488,6 +488,32 @@ export class StoryManager {
     triggerEvent(eventType, data = {}) {
         console.log(`Story Event: ${eventType}`, data);
 
+        // ✨ Quest 001 "Le Réveil" - Specific Logic
+        const quest001 = this.activeQuests.find(q => q.id === 'quest_001');
+
+        if (quest001 && quest001.state === 'IN_PROGRESS') {
+            const currentStep = quest001.steps.find(s => !s.isCompleted);
+
+            // Step 0: Open Tutorial Chest
+            if (currentStep && currentStep.targetType === 'OPEN_CHEST' && eventType === 'OPEN_CHEST') {
+                this.completeStep(quest001, currentStep);
+                this.game.ui.showToast("✅ Objectif : Équipez votre arme (Touche I)", 'success');
+                if (this.game.audio) this.game.audio.play('quest_complete');
+                return;
+            }
+
+            // Step 1: Equip a Weapon
+            if (currentStep && currentStep.targetType === 'EQUIP_WEAPON' && eventType === 'EQUIP_WEAPON') {
+                this.completeStep(quest001, currentStep);
+                this.completeQuest(quest001);
+                if (this.game.player) this.game.player.gainExp(100);
+                this.game.ui.showToast("🎉 Quête Terminée ! Prêt au combat.", 'success');
+                if (this.game.audio) this.game.audio.play('quest_complete');
+                return;
+            }
+        }
+
+        // Generic Quest Logic (for other quests)
         this.activeQuests.forEach(quest => {
             if (quest.state !== 'IN_PROGRESS') return;
 

@@ -48,6 +48,18 @@ export class SaveManager {
     }
 
     /**
+     * Delete save and reload page for UI refresh
+     * @param {number} slotIndex 
+     */
+    deleteSave(slotIndex) {
+        const key = `${this.baseKey}${slotIndex}`;
+        localStorage.removeItem(key);
+        console.log(`[SaveManager] Slot ${slotIndex} deleted.`);
+        // Recharger la page pour rafraîchir l'UI proprement
+        window.location.reload();
+    }
+
+    /**
      * Returns info for all 3 slots.
      * @returns {Promise<Array<{id: number, exists: boolean, level: number, date: string, location: string}>>}
      */
