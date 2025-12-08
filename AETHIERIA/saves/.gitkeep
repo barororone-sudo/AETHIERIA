@@ -1,0 +1,10 @@
+# Saves Directory
+
+This directory stores game save files in JSON format.
+
+Files:
+- `slot_1.json` - Save slot 1
+- `slot_2.json` - Save slot 2
+- `slot_3.json` - Save slot 3
+
+**Note**: This directory is created automatically by the save server.

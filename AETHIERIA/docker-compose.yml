@@ -23,3 +23,27 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  save-server:
+    build: .
+    container_name: aetheria_save_server
+    ports:
+      - "3003:3003"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./saves:/app/saves
+    environment:
+      - NODE_ENV=production
+    command: npm run save-server
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"

@@ -28,11 +28,18 @@ export class Input {
     init() {
         document.addEventListener('keydown', (e) => this.onKey(e, true));
         document.addEventListener('keyup', (e) => this.onKey(e, false));
+
+        // Fullscreen toggle (F11 or F)
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'F11' || (e.key === 'f' && !e.ctrlKey && !e.altKey)) {
+                e.preventDefault();
+                this.toggleFullscreen();
+            }
+        });
     }
 
     onKey(e, isDown) {
         if (e.repeat) return; // Ignore key repeats
-        // console.log(`Key: ${e.code}, Down: ${isDown}`);
 
         switch (e.code) {
             case 'KeyW':
@@ -76,14 +83,36 @@ export class Input {
                 this.keys.p = isDown;
                 break;
             case 'Enter':
-            case 'Space':
                 this.keys.confirm = isDown;
-                if (e.code === 'Space') this.keys.jump = isDown; // Keep Jump on Space too
                 break;
             case 'Tab':
                 e.preventDefault();
                 this.keys.lock = isDown;
                 break;
         }
+    }
+
+    /**
+     * Toggle fullscreen mode
+     */
+    toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            // Enter fullscreen
+            document.documentElement.requestFullscreen().catch(err => {
+                console.warn('Fullscreen request failed:', err);
+            });
+        } else {
+            // Exit fullscreen
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
+        }
+    }
+
+    /**
+     * Check if currently in fullscreen
+     */
+    isFullscreen() {
+        return !!document.fullscreenElement;
     }
 }

@@ -18,6 +18,7 @@ export class LevelManager {
 
     generate() {
         console.log("Generating World Population...");
+        this.spawnTutorialChest(); // NOUVEAU: Coffre de tutoriel au spawn
         this.populateCamps();
         this.spawnHiddenChests();
         this.spawnLegendaryChest();
@@ -149,6 +150,29 @@ export class LevelManager {
         this.activeCamps.push({ x, z, chest: chest, enemies: campEnemies, cleared: false });
         // Register Chest
         if (this.world.chests) this.world.chests.push(chest);
+    }
+
+    /**
+     * Coffre de Tutoriel - Immanquable au spawn
+     */
+    spawnTutorialChest() {
+        // Position juste devant le joueur au spawn (0, 0, -10)
+        const x = 0;
+        const z = -10;
+        const y = this.terrain ? this.terrain.getGlobalHeight(x, z) : 0;
+
+        console.log(`Spawning Tutorial Chest at (${x}, ${y}, ${z})`);
+
+        // Coffre Tier 1 (Common) avec sword_starter garanti
+        const chest = new Chest(this.game, this.world, new THREE.Vector3(x, y, z), 1, false);
+
+        // Forcer le contenu pour le tutoriel
+        // Note: Chest.js génère du loot aléatoire, on pourrait override ici
+        // Pour l'instant, on fait confiance au système de loot Tier 1
+
+        if (this.world.chests) this.world.chests.push(chest);
+
+        console.log("Tutorial Chest spawned! Open it to start your adventure.");
     }
 
     spawnHiddenChests() {

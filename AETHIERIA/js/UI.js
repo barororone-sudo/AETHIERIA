@@ -783,12 +783,15 @@ export class UIManager {
             // Bouton supprimer
             const deleteBtn = card.querySelector('.delete-btn');
             deleteBtn.onclick = async (e) => {
+                console.log('🗑️ Delete button clicked for slot:', slot.id);
                 e.stopPropagation();
+                e.preventDefault();
                 if (confirm(`Supprimer le Profil ${slot.id} ?`)) {
+                    console.log('✅ User confirmed deletion');
                     await this.game.saveManager.deleteSlot(slot.id);
                     overlay.remove();
                     const newSlots = await this.game.saveManager.getSlotsInfo();
-                    this.createSlotSelectionUI(newSlots);
+                    await this.createSlotSelectionUI(newSlots);
                 }
             };
 

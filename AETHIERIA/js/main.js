@@ -183,6 +183,11 @@ export class Game {
         }
 
         this.ui.hideMainMenu();
+
+        // Show Game HUD (HP, XP, etc.)
+        const gameUI = document.getElementById('game-ui');
+        if (gameUI) gameUI.style.display = 'block';
+
         // Hide Loading Screen if it's still there
         const loadingScreen = document.getElementById('loading-screen');
         if (loadingScreen) {
