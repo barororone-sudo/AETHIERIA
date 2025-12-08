@@ -66,21 +66,48 @@ export class CombatUI {
 
     showDamage(position, amount, isCritical = false) {
         const el = document.createElement('div');
-        el.innerText = typeof amount === 'number' ? Math.round(amount) : amount;
+        const isText = typeof amount === 'string';
+
+        // Déterminer le contenu et le style
+        if (isText) {
+            // LOOT TEXT (String)
+            el.innerText = amount;
+
+            // Couleur : Or si "Légendaire", sinon Vert
+            const isLegendary = amount.toLowerCase().includes('légendaire') ||
+                amount.toLowerCase().includes('legendary');
+            el.style.color = isLegendary ? '#FFD700' : '#00FF00';
+            el.style.fontSize = '20px'; // Un peu plus petit que les crits
+
+        } else {
+            // DAMAGE NUMBER (Number)
+            el.innerText = Math.round(amount);
+            el.style.color = isCritical ? '#ffcc00' : '#ffffff';
+            el.style.fontSize = isCritical ? '24px' : '16px';
+        }
+
+        // Styles communs
         el.style.position = 'absolute';
-        el.style.color = isCritical ? '#ffcc00' : '#ffffff';
-        el.style.fontSize = isCritical ? '24px' : '16px';
         el.style.fontWeight = 'bold';
         el.style.textShadow = '2px 2px 0 #000';
-        el.style.transition = 'opacity 0.5s';
+        el.style.transition = isText ? 'opacity 1s' : 'opacity 0.5s';
+        el.style.pointerEvents = 'none';
 
         this.container.appendChild(el);
 
+        // Offset aléatoire pour éviter le chevauchement
+        const randomOffsetX = (Math.random() - 0.5) * 0.5; // ±0.25 unités
+        const randomOffsetY = (Math.random() - 0.5) * 0.3; // ±0.15 unités
+
+        const offsetPosition = position.clone();
+        offsetPosition.x += randomOffsetX;
+        offsetPosition.y += randomOffsetY;
+
         this.elements.push({
             dom: el,
-            pos: position.clone(), // Static world pos at moment of impact
-            velocity: new THREE.Vector3(0, 1, 0), // Moves up
-            life: 1.0, // Seconds
+            pos: offsetPosition,
+            velocity: new THREE.Vector3(0, isText ? 0.5 : 1, 0), // Loot monte plus lentement
+            life: isText ? 2.0 : 1.0, // Loot visible 2s, dégâts 1s
             type: 'damage'
         });
     }
@@ -115,13 +142,14 @@ export class CombatUI {
                     this.removeElement(i);
                     continue;
                 }
-                // Move logic
-                el.pos.y += dt; // Float up
+                // Move logic - utilise la vélocité pour un mouvement fluide
+                el.pos.add(el.velocity.clone().multiplyScalar(dt));
                 worldPos = el.pos.clone();
 
-                // Opacity fade
-                if (el.life < 0.5) {
-                    el.dom.style.opacity = el.life * 2;
+                // Opacity fade - commence à fader dans le dernier quart de vie
+                const fadeThreshold = el.life < 0.5 ? 0.5 : 1.0;
+                if (el.life < fadeThreshold) {
+                    el.dom.style.opacity = el.life / fadeThreshold;
                 }
             }
 
