@@ -1,48 +1,40 @@
 export const QuestsDb = [
     {
         id: 'quest_001',
-        title: "L'Éveil",
-        description: "Après des siècles de sommeil, ECHO-7 se réactive. Le protocole de purge doit commencer. Atteignez la première Tour de la Plaine pour scanner la zone.",
+        title: "Le Départ",
+        description: "Après des siècles de sommeil, ECHO-7 se réactive. Préparez-vous pour votre première mission.",
         steps: [
             {
-                id: 'q1_step1',
-                description: "Trouver une arme pour vous défendre.",
-                targetType: 'ITEM_PICKUP',
-                targetId: 'sword_starter',
-                targetPos: { x: 15, y: 0.5, z: 10 },
+                id: 'q1_step0',
+                description: "Parlez au Gardien.",
+                targetType: 'TALK',
+                targetId: 'guardian_npc',
                 isCompleted: false,
                 onComplete: (game) => {
-                    const lumina = game.world.npcs.find(n => n.name === 'Lumina');
-                    if (lumina) {
-                        lumina.dialogueData = 'lumina_sword_found';
-                    }
-                    game.ui.showToast("Nouvel indice obtenu.");
+                    game.ui.showToast("Le Gardien vous a donné vos instructions.");
+                    if (game.ui.playSound) game.ui.playSound('ui_ding');
+                }
+            },
+            {
+                id: 'q1_step1',
+                description: "Trouvez une arme dans un coffre.",
+                targetType: 'OPEN_CHEST',
+                targetId: 'any',
+                isCompleted: false,
+                onComplete: (game) => {
+                    game.ui.showToast("Nouvel Objectif : Équipez l'arme");
+                    if (game.ui.playSound) game.ui.playSound('quest_step_complete');
                 }
             },
             {
                 id: 'q1_step2',
-                description: "Éliminer le Gardien du Pont qui bloque l'accès à la Tour.",
-                targetType: 'KILL_ENEMY',
-                targetId: 'guardian_golem',
-                targetPos: { x: 0, y: 5, z: -40 },
+                description: "Équipez votre arme (Touche I).",
+                targetType: 'EQUIP_WEAPON',
+                targetId: 'any',
                 isCompleted: false,
                 onComplete: (game) => {
-                    game.story.finishAct1Boss();
-                }
-            },
-            {
-                id: 'q1_step3',
-                description: "Grimper au sommet de la Tour et l'activer.",
-                targetType: 'INTERACT',
-                targetId: 'tower_central',
-                targetPos: { x: 50, y: 0, z: 50 },
-                isCompleted: false,
-                onComplete: (game) => {
-                    game.story.triggerMapReveal(50, 50);
-                    setTimeout(() => {
-                        game.story.completeQuest('quest_001');
-                        game.story.startAct2();
-                    }, 4000);
+                    game.ui.showToast("Prêt au combat !");
+                    if (game.ui.playSound) game.ui.playSound('quest_step_complete');
                 }
             }
         ],

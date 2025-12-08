@@ -22,6 +22,15 @@ export const Utils = {
         return Math.random() * (max - min) + min;
     },
 
+    // Random point on a circle (XZ plane)
+    randomPointOnCircle: (radius) => {
+        const angle = Math.random() * Math.PI * 2;
+        return {
+            x: Math.cos(angle) * radius,
+            z: Math.sin(angle) * radius
+        };
+    },
+
     // --- GRAPHICS HELPERS ---
 
     // Generate a 4-tone gradient map for Toon Shader

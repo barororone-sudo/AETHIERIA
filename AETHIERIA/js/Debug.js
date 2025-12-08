@@ -1,4 +1,7 @@
 // js/Debug.js
+import { ItemsDb } from './data/ItemsDb.js';
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
 
 export class DebugManager {
     constructor(game) {
@@ -19,9 +22,17 @@ export class DebugManager {
         this.container.style.fontFamily = 'monospace';
         this.container.style.display = 'none';
         this.container.style.zIndex = '1000';
+        this.container.style.maxHeight = '90vh';
+        this.container.style.overflowY = 'auto';
 
         this.container.innerHTML = `
             <h3>DEBUG MENU (F3)</h3>
+            <div style="border: 1px solid #004400; padding: 5px; margin-bottom: 5px;">
+                <strong>SHOOTING RANGE</strong><br>
+                <select id="dbg-weapon-list" style="background:#000; color:#0f0; border:1px solid #0f0; max-width:150px;"></select>
+                <button id="dbg-equip">Équiper</button><br><br>
+                <button id="dbg-dummy">Spawn Dummy</button>
+            </div>
             <button id="dbg-teleport">Teleport to (0,10,0)</button><br>
             <button id="dbg-items">Give All Items</button><br>
             <button id="dbg-enemy">Spawn Enemy</button><br>
@@ -32,6 +43,62 @@ export class DebugManager {
         `;
 
         document.body.appendChild(this.container);
+
+        this.populateWeaponList();
+
+        // --- HANDLERS ---
+
+        // Weapon Equip
+        document.getElementById('dbg-equip').onclick = () => {
+            const select = document.getElementById('dbg-weapon-list');
+            // @ts-ignore
+            const itemId = select.value;
+            if (itemId) {
+                this.game.player.equipWeapon(itemId);
+                const item = ItemsDb.find(i => i.id === itemId);
+                console.log(`Debug: Arme de test équipée : ${item ? item.name : itemId}`);
+            }
+        };
+
+        // Dummy Spawner
+        document.getElementById('dbg-dummy').onclick = () => {
+            const player = this.game.player;
+            if (!player || !player.mesh) return;
+
+            // Calculate position 5m in front
+            const forward = new THREE.Vector3(0, 0, -1);
+            forward.applyQuaternion(player.mesh.quaternion);
+            const spawnPos = player.mesh.position.clone().add(forward.multiplyScalar(5));
+            // Ensure slightly above ground
+            spawnPos.y += 2;
+
+            // Spawn using World method but capture instance
+            // We need to access the enemies list, which is in LevelManager or World?
+            // World.spawnEnemy adds it to this.enemies usually.
+            // Let's manually spawn one to control it specifically.
+            const enemy = this.game.world.spawnEnemy(spawnPos);
+
+            if (enemy) {
+                // Disable AI
+                enemy.state = 'DUMMY';
+                // Override update to do nothing but sync physics (immobilized)
+                enemy.update = (dt) => {
+                    if (enemy.body) {
+                        enemy.body.velocity.set(0, 0, 0); // No movement
+                        enemy.body.angularVelocity.set(0, 0, 0);
+                        if (enemy.mesh) {
+                            enemy.mesh.position.copy(enemy.body.position);
+                            enemy.mesh.quaternion.copy(enemy.body.quaternion);
+                        }
+                    }
+                };
+                // Make it look different?
+                if (enemy.mesh && enemy.mesh.material) {
+                    enemy.mesh.material.color.setHex(0xFFFF00); // Yellow Dummy
+                }
+                console.log("Debug: Training Dummy Spawned at", spawnPos);
+            }
+        };
 
         document.getElementById('dbg-teleport').onclick = () => {
             this.game.player.body.position.set(0, 10, 0);
@@ -47,8 +114,20 @@ export class DebugManager {
 
         document.getElementById('dbg-enemy').onclick = () => {
             const pos = this.game.player.body.position.clone();
-            pos.x += 5;
-            this.game.world.spawnEnemy(pos);
+            const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.game.player.mesh.quaternion);
+            pos.vadd(new CANNON.Vec3(forward.x * 5, 0, forward.z * 5), pos);
+
+            // Random from roster
+            const types = [
+                'slime_green', 'slime_red', 'slime_blue',
+                'goblin_scout', 'goblin_archer', 'goblin_thief',
+                'orc_warrior', 'orc_berserker', 'orc_chief',
+                'construct_sentinel'
+            ];
+            const rndId = types[Math.floor(Math.random() * types.length)];
+
+            console.log(`Debug: Spawning ${rndId}`);
+            new this.game.world.Enemy(this.game.world, pos, rndId);
         };
 
         document.getElementById('dbg-golem').onclick = () => {
@@ -75,6 +154,23 @@ export class DebugManager {
             }
             alert("Minimap Verified! Check Console for details. HUD should flash red.");
         };
+    }
+
+    populateWeaponList() {
+        const select = document.getElementById('dbg-weapon-list');
+        if (!select) return;
+
+        ItemsDb.forEach(item => {
+            // Filter only weapons if needed, but ItemsDb seems to be mostly weapons now
+            if (item.type === 'WEAPON') {
+                const opt = document.createElement('option');
+                opt.value = item.id;
+                // [TYPE] Name (Rarity)
+                const typeInfo = item.weaponType ? `[${item.weaponType}] ` : '';
+                opt.text = `${typeInfo}${item.name} (${item.rarity})`;
+                select.appendChild(opt);
+            }
+        });
     }
 
     initInput() {

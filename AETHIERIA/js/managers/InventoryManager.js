@@ -1,5 +1,6 @@
 // js/managers/InventoryManager.js
 import { ItemType } from '../data/Items.js';
+import { ItemCategory } from '../data/ItemsDb.js';
 
 export class InventoryManager {
     constructor(player) {
@@ -86,7 +87,40 @@ export class InventoryManager {
         return this.slots;
     }
 
-    loadInventoryData(data) {
-        this.slots = data || new Array(20).fill(null);
+    getSlotsByCategory(filter) {
+        if (filter === 'ALL') {
+            // Return all valid slots with their index
+            return this.slots.map((slot, index) => ({ slot, index })).filter(item => item.slot !== null);
+        }
+
+        const filtered = [];
+        for (let i = 0; i < this.slots.length; i++) {
+            const slot = this.slots[i];
+            if (!slot) continue;
+
+            const item = this.player.game.data.getItem(slot.id);
+            if (!item) continue;
+
+            let match = false;
+            switch (filter) {
+                case 'WEAPON':
+                    match = (item.category === ItemCategory.WEAPON || item.category === ItemCategory.ARMOR);
+                    break;
+                case 'HEAL':
+                    match = (item.category === ItemCategory.CONSUMABLE || item.category === ItemCategory.FOOD);
+                    break;
+                case 'MATERIAL':
+                    match = (item.category === ItemCategory.MATERIAL || item.category === ItemCategory.MATERIAL_WEAPON);
+                    break;
+                case 'QUEST':
+                    match = (item.category === ItemCategory.QUEST);
+                    break;
+            }
+
+            if (match) {
+                filtered.push({ slot, index: i });
+            }
+        }
+        return filtered;
     }
 }

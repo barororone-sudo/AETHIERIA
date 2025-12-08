@@ -10,6 +10,7 @@ import { MonsterFactory } from './MonsterFactory.js';
 import { TerrainManager } from './world/TerrainManager.js';
 import { Chest } from './world/Chest.js';
 import { ForestGenerator } from './world/ForestGenerator.js';
+import { LevelManager } from './managers/LevelManager.js';
 
 export class World {
     constructor(game) {
@@ -51,6 +52,7 @@ export class World {
         // --- FACTORIES ---
         this.monsterFactory = new MonsterFactory(game);
         this.terrainManager = new TerrainManager(this);
+        this.levelManager = new LevelManager(this);
 
         // --- LIGHTING ---
         this.setupLights();
@@ -85,10 +87,11 @@ export class World {
 
         // --- ENEMIES ---
         this.enemies = [];
-        this.createEnemies();
+        // this.createEnemies(); // Deprecated by LevelManager
+        // this.spawnGolem(new CANNON.Vec3(0, 5, -40)); // Moved to LevelManager logic or kept as arena boss
 
-        // Spawn Golem Boss by default
-        this.spawnGolem(new CANNON.Vec3(0, 5, -40));
+        // Use World Builder
+        this.levelManager.generate();
 
         // --- NPCS ---
         this.npcs = [];
@@ -830,6 +833,10 @@ export class World {
 
         if (this.towers) {
             this.towers.forEach(tower => tower.update(dt));
+        }
+
+        if (this.levelManager && this.levelManager.update) {
+            this.levelManager.update(dt);
         }
     }
 

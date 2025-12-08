@@ -38,6 +38,7 @@ export class Player {
         /** @type {THREE.Mesh} */ this.leftFoot;
         /** @type {THREE.Mesh} */ this.rightFoot;
         /** @type {THREE.Group} */ this.weaponSlot;
+        /** @type {THREE.Group} */ this.leftWeaponSlot;
         /** @type {THREE.Group} */ this.gliderMesh;
         /** @type {THREE.Group} */ this.shieldGroup;
         /** @type {THREE.Mesh} */ this.shieldMesh;
@@ -59,13 +60,15 @@ export class Player {
         this.exp = 0;
         this.expToNextLevel = 100;
 
-        // BASE STATS (Weak Start)
+        // BASE STATS (High HP RPG Style)
         this.baseStats = {
-            hp: 50,
-            attack: 5,
-            defense: 0,
+            hp: 500,
+            attack: 50,
+            defense: 5,
             speed: 1.0
         };
+
+        this.levelProgress = 0.0;
 
         this.hp = this.baseStats.hp;
         this.maxHp = this.baseStats.hp;
@@ -278,13 +281,20 @@ export class Player {
             this.exp -= this.expToNextLevel;
             this.expToNextLevel = Math.floor(this.expToNextLevel * 1.5);
 
-            this.baseStats.hp += 10;
-            this.baseStats.attack += 2;
-            this.hp = this.maxHp = this.baseStats.hp;
+            // RPG Growth: +10% HP, +5% Atk (Compound)
+            this.baseStats.hp = Math.floor(this.baseStats.hp * 1.10);
+            this.baseStats.attack = Math.floor(this.baseStats.attack * 1.05);
+
+            // Full Heal on Level Up
+            this.hp = this.baseStats.hp;
+            this.maxHp = this.baseStats.hp;
 
             this.updateStats();
             if (this.game.ui) this.game.ui.showToast(`NIVEAU SUIVANT ! (Lvl ${this.level})`);
         }
+
+        // Calculate Progress (0.0 - 1.0)
+        this.levelProgress = this.exp / this.expToNextLevel;
     }
 
     updateStats() {
@@ -451,6 +461,10 @@ export class Player {
         this.leftHand = new THREE.Group();
         this.leftHand.position.y = -armL * 0.9;
         this.leftForeArm.add(this.leftHand);
+
+        this.leftWeaponSlot = new THREE.Group();
+        this.leftWeaponSlot.rotation.x = Math.PI / 2;
+        this.leftHand.add(this.leftWeaponSlot);
 
         this.rightArm = new THREE.Group();
         this.rightArm.position.set(0.28, 0.45, 0);
@@ -627,10 +641,18 @@ export class Player {
                         this.body.velocity.z = dodgeDir.z * force;
                         this.body.velocity.y = 5;
                     } else {
-                        this.body.velocity.y = 15;
+                        // JUMP FORCE TUNED (15 -> 12)
+                        this.body.velocity.y = 12;
                         this.state = 'AIR';
                         this.lastJumpTime = Date.now();
                         this.hasReleasedJump = false;
+                    }
+                } else if (speed > 0.1) {
+                    // MOVEMENT LOGIC
+                    if (this.input.keys.sprint && !this.exhausted) {
+                        this.state = 'SPRINT';
+                    } else {
+                        this.state = 'RUN';
                     }
                 } else {
                     this.state = 'IDLE';
@@ -851,7 +873,8 @@ export class Player {
             case 'RUN':
             case 'WALK':
             case 'IDLE':
-                let targetSpeed = this.state === 'SPRINT' ? 18 : (this.state === 'RUN' ? 12 : 8);
+                // SPEEDS TUNED: SPRINT=12, RUN=7, WALK=4
+                let targetSpeed = this.state === 'SPRINT' ? 12 : (this.state === 'RUN' ? 7 : 4);
                 const accel = (this.state === 'IDLE') ? 25.0 : 10.0;
                 this.currentSpeed = THREE.MathUtils.lerp(this.currentSpeed, targetSpeed * inputLen, dt * accel);
 
@@ -903,53 +926,124 @@ export class Player {
             return;
         }
 
-        const time = Date.now() * 0.01;
-        let targetRotX = 0, targetRotY = 0, targetPosY = 0.95;
+        const time = Date.now() * 0.005; // Base time scale
+        let targetRotX = 0, targetRotY = 0, targetRotZ = 0, targetPosY = 0.95;
+
+        // Limbs Rotation State (x, y, z)
+        let lArmRot = { x: 0, y: 0, z: 0.1 }; // Slight A-pose
+        let rArmRot = { x: 0, y: 0, z: -0.1 };
+        let lLegRot = { x: 0, y: 0, z: 0 };
+        let rLegRot = { x: 0, y: 0, z: 0 };
+
+        // Articulated Parts (Indices: ForeArm, Shin)
+        let lForeArmRot = { x: -0.2, y: 0, z: 0 }; // Natural bend
+        let rForeArmRot = { x: -0.2, y: 0, z: 0 };
+        let lShinRot = { x: 0, y: 0, z: 0 };
+        let rShinRot = { x: 0, y: 0, z: 0 };
+
+        const lerpFactor = dt * 15;
 
         if (this.gliderMesh) this.gliderMesh.visible = (this.state === 'GLIDE');
-
-        let lArmRot = { x: 0, y: 0, z: 0 }, rArmRot = { x: 0, y: 0, z: 0 };
-        let lLegRot = { x: 0, y: 0, z: 0 }, rLegRot = { x: 0, y: 0, z: 0 };
-        const lerpFactor = dt * 10;
 
         switch (this.state) {
             case 'GLIDE':
                 targetRotX = 0.5;
                 lArmRot.z = 0.2; rArmRot.z = -0.2;
                 lArmRot.x = -1.5; rArmRot.x = -1.5;
-                lLegRot.x = 0.5; rLegRot.x = 0.5;
+                lLegRot.x = 0.2; rLegRot.x = 0.2;
+                lShinRot.x = 0.5; rShinRot.x = 0.5; // Legs up
                 break;
+
             case 'DIVE':
                 targetRotX = -1.5;
                 lArmRot.x = -3.0; rArmRot.x = -3.0;
+                lLegRot.x = 0.2; rLegRot.x = 0.2;
                 break;
+
             case 'IDLE':
-                targetPosY = 0.95 + Math.sin(time * 0.5) * 0.01;
+                // "Ready" Stance: Knees bent, feet apart
+                targetPosY = 0.90 + Math.sin(time * 2) * 0.005; // Breathe
+
+                lLegRot.z = -0.05; rLegRot.z = 0.05; // Wide stance
+                lLegRot.x = -0.1; rLegRot.x = -0.1; // Thighs forward
+                lShinRot.x = 0.2; rShinRot.x = 0.2; // Knees bent (Counter thigh)
+
+                // Arms ready
+                lArmRot.z = 0.1; rArmRot.z = -0.1;
+                lArmRot.x = Math.sin(time * 1.5) * 0.03;
+                rArmRot.x = Math.cos(time * 1.5) * 0.03;
                 break;
+
             case 'RUN':
             case 'WALK':
-                targetRotX = Math.min(this.currentSpeed * 0.05, 0.2);
-                const runSpeed = this.currentSpeed * 1.5;
-                lLegRot.x = Math.cos(time * runSpeed);
-                rLegRot.x = Math.cos(time * runSpeed + Math.PI);
-                lArmRot.x = Math.cos(time * runSpeed + Math.PI);
-                rArmRot.x = Math.cos(time * runSpeed);
+            case 'SPRINT':
+                targetRotX = Math.min(this.currentSpeed * 0.05, 0.2); // Lean forward
+                const runSpeed = this.currentSpeed * 0.8; // Speed multiplier
+                const t = time * runSpeed;
+
+                // --- LEGS (Sinus) ---
+                // Thighs
+                lLegRot.x = Math.cos(t);
+                rLegRot.x = Math.cos(t + Math.PI);
+
+                // Shins (Bend when leg moves backward/up)
+                // Logic: When Thigh is going Back (cos > 0 ?? no), we plant.
+                // When Thigh moves Forward (lift), Knee bends.
+                // Simple trick: max(0, sin) offset properly
+                lShinRot.x = Math.max(0, Math.sin(t + 0.5) * 1.5);
+                rShinRot.x = Math.max(0, Math.sin(t + Math.PI + 0.5) * 1.5);
+
+                // --- ARMS (Opposite Leg) ---
+                lArmRot.x = Math.cos(t + Math.PI) * 0.8;
+                rArmRot.x = Math.cos(t) * 0.8;
+
+                // Forearms (Inertia - lag behind arm)
+                lForeArmRot.x = -0.5 - Math.cos(t + Math.PI) * 0.3;
+                rForeArmRot.x = -0.5 - Math.cos(t) * 0.3;
+
+                // --- BODY BOB & TILT (BANKING) ---
+                // Bounce on every step (frequency * 2)
+                const bounce = Math.abs(Math.sin(t));
+                targetPosY = 0.94 + bounce * 0.04;
+
+                // Sway Side-to-Side
+                targetRotZ = Math.cos(t) * 0.05;
+
+                // Banking (Lean into turn)
+                // We need rotationDelta. Let's approximate from rotation velocity or Input
+                // Simple approach: Input Left/Right gives z-tilt
+                if (this.input.keys.left) targetRotZ += 0.15;
+                if (this.input.keys.right) targetRotZ -= 0.15;
+
                 break;
         }
 
         if (this.bodyMesh && this.state !== 'SURF') {
             this.bodyMesh.rotation.y = THREE.MathUtils.lerp(this.bodyMesh.rotation.y, targetRotY, lerpFactor);
             this.bodyMesh.rotation.x = THREE.MathUtils.lerp(this.bodyMesh.rotation.x, targetRotX, lerpFactor);
+            this.bodyMesh.rotation.z = THREE.MathUtils.lerp(this.bodyMesh.rotation.z, targetRotZ, lerpFactor);
             this.bodyMesh.position.y = THREE.MathUtils.lerp(this.bodyMesh.position.y, targetPosY, lerpFactor);
         }
 
+        // Apply Rotations
         this.animateLimb(this.leftArm, lArmRot, lerpFactor);
         this.animateLimb(this.rightArm, rArmRot, lerpFactor);
         this.animateLimb(this.leftLeg, lLegRot, lerpFactor);
         this.animateLimb(this.rightLeg, rLegRot, lerpFactor);
 
+        // Sub-Limbs
+        this.animateLimb(this.leftForeArm, lForeArmRot, lerpFactor);
+        this.animateLimb(this.rightForeArm, rForeArmRot, lerpFactor);
+        this.animateLimb(this.leftShin, lShinRot, lerpFactor);
+        this.animateLimb(this.rightShin, rShinRot, lerpFactor);
+
+        // Head Tracking
+        this.updateHeadTracking(dt);
+
         if (this.isAttacking) {
-            rArmRot.x = -0.5; rArmRot.z = -0.5; // Override for attack base
+            // Attack Overrides...
+            if (this.rightForeArm) this.rightForeArm.rotation.x = -0.1; // Stiffen arm
+            rArmRot.x = -0.5; rArmRot.z = -0.5;
             this.updateAttackVisuals(dt);
         }
     }
@@ -1036,35 +1130,64 @@ export class Player {
             }
 
             case 'DAGGER': {
-                // Fast Poke / Staccato
+                // Hyper Styled Dagger Combos
                 const t = easeOutQuad(progress);
+                const sinPi = Math.sin(progress * Math.PI);
 
-                // Dual Wield Visuals
+                // Arms: Start raised and ready
                 this.rightArm.rotation.x = -1.5;
                 this.leftArm.rotation.x = -1.5;
 
                 if (combo === 0) {
-                    // Right Stab
-                    // @ts-ignore
-                    this.rightArm.position.z = Math.sin(progress * Math.PI) * 0.5;
-                    // @ts-ignore
-                    this.leftArm.position.z = 0;
-                } else if (combo === 1) {
-                    // Left Stab
-                    // @ts-ignore
-                    this.leftArm.position.z = Math.sin(progress * Math.PI) * 0.5;
-                    // @ts-ignore
-                    this.rightArm.position.z = 0;
-                } else {
-                    // Cross Slash (Both)
-                    const xSlash = Math.sin(progress * Math.PI);
-                    this.rightArm.rotation.y = -0.5 - xSlash; // Outwards
-                    this.leftArm.rotation.y = 0.5 + xSlash;   // Outwards
+                    // 1. Right Backhand Slit + Body Twist
+                    // Twist body left to emphasize right slash
+                    this.bodyMesh.rotation.y = THREE.MathUtils.lerp(0, 0.5, sinPi);
 
+                    this.rightArm.rotation.y = THREE.MathUtils.lerp(-0.5, -2.0, sinPi);
+                    this.rightArm.rotation.x = -1.2;
                     // @ts-ignore
-                    this.rightArm.position.z = xSlash * 0.3;
+                    this.rightArm.position.z = sinPi * 0.4;
+                    // Left Arm Guarding
+                    this.leftArm.rotation.x = -1.0;
+                    this.leftArm.rotation.z = 0.5;
+                } else if (combo === 1) {
+                    // 2. Left Backhand Slit + Body Twist
+                    // Twist body right
+                    this.bodyMesh.rotation.y = THREE.MathUtils.lerp(0, -0.5, sinPi);
+
+                    this.leftArm.rotation.y = THREE.MathUtils.lerp(0.5, 2.0, sinPi);
+                    this.leftArm.rotation.x = -1.2;
                     // @ts-ignore
-                    this.leftArm.position.z = xSlash * 0.3;
+                    this.leftArm.position.z = sinPi * 0.4;
+                    // Right Arm Guarding
+                    this.rightArm.rotation.x = -1.0;
+                    this.rightArm.rotation.z = -0.5;
+                } else {
+                    // 3. X-Scissor Dash
+                    // Crouch/Lean forward
+                    this.bodyMesh.rotation.x = 0.5 * sinPi;
+
+                    // Wide Open -> Snap Shut
+                    // Phase 1: Open Wide
+                    if (progress < 0.2) {
+                        this.rightArm.rotation.y = -0.5;
+                        this.leftArm.rotation.y = 0.5;
+                    } else {
+                        // Phase 2: Snap
+                        const snap = (progress - 0.2) / 0.8;
+                        this.rightArm.rotation.y = THREE.MathUtils.lerp(-0.5, -1.8, snap); // Cross inwards
+                        this.leftArm.rotation.y = THREE.MathUtils.lerp(0.5, 1.8, snap);    // Cross inwards
+                        // @ts-ignore
+                        this.rightArm.position.z = snap * 0.5;
+                        // @ts-ignore
+                        this.leftArm.position.z = snap * 0.5;
+
+                        // Screen Shake on impact
+                        if (snap > 0.5 && !this.shakeTriggered) {
+                            this.screenShake(0.3, 0.15);
+                            this.shakeTriggered = true;
+                        }
+                    }
                 }
                 break;
             }
@@ -1342,12 +1465,86 @@ export class Player {
         this.updateStats();
         console.log(`Equipping [Procedural]: ${item.name}`);
 
+        if (this.game.story) {
+            this.game.story.triggerEvent('EQUIP_WEAPON', { id: itemId });
+        }
+
         const meshGroup = WeaponGenerator.createWeapon(item);
         meshGroup.rotation.x = -Math.PI / 2;
         this.weaponSlot.add(meshGroup);
 
+        if (this.leftWeaponSlot) {
+            // Clear left hand
+            while (this.leftWeaponSlot.children.length > 0) {
+                this.leftWeaponSlot.remove(this.leftWeaponSlot.children[0]);
+            }
+
+            // Dual Wield Daggers
+            if (item.weaponType === 'DAGGER') {
+                const offHandMesh = WeaponGenerator.createWeapon(item);
+                offHandMesh.rotation.x = -Math.PI / 2;
+                // Mirror if asymmetric? Daggers usually symmetric.
+                // Just add it.
+                this.leftWeaponSlot.add(offHandMesh);
+            }
+        }
+
         if (this.combat) {
             // combat logic
         }
+    }
+
+    /**
+     * @param {number} dt
+     */
+    updateHeadTracking(dt) {
+        if (!this.head) return;
+
+        let targetLookY = 0;
+        let targetLookX = 0;
+
+        if (this.combat && this.combat.lockedTarget && this.combat.lockedTarget.mesh) {
+            // LOOK AT TARGET
+            const targetPos = this.combat.lockedTarget.mesh.position;
+            const myPos = this.mesh.position;
+
+            // Vector to target
+            const dx = targetPos.x - myPos.x;
+            const dz = targetPos.z - myPos.z;
+            const dy = (targetPos.y + 1.0) - (myPos.y + 1.5); // Look at head height
+
+            // Convert global angle to local head angle
+            // Global Angle
+            const angleGlobal = Math.atan2(dx, dz);
+            // Player Body Angle
+            const bodyRot = this.mesh.rotation.y;
+
+            // Diff
+            let diff = angleGlobal - bodyRot;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+
+            // Clamp Neck Twist (45 deg)
+            targetLookY = Math.max(-0.8, Math.min(0.8, diff));
+
+            // Pitch (Up/Down)
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            targetLookX = -Math.atan2(dy, dist);
+            targetLookX = Math.max(-0.5, Math.min(0.5, targetLookX));
+
+        } else if (this.currentSpeed > 0.1) {
+            // LOOK INTO TURN
+            // If turning left, look left. 
+            // We can approximate turn by Input
+            // Or better, just slightly bias towards movement direction relative to camera?
+            // Simple: Look slightly into the turn
+            if (this.input.keys.left) targetLookY = 0.5; // Look Left
+            if (this.input.keys.right) targetLookY = -0.5; // Look Right
+        }
+
+        // Apply
+        const lerpSpeed = dt * 5;
+        this.head.rotation.y = THREE.MathUtils.lerp(this.head.rotation.y, targetLookY, lerpSpeed);
+        this.head.rotation.x = THREE.MathUtils.lerp(this.head.rotation.x, targetLookX, lerpSpeed);
     }
 }

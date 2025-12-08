@@ -24,6 +24,10 @@ import { DialogueManager } from './managers/DialogueManager.js';
 import { StoryManager } from './managers/StoryManager.js';
 import { DataManager } from './managers/DataManager.js';
 import { Input } from './Input.js';
+import { Utils } from './Utils.js';
+import { CombatUI } from './ui/CombatUI.js';
+import { ParticleManager } from './managers/ParticleManager.js';
+import { LootManager } from './managers/LootManager.js';
 
 // Initialize Error Handler FIRST
 ErrorHandler.init();
@@ -47,6 +51,9 @@ export class Game {
         /** @type {AudioManager} */ this.audio = new AudioManager();
         /** @type {DebugManager} */ this.debug = new DebugManager(this);
         /** @type {DialogueManager} */ this.dialogueManager = new DialogueManager(this);
+        /** @type {CombatUI} */ this.combatUI = new CombatUI(this);
+        /** @type {LootManager} */ this.lootManager = new LootManager(this);
+        /** @type {ParticleManager|null} */ this.particles = null;
 
         // Asset Loader
         /** @type {AssetLoader} */ this.loader = new AssetLoader(this);
@@ -130,6 +137,8 @@ export class Game {
 
             // Phase 2: Initialization
             if (this.world) this.world.init();
+            if (this.world) this.particles = new ParticleManager(this.world.scene);
+
             this.loader.updateProgress(90);
 
             // Init Minimap (Heavy Operation)
@@ -298,6 +307,9 @@ export class Game {
 
         try {
             if (this.ui) this.ui.update(dt);
+            if (this.combatUI) this.combatUI.update(dt);
+            if (this.lootManager) this.lootManager.update(dt);
+            if (this.particles) this.particles.update(dt);
             if (this.story) this.story.update(dt);
             if (this.dialogueManager) this.dialogueManager.update(dt);
         } catch (e) { }

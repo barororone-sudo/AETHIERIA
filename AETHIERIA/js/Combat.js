@@ -324,10 +324,13 @@ export class Combat {
         if (this.player.audio) this.player.audio.playSFX('sword');
 
         // Play Procedural Animation
+        // DISABLED in favor of Evolved Weapon Math Visuals in Player.js
+        /* 
         if (this.player.animator) {
             const animName = `ATTACK_${this.comboStep + 1}`;
             this.player.animator.play(animName, 1.2); // 1.2x speed
         }
+        */
 
         // Trigger Weapon Trail
         if (this.player.visuals) {

@@ -5,6 +5,7 @@ export class SaveManager {
         this.game = game;
         this.currentSlotId = 1;
         this.baseKey = 'AETHIERIA_SAVE_SLOT_';
+        this.startTime = null; // Pour tracking du temps de jeu
 
         // Auto-save every 60s
         setInterval(() => {
@@ -62,7 +63,9 @@ export class SaveManager {
                         exists: true,
                         level: data.stats ? data.stats.level : (data.level && data.level.level ? data.level.level : 1),
                         date: data.meta ? data.meta.date : 'Unknown',
-                        location: data.meta ? data.meta.location : 'Unknown'
+                        location: data.meta ? data.meta.location : 'Unknown',
+                        timestamp: data.meta ? data.meta.timestamp : 0,
+                        playtime: data.meta ? data.meta.playtime : 0
                     });
                 } catch (e) {
                     console.warn(`Corrupt save in slot ${i}`, e);
@@ -82,8 +85,13 @@ export class SaveManager {
         const data = {
             position: { x: player.body.position.x, y: player.body.position.y, z: player.body.position.z },
             inventory: player.inventory.items,
-            stats: { hp: player.hp, stamina: player.stamina },
-            level: player.levelManager ? player.levelManager.getData() : { level: 1 },
+            stats: {
+                hp: player.hp,
+                stamina: player.stamina,
+                level: player.level,
+                exp: player.exp
+            },
+            worldGen: (this.game.world && this.game.world.levelManager) ? this.game.world.levelManager.getData() : { camps: [] },
             story: this.game.story ? this.game.story.getData() : { state: 'START' },
             world: {
                 time: this.game.world.time,
@@ -93,11 +101,20 @@ export class SaveManager {
                 towers: (this.game.world && this.game.world.towers) ? this.game.world.towers.reduce((acc, tower) => {
                     acc[tower.id] = tower.isUnlocked;
                     return acc;
-                }, {}) : {}
+                }, {}) : {},
+                chests: (this.game.world && this.game.world.chests) ? this.game.world.chests.map(c => c.isOpened).filter(o => o) : [] // Basic chest tracking placeholder
             },
             meta: {
-                date: new Date().toLocaleString(),
-                location: `Zone ${Math.floor(player.body.position.x / 100)}`
+                date: new Date().toLocaleString('fr-FR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }),
+                location: this.getLocationName(player.body.position),
+                timestamp: Date.now(),
+                playtime: this.calculatePlaytime()
             },
             timestamp: Date.now()
         };
@@ -144,13 +161,27 @@ export class SaveManager {
 
             // Restore Stats
             if (data.stats) {
-                player.hp = data.stats.hp || 100;
+                player.hp = data.stats.hp || 500;
+
+                // MIGRATION: Fix Legacy Low HP (Hearts System)
+                if (player.hp < 200) {
+                    console.log("Migrating Legacy Save: Scaling HP x10");
+                    player.hp *= 10;
+                }
+
                 player.stamina = data.stats.stamina || 100;
+                player.level = data.stats.level || 1;
+                player.exp = data.stats.exp || 0;
+
+                player.updateStats(); // Recalculate maxHp etc.
+
+                // Cap HP if it exceeds max (or fix if migration was slightly off)
+                if (player.hp > player.maxHp) player.hp = player.maxHp;
             }
 
-            // Restore Level
-            if (data.level && player.levelManager) {
-                player.levelManager.loadData(data.level);
+            // Restore Level (Use World Manager, not Player)
+            if (data.worldGen && this.game.world && this.game.world.levelManager) {
+                this.game.world.levelManager.loadData(data.worldGen);
             }
 
             // Restore Story
@@ -194,5 +225,63 @@ export class SaveManager {
 
     reset() {
         this.deleteSlot(this.currentSlotId);
+    }
+
+    /**
+     * Calcule le temps de jeu total en secondes
+     */
+    calculatePlaytime() {
+        if (!this.startTime) {
+            this.startTime = Date.now();
+            return 0;
+        }
+        const elapsed = (Date.now() - this.startTime) / 1000;
+        return Math.floor(elapsed);
+    }
+
+    /**
+     * Formate le temps de jeu en heures/minutes
+     */
+    formatPlaytime(seconds) {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        if (hours > 0) {
+            return `${hours}h ${minutes}min`;
+        }
+        return `${minutes}min`;
+    }
+
+    /**
+     * Retourne un nom de zone lisible
+     */
+    getLocationName(position) {
+        const x = position.x;
+        const z = position.z;
+
+        // Zones définies
+        if (x > -100 && x < 100 && z > -100 && z < 100) {
+            return "Plaines de l'Éveil";
+        } else if (x < -100 && z > 50 && z < 250) {
+            return "Forêt des Murmures";
+        } else if (x > 100 && z < -100) {
+            return "Désert Ardent";
+        } else if (Math.abs(x) > 200 || Math.abs(z) > 200) {
+            return "Terres Lointaines";
+        }
+        return "Zone Inconnue";
+    }
+
+    /**
+     * Trouve le slot utilisé le plus récemment
+     */
+    async findLastUsedSlot() {
+        const slots = await this.getSlotsInfo();
+        const existingSlots = slots.filter(s => s.exists && s.timestamp);
+
+        if (existingSlots.length === 0) return null;
+
+        // Trier par timestamp décroissant
+        existingSlots.sort((a, b) => b.timestamp - a.timestamp);
+        return existingSlots[0];
     }
 }

@@ -238,6 +238,9 @@ export class StoryManager {
             // Set First Objective Marker
             this.updateObjectiveMarker(this.activeQuests[0].steps[0]);
 
+            // Update Quest Tracker UI
+            this.updateQuestTracker();
+
             // Reveal Starting Zone (Tower 1 Area)
             /* REMOVED: Automatic Reveal. Player must activate the Tower.
             if (this.game.ui && this.game.ui.mapManager) {
@@ -431,6 +434,42 @@ export class StoryManager {
         }
     }
 
+    /**
+     * Update Quest Tracker UI with current quest objective
+     */
+    updateQuestTracker() {
+        const tracker = document.getElementById('quest-tracker');
+        if (!tracker) return;
+
+        // Find active quest
+        const activeQuest = this.activeQuests.find(q => q.state === 'IN_PROGRESS');
+
+        if (!activeQuest) {
+            // No active quest, hide tracker
+            tracker.classList.remove('visible');
+            return;
+        }
+
+        // Find current step
+        const currentStep = activeQuest.steps.find(s => !s.isCompleted);
+
+        if (!currentStep) {
+            // All steps completed but quest not marked complete yet
+            tracker.classList.remove('visible');
+            return;
+        }
+
+        // Update UI
+        const titleEl = tracker.querySelector('.quest-title');
+        const objectiveEl = tracker.querySelector('.quest-objective');
+
+        if (titleEl) titleEl.textContent = activeQuest.title.toUpperCase();
+        if (objectiveEl) objectiveEl.textContent = currentStep.description;
+
+        // Show tracker with animation
+        tracker.classList.add('visible');
+    }
+
     // --- EVENT-DRIVEN QUEST SYSTEM ---
 
     /**
@@ -441,21 +480,45 @@ export class StoryManager {
     /**
      * Notify the StoryManager of an event.
      */
-    notify(eventType, targetId) {
-        console.log(`Story Event: ${eventType} -> ${targetId}`);
+    /**
+     * Unified Event System for Quests.
+     * @param {string} eventType - e.g. 'OPEN_CHEST', 'EQUIP_WEAPON'
+     * @param {Object} data - Context data, e.g. { tier: 1 } or { id: 'sword_starter' }
+     */
+    triggerEvent(eventType, data = {}) {
+        console.log(`Story Event: ${eventType}`, data);
 
         this.activeQuests.forEach(quest => {
             if (quest.state !== 'IN_PROGRESS') return;
 
             // Sequential Logic: Only check current step
             const currentStep = quest.steps.find(s => !s.isCompleted);
+            if (!currentStep) return;
 
-            if (currentStep) {
-                if (currentStep.targetType === eventType && currentStep.targetId === targetId) {
+            // Check Match
+            if (currentStep.targetType === eventType) {
+                let match = false;
+
+                // 'any' wildcard or specific ID match
+                if (currentStep.targetId === 'any') {
+                    match = true;
+                } else if (data.id && currentStep.targetId === data.id) {
+                    match = true;
+                } else if (data.tier && currentStep.targetId === `tier_${data.tier}`) {
+                    // Example matching logic if needed
+                    match = true;
+                }
+
+                if (match) {
                     this.completeStep(quest, currentStep);
                 }
             }
         });
+    }
+
+    // Alias for legacy calls if any remain
+    notify(eventType, targetId) {
+        this.triggerEvent(eventType, { id: targetId });
     }
 
     completeStep(quest, step) {
@@ -489,6 +552,9 @@ export class StoryManager {
         } else {
             this.removeObjectiveBeam();
         }
+
+        // Update Quest Tracker UI
+        this.updateQuestTracker();
     }
 
     checkQuestCompletion(quest) {
