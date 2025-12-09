@@ -158,15 +158,31 @@ export class Chest {
     }
 
     interact() {
-        if (this.isOpen) return;
+        if (this.isOpen) {
+            if (this.game.ui && this.game.ui.showToast) {
+                this.game.ui.showToast("Coffre déjà ouvert", 'info');
+            }
+            return;
+        }
 
         if (this.locked) {
-            // Check for key
-            if (this.game.player.inventory.hasItem('ancient_key')) {
-                this.unlock();
+            // Check for key (legacy system)
+            if (this.game.player.inventory && this.game.player.inventory.hasItem('ancient_key')) {
+                this.locked = false;
+                this.game.player.inventory.removeItem('ancient_key', 1);
+                if (this.lockMat) {
+                    this.lockMat.color.setHex(0x00FF00);
+                    this.lockMat.emissive.setHex(0x002200);
+                }
+                if (this.game.ui && this.game.ui.showToast) {
+                    this.game.ui.showToast("Coffre déverrouillé !", 'success');
+                }
+                setTimeout(() => this.open(), 500);
             } else {
-                this.game.ui.showToast("Ce coffre est verrouillé ! Il faut une Clé Ancienne.", 'error');
-                // Play locked sound
+                // Locked by camp system
+                if (this.game.ui && this.game.ui.showToast) {
+                    this.game.ui.showToast("🔒 Coffre verrouillé ! Éliminez les ennemis.", 'error');
+                }
             }
             return;
         }
@@ -180,13 +196,24 @@ export class Chest {
     }
 
     unlock() {
+        if (!this.locked) return; // Already unlocked
+
         this.locked = false;
-        this.game.player.inventory.removeItem('ancient_key', 1);
-        this.lockMat.color.setHex(0x00FF00);
-        this.lockMat.emissive.setHex(0x002200);
-        this.game.ui.showToast("Coffre déverrouillé !", 'success');
-        // Play unlock sound
-        setTimeout(() => this.open(), 500);
+
+        // Visual feedback
+        if (this.lockMat) {
+            this.lockMat.color.setHex(0x00FF00);
+            this.lockMat.emissive.setHex(0x002200);
+        }
+
+        // Glow effect
+        if (this.mesh) {
+            const light = new THREE.PointLight(0xffd700, 2, 5);
+            this.mesh.add(light);
+            setTimeout(() => this.mesh.remove(light), 2000);
+        }
+
+        console.log('🔓 Chest unlocked!');
     }
 
     open() {

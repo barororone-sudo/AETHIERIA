@@ -348,9 +348,10 @@ export class UIManager {
 
     toggleMenu() {
         this.isOpen = !this.isOpen;
-        this.menu.style.display = this.isOpen ? 'flex' : 'none';
 
+        // Use CSS class instead of inline style
         if (this.isOpen) {
+            this.menu.classList.add('visible');
             document.exitPointerLock();
             this.updateInventory();
             this.renderStats();
@@ -359,6 +360,7 @@ export class UIManager {
             const c = document.querySelector('canvas');
             if (c) c.style.filter = 'blur(5px)';
         } else {
+            this.menu.classList.remove('visible');
             // Unblur
             const c = document.querySelector('canvas');
             if (c) c.style.filter = 'none';

@@ -306,10 +306,12 @@ export class Enemy {
         this.body.velocity.set(0, 0, 0);
         this.lookAt(player.mesh.position);
 
+        const attackRange = this.config.ai?.attackRange || 2.0; // Define attackRange here
+
         if (this.timers.state > 0) {
             // Telegraph visual
             if (!this.telegraphMesh) {
-                const geo = new THREE.CircleGeometry(this.config.stats.attackRange * 0.8, 32);
+                const geo = new THREE.CircleGeometry(attackRange * 0.8, 32); // Use attackRange
                 const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
                 this.telegraphMesh = new THREE.Mesh(geo, mat);
                 this.telegraphMesh.rotation.x = -Math.PI / 2;
@@ -317,7 +319,7 @@ export class Enemy {
                 this.mesh.add(this.telegraphMesh); // Attach to enemy or world? 
                 // Enemy moves, telegraph usually follows or stays?
                 // For simplicity, attach to enemy (frontal cone/area).
-                this.telegraphMesh.position.z = this.config.stats.attackRange * 0.5;
+                this.telegraphMesh.position.z = attackRange * 0.5; // Use attackRange
             }
             // Pulse opacity?
             this.telegraphMesh.material.opacity = 0.3 + Math.sin(Date.now() * 0.02) * 0.2;
@@ -335,8 +337,7 @@ export class Enemy {
 
             // Check Hit (Cone/Area)
             // Just distance for now
-            const attackRange = this.config.ai?.attackRange || 2.0;
-            if (dist <= attackRange * 1.5) {
+            if (dist <= attackRange * 1.5) { // Use attackRange
                 if (player.takeDamage) player.takeDamage(this.damageVal);
             }
 
@@ -439,7 +440,15 @@ export class Enemy {
     }
 
     die() {
+        if (this.isDead) return; // Prevent double-death
+
         console.log("Enemy Defeated!", this.name);
+        this.isDead = true;
+
+        // 🏕️ Notify world for camp clearing system
+        if (this.world && this.world.notifyEnemyDeath) {
+            this.world.notifyEnemyDeath(this);
+        }
 
         // Grant XP
         if (this.game.player) {
@@ -453,10 +462,6 @@ export class Enemy {
 
         this.world.scene.remove(this.mesh);
         this.world.physicsWorld.removeBody(this.body);
-
-        // Remove from array? World does this usually
-        // Use flag
-        this.isDead = true;
 
         // New Loot Logic
         if (this.game.lootManager) {

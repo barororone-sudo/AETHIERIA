@@ -1217,11 +1217,16 @@ export class Player {
                 if (!this.input.keys.jump) this.hasReleasedJump = true;
                 const taps = this.input.jumpTapCount;
 
+                console.log('🌬️ AIR state - taps:', taps, 'canGlide:', this.canGlide, 'hasReleased:', this.hasReleasedJump);
+
                 if (taps === 2 && this.canGlide && !this.exhausted) {
+                    console.log('✅ Activating GLIDE (double-tap)');
                     this.enterGlide();
                 } else if (this.input.keys.jump && this.canGlide && !this.exhausted && this.hasReleasedJump) {
+                    console.log('✅ Activating GLIDE (hold after release)');
                     this.enterGlide();
                 } else if (taps === 3 && this.canSurf && !this.exhausted) {
+                    console.log('✅ Activating SURF (triple-tap)');
                     this.state = 'SURF';
                     this.enterSurf();
                     this.input.jumpTapCount = 0;
@@ -1256,12 +1261,27 @@ export class Player {
                 break;
 
             case 'GLIDE':
-                if (!this.input.keys.jump) this.hasReleasedJump = true;
-                if (grounded || (this.input.keys.jump && this.hasReleasedJump) || this.exhausted) {
-                    this.state = grounded ? 'IDLE' : 'AIR';
+                // Exit GLIDE only when:
+                // 1. Grounded
+                // 2. Jump key RELEASED (not held)
+                // 3. Exhausted
+                // 4. Crouch pressed (dive)
+
+                if (grounded) {
+                    console.log('🪂 GLIDE → IDLE (grounded)');
+                    this.state = 'IDLE';
                     this.lastJumpTime = Date.now();
                     this.hasReleasedJump = false;
+                } else if (!this.input.keys.jump) {
+                    // Jump released → exit GLIDE
+                    console.log('🪂 GLIDE → AIR (jump released)');
+                    this.state = 'AIR';
+                    this.hasReleasedJump = true;
+                } else if (this.exhausted) {
+                    console.log('🪂 GLIDE → AIR (exhausted)');
+                    this.state = 'AIR';
                 } else if (this.input.keys.crouch) {
+                    console.log('🪂 GLIDE → DIVE (crouch)');
                     this.state = 'DIVE';
                 }
                 break;
@@ -1283,13 +1303,23 @@ export class Player {
                 break;
 
             case 'SURF':
-                if (!this.input.keys.jump) this.hasReleasedJump = true;
-                if (this.input.keys.jump && this.hasReleasedJump) {
+                // Exit SURF when:
+                // 1. Jump released (to jump out)
+                // 2. Stopped moving (velocity too low)
+
+                if (!this.input.keys.jump) {
+                    this.hasReleasedJump = true;
+                } else if (this.input.keys.jump && this.hasReleasedJump) {
+                    // Jump pressed after release → exit SURF
+                    console.log('🏄 SURF → AIR (jump)');
                     this.exitSurf();
                     this.state = 'AIR';
                     this.body.velocity.y = 8;
                     this.input.jumpTapCount = 0;
+                    this.hasReleasedJump = false;
                 } else if (this.checkGround() && this.body.velocity.length() < 0.5) {
+                    // Stopped moving on ground
+                    console.log('🏄 SURF → IDLE (stopped)');
                     this.exitSurf();
                     this.state = 'IDLE';
                 }
@@ -1298,10 +1328,12 @@ export class Player {
     }
 
     enterGlide() {
+        console.log('🪂 enterGlide() called - setting state to GLIDE');
         this.state = 'GLIDE';
         this.input.jumpTapCount = 0;
         if (this.body.velocity.y < -1) this.body.velocity.y = -1;
         this.body.angularVelocity.set(0, 0, 0);
+        console.log('🪂 GLIDE state set, velocity.y:', this.body.velocity.y);
     }
 
     enterSurf() {
@@ -1378,8 +1410,10 @@ export class Player {
                 break;
 
             case 'GLIDE':
+                console.log('🪂 GLIDE physics active, velocity.y before:', this.body.velocity.y);
                 if (this.body.velocity.y > -2.0) this.body.velocity.y -= 5.0 * dt;
                 else this.body.velocity.y = -2.0;
+                console.log('🪂 GLIDE physics active, velocity.y after:', this.body.velocity.y);
 
                 if (inputLen > 0) {
                     this.body.velocity.x = input.x * 15;

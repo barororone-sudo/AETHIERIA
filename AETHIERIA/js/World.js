@@ -109,6 +109,9 @@ export class World {
         // LOOT
         this.loot = [];
 
+        // 🏕️ CAMP CLEARING SYSTEM
+        this.camps = [];
+
         // Day/Night Cycle
         this.gameTime = 0.25; // Start at 6am (0.25)
         this.dayDuration = 1440; // 24 minutes in seconds
@@ -878,5 +881,65 @@ export class World {
                 this.updrafts.splice(i, 1);
             }
         }
+    }
+
+    // 🏕️ ========== CAMP CLEARING SYSTEM ==========
+
+    /**
+     * Register a camp with enemies and a chest
+     * @param {Enemy[]} enemies 
+     * @param {Chest} chest 
+     */
+    registerCamp(enemies, chest) {
+        const campId = `camp_${this.camps.length + 1}`;
+        this.camps.push({
+            id: campId,
+            enemies: enemies,
+            chest: chest,
+            cleared: false
+        });
+        console.log(`📍 Registered ${campId} with ${enemies.length} enemies`);
+    }
+
+    /**
+     * Called when an enemy dies - checks if camp is cleared
+     * @param {Enemy} enemy 
+     */
+    notifyEnemyDeath(enemy) {
+        // Find camp containing this enemy
+        const camp = this.camps.find(c => c.enemies.includes(enemy));
+        if (!camp) return;
+
+        // Remove from camp
+        const index = camp.enemies.indexOf(enemy);
+        if (index > -1) camp.enemies.splice(index, 1);
+
+        // Check if camp cleared
+        if (camp.enemies.length === 0 && !camp.cleared) {
+            this.clearCamp(camp);
+        }
+    }
+
+    /**
+     * Clears a camp - unlocks chest and shows feedback
+     * @param {object} camp 
+     */
+    clearCamp(camp) {
+        camp.cleared = true;
+
+        // Unlock chest
+        if (camp.chest && camp.chest.unlock) {
+            camp.chest.unlock();
+        }
+
+        // Feedback
+        if (this.game.audio) {
+            this.game.audio.playSFX('secret_solved');
+        }
+        if (this.game.ui && this.game.ui.showToast) {
+            this.game.ui.showToast('🏕️ Camp Cleared!');
+        }
+
+        console.log(`✅ Camp ${camp.id} cleared!`);
     }
 }

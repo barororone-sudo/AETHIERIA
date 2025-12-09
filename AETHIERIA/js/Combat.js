@@ -160,7 +160,6 @@ export class Combat {
                 this.isAttacking = false;
                 this.attackProgress = 0;
                 this.hitEnemies.clear(); // 🎯 Clear for next attack
-                console.log('🔄 Attack ended, hitEnemies cleared');
                 if (this.weapon) this.weapon.visible = false;
             } else if (this.attackProgress > 0.3 && this.attackProgress < 0.7) {
                 this.checkHit();
@@ -352,11 +351,11 @@ export class Combat {
     }
 
     attack() {
-        console.log('🎯 attack() called, isAttacking:', this.isAttacking);
+        // console.log('🎯 attack() called, isAttacking:', this.isAttacking);
 
         // 🎯 CRITICAL: Clear hit tracking for NEW swing
         this.hitEnemies.clear();
-        console.log('🔄 hitEnemies cleared');
+        // console.log('🔄 hitEnemies cleared');
 
         if (this.isAttacking) return;
         if (this.isAiming) {
@@ -371,7 +370,6 @@ export class Combat {
         this.lastAttackTime = performance.now();
         this.isAttacking = true;
         this.attackProgress = 0;
-        console.log('✅ Attack started, isAttacking now:', this.isAttacking);
 
         if (this.weapon) this.weapon.visible = true;
         // @ts-ignore
@@ -415,11 +413,9 @@ export class Combat {
     }
 
     checkHit() {
-        console.log('🔍 checkHit() called');
         if (!this.player.world || !this.player.body) return;
         /** @type {any[]} */
         const enemies = this.player.world.enemies || [];
-        console.log('👹 Enemies found:', enemies.length);
 
         enemies.forEach(enemy => {
             if (!this.player.body) return;
@@ -432,13 +428,9 @@ export class Combat {
             const enemyId = enemy.mesh.uuid;
 
             // 🎯 Skip if already hit in THIS swing
-            if (this.hitEnemies.has(enemyId)) {
-                console.log(`⏭️ Skipping enemy ${enemyId} - already hit this swing`);
-                return;
-            }
+            if (this.hitEnemies.has(enemyId)) return;
 
             const dist = this.player.body.position.distanceTo(enemy.body.position);
-            console.log(`📏 Distance to enemy: ${dist.toFixed(2)}`);
 
             let weaponRange = 3.0;
             if (this.player.equippedWeapon) {
@@ -453,7 +445,6 @@ export class Combat {
             const range = weaponRange + (enemy.hitRadius || 0);
 
             if (dist < range) {
-                console.log(`💥 HIT! Distance ${dist.toFixed(2)} < Range ${range.toFixed(2)}`);
                 const direction = new THREE.Vector3().subVectors(enemy.body.position, this.player.body.position).normalize();
                 const force = (this.comboStep === 2) ? 15 : 8;
 
@@ -476,7 +467,6 @@ export class Combat {
 
                 // 🎯 Record hit for THIS swing
                 this.hitEnemies.add(enemyId);
-                console.log(`✅ Enemy ${enemyId} added to hitEnemies, size now:`, this.hitEnemies.size);
 
                 // ⚡ HIT FLASH EFFECT
                 this.flashEnemy(enemy);
