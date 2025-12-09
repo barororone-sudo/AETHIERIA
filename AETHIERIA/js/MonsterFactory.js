@@ -43,6 +43,21 @@ export class MonsterFactory {
         }
 
         mesh.scale.setScalar(scale);
+
+        // 🔧 CRITICAL FIX: Ensure all children receive shadows
+        mesh.traverse((child) => {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+                child.visible = true; // Ensure visibility
+
+                // Fix materials that might be invisible
+                if (child.material) {
+                    child.material.needsUpdate = true;
+                }
+            }
+        });
+
         group.add(mesh);
 
         return group;

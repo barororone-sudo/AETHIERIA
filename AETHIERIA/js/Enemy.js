@@ -70,12 +70,22 @@ export class Enemy {
             this.height = this.config.visuals.scale || 1.0;
         }
 
-        // Snap to Ground
+        // Snap to Ground - ROBUST FIX
+        const ABSOLUTE_MIN_HEIGHT = 5.0; // Never spawn below 5m
+
         if (this.world.getGroundHeight) {
             const groundY = this.world.getGroundHeight(position.x, position.z);
-            if (groundY !== null) {
-                position.y = groundY + (this.height / 2) + 0.1;
+            if (groundY !== null && groundY !== undefined && groundY > 0) {
+                // Ground height found and valid
+                const spawnHeight = groundY + (this.height / 2) + 1.0; // 1m buffer
+                position.y = Math.max(ABSOLUTE_MIN_HEIGHT, spawnHeight);
+            } else {
+                // Fallback: use absolute minimum
+                position.y = ABSOLUTE_MIN_HEIGHT;
             }
+        } else {
+            // No ground detection available
+            position.y = ABSOLUTE_MIN_HEIGHT;
         }
 
         this.mesh.position.copy(position);
@@ -346,11 +356,19 @@ export class Enemy {
         }
     }
 
+
     moveTowards(targetPos, speed) {
-        const dir = new CANNON.Vec3().subVectors(targetPos, this.body.position);
-        dir.y = 0;
-        if (dir.length() > 0.1) {
-            dir.normalize();
+        // CANNON.Vec3 doesn't have subVectors() - manual subtraction
+        const dir = new CANNON.Vec3(
+            targetPos.x - this.body.position.x,
+            0, // Don't move vertically
+            targetPos.z - this.body.position.z
+        );
+
+        const len = Math.sqrt(dir.x * dir.x + dir.z * dir.z);
+        if (len > 0.1) {
+            dir.x /= len;
+            dir.z /= len;
             this.body.velocity.x = dir.x * speed;
             this.body.velocity.z = dir.z * speed;
 

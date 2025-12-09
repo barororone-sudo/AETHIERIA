@@ -188,27 +188,44 @@ export class World {
 
         this.ambientLight = new THREE.AmbientLight(0xffffff, 0.8); // RADICAL FIX: High ambient light
 
-        // SUN
+        // SUN - Genshin Impact Quality Shadows
         this.sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
         this.sunLight.position.set(10, 20, 10);
         this.sunLight.castShadow = true;
-        this.sunLight.shadow.mapSize.width = 2048;
-        this.sunLight.shadow.mapSize.height = 2048;
+
+        // 🌟 High-Resolution Shadow Map (Genshin Style)
+        this.sunLight.shadow.mapSize.width = 4096;
+        this.sunLight.shadow.mapSize.height = 4096;
+
+        // 🎨 Shadow Quality Settings
+        this.sunLight.shadow.bias = -0.0003; // Removes shadow acne
+        this.sunLight.shadow.normalBias = 0.02; // Better for toon characters
+        this.sunLight.shadow.radius = 2; // Soft shadow edges
+
+        // 📷 Shadow Camera Bounds (Larger coverage)
         this.sunLight.shadow.camera.near = 0.5;
         this.sunLight.shadow.camera.far = 500;
-        this.sunLight.shadow.camera.left = -100;
-        this.sunLight.shadow.camera.right = 100;
-        this.sunLight.shadow.camera.top = 100;
-        this.sunLight.shadow.camera.bottom = -100;
+        this.sunLight.shadow.camera.left = -150;
+        this.sunLight.shadow.camera.right = 150;
+        this.sunLight.shadow.camera.top = 150;
+        this.sunLight.shadow.camera.bottom = -150;
+
         this.scene.add(this.sunLight);
         this.scene.add(this.sunLight.target); // Important for following player
 
-        // MOON
+        // MOON - Softer Shadows
         this.moonLight = new THREE.DirectionalLight(0x4444ff, 0.3);
-        this.moonLight.position.set(-10, -20, -10); // Opposite to sun
-        this.moonLight.castShadow = true; // Moon shadows!
+        this.moonLight.position.set(-10, -20, -10);
+        this.moonLight.castShadow = true;
+
+        // Moon shadow settings (lower quality for performance)
+        this.moonLight.shadow.mapSize.width = 2048;
+        this.moonLight.shadow.mapSize.height = 2048;
+        this.moonLight.shadow.bias = -0.0003;
+        this.moonLight.shadow.normalBias = 0.02;
+
         this.scene.add(this.moonLight);
-        this.scene.add(this.moonLight.target); // Important for following player
+        this.scene.add(this.moonLight.target);
     }
 
     createSky() {
@@ -828,6 +845,22 @@ export class World {
 
         if (this.npcs) {
             this.npcs.forEach(npc => npc.update(dt));
+        }
+
+        // 👾 UPDATE ENEMIES (CRITICAL - Was missing!)
+        if (this.enemies && this.enemies.length > 0) {
+            for (let i = this.enemies.length - 1; i >= 0; i--) {
+                const enemy = this.enemies[i];
+
+                // Remove dead enemies
+                if (enemy.isDead) {
+                    this.enemies.splice(i, 1);
+                    continue;
+                }
+
+                // Update enemy AI
+                enemy.update(dt, playerBody ? playerBody.position : null);
+            }
         }
 
         if (this.chests) {

@@ -324,35 +324,57 @@ export class MapManager {
 
     updateEnemyIcons() {
         const enemies = this.game.world.enemies || [];
+        const player = this.game.player;
+
+        // 🎯 Only show enemies within detection range (Genshin-style)
+        const DETECTION_RANGE = 100; // meters
+
         enemies.forEach((enemy, index) => {
-            if (enemy.isDead) { // Check dead... }
+            if (enemy.isDead) {
                 const el = this.icons.get(`enemy-${index}`);
                 if (el) { el.remove(); this.icons.delete(`enemy-${index}`); }
                 return;
             }
 
-            let icon = this.icons.get(`enemy-${index}`);
+            // 🔍 Distance check - only show nearby enemies
+            if (player && player.body) {
+                const dx = enemy.body.position.x - player.body.position.x;
+                const dz = enemy.body.position.z - player.body.position.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
 
-            if (!icon) {
-                icon = document.createElement('div');
-                icon.className = 'map-icon-enemy'; // FOR CSS TARGETING
-                Object.assign(icon.style, {
-                    width: '8px', height: '8px',
-                    backgroundColor: 'red',
-                    borderRadius: '50%',
-                    position: 'absolute',
-                    transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))', // CSS Var InvScale
-                    zIndex: '5',
-                    pointerEvents: 'none',
-                    boxShadow: '0 0 4px red'
-                });
-                this.iconLayer.appendChild(icon);
-                this.icons.set(`enemy-${index}`, icon);
+                // Hide icon if too far
+                let icon = this.icons.get(`enemy-${index}`);
+                if (dist > DETECTION_RANGE) {
+                    if (icon) {
+                        icon.style.display = 'none';
+                    }
+                    return;
+                }
+
+                // Show icon if in range
+                if (!icon) {
+                    icon = document.createElement('div');
+                    icon.className = 'map-icon-enemy';
+                    Object.assign(icon.style, {
+                        width: '8px', height: '8px',
+                        backgroundColor: 'red',
+                        borderRadius: '50%',
+                        position: 'absolute',
+                        transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))',
+                        zIndex: '5',
+                        pointerEvents: 'none',
+                        boxShadow: '0 0 4px red'
+                    });
+                    this.iconLayer.appendChild(icon);
+                    this.icons.set(`enemy-${index}`, icon);
+                } else {
+                    icon.style.display = 'block';
+                }
+
+                const pos = this.worldToMap(enemy.body.position.x, enemy.body.position.z);
+                icon.style.left = `${pos.x}px`;
+                icon.style.top = `${pos.y}px`;
             }
-
-            const pos = this.worldToMap(enemy.body.position.x, enemy.body.position.z);
-            icon.style.left = `${pos.x}px`;
-            icon.style.top = `${pos.y}px`;
         });
     }
 

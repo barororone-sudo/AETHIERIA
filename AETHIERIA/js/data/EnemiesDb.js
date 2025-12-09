@@ -19,7 +19,7 @@ export const EnemiesDb = [
         id: 'slime_green',
         name: 'Slime Vert',
         type: EnemyType.MELEE,
-        stats: { hp: 300, attack: 50, speed: 3.0, exp: 10 },
+        stats: { hp: 300, attack: 25, speed: 3.0, exp: 10 }, // ⚖️ Balanced
         ai: { detectionRange: 10, attackRange: 1.5, behavior: BehaviorType.AGGRESSIVE },
         visuals: { color: 0x44ff44, scale: 0.8, shape: 'SLIME' },
         lootTable: [
@@ -31,7 +31,7 @@ export const EnemiesDb = [
         id: 'slime_red',
         name: 'Slime Rouge',
         type: EnemyType.MELEE,
-        stats: { hp: 400, attack: 150, speed: 3.5, exp: 20 },
+        stats: { hp: 400, attack: 75, speed: 3.5, exp: 20 }, // ⚖️ Balanced
         ai: { detectionRange: 12, attackRange: 1.5, behavior: BehaviorType.AGGRESSIVE },
         visuals: { color: 0xff4444, scale: 0.9, shape: 'SLIME', particles: 'PYRO' },
         lootTable: [
@@ -43,7 +43,7 @@ export const EnemiesDb = [
         id: 'slime_blue',
         name: 'Slime Bleu',
         type: EnemyType.MELEE,
-        stats: { hp: 500, attack: 80, speed: 2.5, exp: 20 },
+        stats: { hp: 500, attack: 40, speed: 2.5, exp: 20 }, // ⚖️ Balanced
         ai: { detectionRange: 12, attackRange: 1.5, behavior: BehaviorType.AGGRESSIVE },
         visuals: { color: 0x4444ff, scale: 1.0, shape: 'SLIME', particles: 'CRYO' },
         lootTable: [
@@ -57,7 +57,7 @@ export const EnemiesDb = [
         id: 'goblin_scout',
         name: 'Gobelin Éclaireur',
         type: EnemyType.MELEE,
-        stats: { hp: 450, attack: 80, speed: 6.0, exp: 25 },
+        stats: { hp: 450, attack: 40, speed: 6.0, exp: 25 }, // ⚖️ Balanced
         ai: { detectionRange: 18, attackRange: 2.0, behavior: BehaviorType.PACK },
         visuals: { color: 0x00cc00, scale: 0.9, shape: 'GOBELIN', weapon: 'dagger' },
         lootTable: [
@@ -69,7 +69,7 @@ export const EnemiesDb = [
         id: 'goblin_archer',
         name: 'Gobelin Archer',
         type: EnemyType.RANGED,
-        stats: { hp: 400, attack: 100, speed: 5.5, exp: 30 },
+        stats: { hp: 400, attack: 50, speed: 5.5, exp: 30 }, // ⚖️ Balanced
         ai: { detectionRange: 25, attackRange: 15.0, behavior: BehaviorType.PACK },
         visuals: { color: 0x00aa00, scale: 0.9, shape: 'GOBELIN', weapon: 'bow' },
         lootTable: [
@@ -81,7 +81,7 @@ export const EnemiesDb = [
         id: 'goblin_thief',
         name: 'Gobelin Voleur',
         type: EnemyType.MELEE,
-        stats: { hp: 350, attack: 200, speed: 7.0, exp: 35 },
+        stats: { hp: 350, attack: 100, speed: 7.0, exp: 35 }, // ⚖️ Balanced (fast glass cannon)
         ai: { detectionRange: 10, attackRange: 1.5, behavior: BehaviorType.AGGRESSIVE },
         visuals: { color: 0x333333, scale: 0.8, shape: 'GOBELIN', weapon: 'dagger_dual' },
         lootTable: [
@@ -95,7 +95,7 @@ export const EnemiesDb = [
         id: 'orc_warrior',
         name: 'Orc Guerrier',
         type: EnemyType.TANK,
-        stats: { hp: 1200, attack: 150, speed: 3.5, exp: 60 },
+        stats: { hp: 1200, attack: 75, speed: 3.5, exp: 60 }, // ⚖️ Balanced (tank)
         ai: { detectionRange: 12, attackRange: 2.5, behavior: BehaviorType.DEFENSIVE },
         visuals: { color: 0x228822, scale: 1.3, shape: 'ORC', weapon: 'axe', shield: true },
         lootTable: [
@@ -107,7 +107,7 @@ export const EnemiesDb = [
         id: 'orc_berserker',
         name: 'Orc Berserker',
         type: EnemyType.MELEE,
-        stats: { hp: 1500, attack: 250, speed: 4.5, exp: 80 },
+        stats: { hp: 1500, attack: 125, speed: 4.5, exp: 80 }, // ⚖️ Balanced (berserker)
         ai: { detectionRange: 15, attackRange: 2.0, behavior: BehaviorType.AGGRESSIVE },
         visuals: { color: 0x882222, scale: 1.4, shape: 'ORC', weapon: 'axe_dual' },
         lootTable: [
@@ -119,7 +119,7 @@ export const EnemiesDb = [
         id: 'orc_chief',
         name: 'Chef de Guerre Orc',
         type: EnemyType.ELITE,
-        stats: { hp: 3000, attack: 400, speed: 3.0, exp: 200 },
+        stats: { hp: 3000, attack: 200, speed: 3.0, exp: 200 }, // ⚖️ Balanced (elite boss)
         ai: { detectionRange: 20, attackRange: 3.0, behavior: BehaviorType.PACK },
         visuals: { color: 0x114411, scale: 1.6, shape: 'ORC', weapon: 'greatsword', crown: true },
         lootTable: [
@@ -133,7 +133,7 @@ export const EnemiesDb = [
         id: 'construct_sentinel',
         name: 'Sentinelle de Pierre',
         type: EnemyType.TANK,
-        stats: { hp: 2000, attack: 300, speed: 2.0, exp: 100 },
+        stats: { hp: 2000, attack: 150, speed: 2.0, exp: 100 }, // ⚖️ Balanced (construct)
         ai: { detectionRange: 10, attackRange: 3.0, behavior: BehaviorType.DEFENSIVE },
         visuals: { color: 0x888888, scale: 1.5, shape: 'CONSTRUCT' },
         lootTable: [
@@ -145,7 +145,7 @@ export const EnemiesDb = [
         id: 'golem_ancient',
         name: 'Golem Ancien',
         type: EnemyType.ELITE,
-        stats: { hp: 10000, attack: 800, speed: 1.5, exp: 500 }, // 10k HPosu
+        stats: { hp: 10000, attack: 300, speed: 1.5, exp: 500 }, // ⚖️ Balanced (world boss)
         ai: { detectionRange: 30, attackRange: 5.0, behavior: BehaviorType.AGGRESSIVE },
         visuals: { color: 0x555555, scale: 4.0, shape: 'CONSTRUCT', glow: 0xffaa00 },
         lootTable: [

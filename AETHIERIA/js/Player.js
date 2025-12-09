@@ -81,6 +81,10 @@ export class Player {
         // EFFECTIVE STATS (Updated via updateStats)
         this.stats = { ...this.baseStats };
 
+        // HP System
+        this.hp = 500;
+        this.maxHp = 500;
+
         // Inventory
         this.inventory = new InventoryManager(this);
 
@@ -391,7 +395,7 @@ export class Player {
             mass: 60,
             material: material,
             shape: shape,
-            linearDamping: 0.1,
+            linearDamping: 0.9, // 🔧 High damping for instant stop
             angularDamping: 0.9,
             fixedRotation: true
         });
@@ -1177,6 +1181,12 @@ export class Player {
             case 'WALK':
             case 'RUN':
             case 'SPRINT':
+                // 🛑 INSTANT STOP when grounded with no input
+                if (grounded && speed < 0.1) {
+                    this.body.velocity.x *= 0.1; // Quick deceleration
+                    this.body.velocity.z *= 0.1;
+                }
+
                 if (!grounded) {
                     this.state = 'AIR';
                 } else if (this.input.keys.jump && !this.exhausted) {
@@ -1903,11 +1913,54 @@ export class Player {
         const theta = this.cameraState.theta;
         const phi = this.cameraState.phi;
 
+        // Calculate ideal camera position
         const x = this.cameraLagPos.x + dist * Math.sin(phi) * Math.sin(theta);
         const y = this.cameraLagPos.y + dist * Math.cos(phi);
         const z = this.cameraLagPos.z + dist * Math.sin(phi) * Math.cos(theta);
 
-        this.camera.position.set(x, y, z);
+        const idealCamPos = new THREE.Vector3(x, y, z);
+
+        // 🎥 CAMERA COLLISION DETECTION (Selective)
+        // Only check against terrain and large structures
+        const raycaster = new THREE.Raycaster();
+        const direction = new THREE.Vector3().subVectors(idealCamPos, this.cameraLagPos).normalize();
+        raycaster.set(this.cameraLagPos, direction);
+
+        // Get only terrain/buildings (filter out small objects)
+        const collisionObjects = this.world.scene.children.filter(obj => {
+            // Only check terrain, chunks, buildings, towers
+            return obj.name && (
+                obj.name.includes('terrain') ||
+                obj.name.includes('Chunk') ||
+                obj.name.includes('building') ||
+                obj.name.includes('Tower') ||
+                obj.name.includes('Wall')
+            );
+        });
+
+        const intersects = raycaster.intersectObjects(collisionObjects, true);
+
+        let finalCamPos = idealCamPos.clone();
+        const maxDistance = this.cameraLagPos.distanceTo(idealCamPos);
+
+        for (const intersect of intersects) {
+            // Skip player and small objects
+            if (intersect.object === this.mesh ||
+                intersect.object.parent === this.mesh) {
+                continue;
+            }
+
+            // Only adjust if collision is significant (not tiny objects)
+            if (intersect.distance < maxDistance && intersect.distance > 0.5) {
+                const offset = 0.3;
+                const adjustedDist = Math.max(1.0, intersect.distance - offset);
+                finalCamPos = this.cameraLagPos.clone().add(direction.clone().multiplyScalar(adjustedDist));
+                break;
+            }
+        }
+
+        // Smoother transition (less aggressive)
+        this.camera.position.lerp(finalCamPos, 0.15);
         this.camera.lookAt(this.cameraLagPos);
 
         // Z-Targeting Camera Override
@@ -1988,13 +2041,55 @@ export class Player {
     }
 
     /**
+     * ⚡ Stamina System (BotW-style)
      * @param {number} dt
      */
     updateStamina(dt) {
-        if (this.state === 'IDLE' || this.state === 'WALK') {
-            this.stamina = Math.min(this.maxStamina, this.stamina + 10 * dt);
-        } else {
-            // Drain logic if needed, currently mostly event based
+        const grounded = this.checkGround();
+
+        // 🔋 DRAIN stamina based on state
+        if (this.state === 'SPRINT') {
+            this.stamina -= this.staminaDrainRates.SPRINT * dt;
+        } else if (this.state === 'GLIDE') {
+            this.stamina -= this.staminaDrainRates.GLIDE * dt;
+        } else if (this.state === 'CLIMB') {
+            this.stamina -= this.staminaDrainRates.CLIMB * dt;
+        } else if (this.state === 'SURF') {
+            this.stamina -= this.staminaDrainRates.SURF * dt;
+        } else if (this.state === 'SWIM') {
+            this.stamina -= this.staminaDrainRates.SWIM * dt;
+        }
+
+        // 🔄 REGEN stamina when idle/walking on ground
+        else if (grounded && (this.state === 'IDLE' || this.state === 'WALK' || this.state === 'RUN')) {
+            this.stamina += this.staminaRegenRate * dt;
+        }
+
+        // Clamp stamina
+        this.stamina = Math.max(0, Math.min(this.maxStamina, this.stamina));
+
+        // 😰 EXHAUSTION logic
+        if (this.stamina <= 0 && !this.exhausted) {
+            this.exhausted = true;
+            console.log('😰 Exhausted!');
+
+            // Force state change
+            if (this.state === 'SPRINT') {
+                this.state = 'WALK';
+            } else if (this.state === 'GLIDE' || this.state === 'CLIMB') {
+                this.state = 'AIR'; // Fall
+            }
+        }
+
+        // 🔓 Recover from exhaustion at 25%
+        if (this.stamina >= this.maxStamina * 0.25 && this.exhausted) {
+            this.exhausted = false;
+            console.log('✅ Stamina recovered');
+        }
+
+        // Update UI
+        if (this.game.ui && this.game.ui.updateStamina) {
+            this.game.ui.updateStamina(this.stamina, this.maxStamina);
         }
     }
 
@@ -2115,7 +2210,8 @@ export class Player {
             // Fallback to procedural generation if GLB not available
             console.log(`🔧 GLB not found for ${item.weaponType}, using procedural weapon`);
             const meshGroup = WeaponGenerator.createWeapon(item);
-            meshGroup.rotation.x = -Math.PI / 2;
+            meshGroup.rotation.x = -Math.PI / 2; // Align with hand
+            meshGroup.rotation.y = Math.PI; // 🔧 FIX: Flip 180° so blade points FORWARD
 
             // 🗡️ Make daggers bigger for visibility
             if (item.weaponType === 'DAGGER' || item.weaponType === 'DOUBLE_BLADE') {
@@ -2223,5 +2319,63 @@ export class Player {
         const lerpSpeed = dt * 5;
         this.head.rotation.y = THREE.MathUtils.lerp(this.head.rotation.y, targetLookY, lerpSpeed);
         this.head.rotation.x = THREE.MathUtils.lerp(this.head.rotation.x, targetLookX, lerpSpeed);
+    }
+
+    /**
+     * 💔 Take damage and check for death
+     * @param {number} amount - Damage amount
+     */
+    takeDamage(amount) {
+        if (this.state === 'DEAD') return;
+
+        const oldHp = this.hp;
+        this.hp -= amount;
+        this.hp = Math.max(0, this.hp);
+
+        console.log(`💔 Player took ${amount} damage (${oldHp} → ${this.hp})`);
+
+        // 🎨 Visual HP drain animation
+        if (this.game.ui && this.game.ui.animateHealthDrain) {
+            this.game.ui.animateHealthDrain(oldHp, this.hp, this.maxHp, 0.5); // 0.5s drain
+        } else if (this.game.ui) {
+            this.game.ui.updateHealth(this.hp, this.maxHp);
+        }
+
+        // Flash red
+        if (this.game.ui && this.game.ui.showDamageFlash) {
+            this.game.ui.showDamageFlash();
+        }
+
+        // Death check
+        if (this.hp <= 0) {
+            this.die();
+        }
+    }
+
+    /**
+     * 💀 Player death logic
+     */
+    die() {
+        if (this.state === 'DEAD') return;
+
+        console.log('💀 Player died');
+        this.state = 'DEAD';
+        this.hp = 0;
+
+        // Stop physics
+        this.body.velocity.set(0, 0, 0);
+        this.body.angularVelocity.set(0, 0, 0);
+
+        // Update UI
+        if (this.game.ui) {
+            this.game.ui.updateHealth(0, this.maxHp);
+        }
+
+        // Trigger game over after delay
+        setTimeout(() => {
+            if (this.game && this.game.triggerGameOver) {
+                this.game.triggerGameOver();
+            }
+        }, 1500); // 1.5s delay for dramatic effect
     }
 }
