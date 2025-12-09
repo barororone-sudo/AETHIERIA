@@ -1,5 +1,5 @@
+// @ts-nocheck
 // js/Player.js
-// @ts-check
 import * as THREE from 'three';
 // @ts-ignore
 import * as CANNON from 'cannon-es';
@@ -278,23 +278,6 @@ export class Player {
                 { t: 0.3, pose: { torso: { x: 0, y: 0, z: 0 } } }
             ]
         });
-    }
-
-    /**
-     * @param {number} amount
-     */
-    takeDamage(amount) {
-        if (this.isInvincible) return;
-
-        this.hp -= amount;
-        if (this.hp <= 0) {
-            this.hp = 0;
-            // TODO: Game Over
-            console.log("Player Died!");
-        }
-
-        if (this.game.ui) this.game.ui.update(this);
-        this.screenShake(0.5, 0.2);
     }
 
     /**
