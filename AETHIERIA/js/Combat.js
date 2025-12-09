@@ -27,7 +27,7 @@ export class Combat {
         this.attackProgress = 0;
         this.isAttacking = false;
 
-        // 🎯 Hit tracking per attack swing (prevents multi-hit)
+        // 🎯 Hit tracking: Prevent multi-hit per swing
         /** @type {Set<string>} */ this.hitEnemies = new Set();
 
         // Z-Targeting
@@ -159,6 +159,8 @@ export class Combat {
             if (this.attackProgress >= 1) {
                 this.isAttacking = false;
                 this.attackProgress = 0;
+                this.hitEnemies.clear(); // 🎯 Clear for next attack
+                console.log('🔄 Attack ended, hitEnemies cleared');
                 if (this.weapon) this.weapon.visible = false;
             } else if (this.attackProgress > 0.3 && this.attackProgress < 0.7) {
                 this.checkHit();
@@ -351,6 +353,11 @@ export class Combat {
 
     attack() {
         console.log('🎯 attack() called, isAttacking:', this.isAttacking);
+
+        // 🎯 CRITICAL: Clear hit tracking for NEW swing
+        this.hitEnemies.clear();
+        console.log('🔄 hitEnemies cleared');
+
         if (this.isAttacking) return;
         if (this.isAiming) {
             this.shootArrow();
@@ -417,6 +424,19 @@ export class Combat {
         enemies.forEach(enemy => {
             if (!this.player.body) return;
 
+            // 🎯 Get unique enemy ID (use mesh.uuid)
+            if (!enemy.mesh || !enemy.mesh.uuid) {
+                console.warn('⚠️ Enemy missing mesh or uuid:', enemy);
+                return;
+            }
+            const enemyId = enemy.mesh.uuid;
+
+            // 🎯 Skip if already hit in THIS swing
+            if (this.hitEnemies.has(enemyId)) {
+                console.log(`⏭️ Skipping enemy ${enemyId} - already hit this swing`);
+                return;
+            }
+
             const dist = this.player.body.position.distanceTo(enemy.body.position);
             console.log(`📏 Distance to enemy: ${dist.toFixed(2)}`);
 
@@ -453,6 +473,10 @@ export class Combat {
                 if (isCrit) damage *= 2.0;
 
                 enemy.takeDamage(Math.floor(damage), Elements.NONE);
+
+                // 🎯 Record hit for THIS swing
+                this.hitEnemies.add(enemyId);
+                console.log(`✅ Enemy ${enemyId} added to hitEnemies, size now:`, this.hitEnemies.size);
 
                 // ⚡ HIT FLASH EFFECT
                 this.flashEnemy(enemy);

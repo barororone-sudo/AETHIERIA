@@ -108,7 +108,7 @@ export class Player {
         this.targetFov = 75;
 
         this.lastJumpTime = 0;
-        this.stepTimer = 0;
+        this.stepTimer = 0; // 🔊 Footstep sound timing
         this.lastGenTime = 0;
         this.hasReleasedJump = true;
         this.jumpTapCount = 0;
@@ -1435,7 +1435,7 @@ export class Player {
                 }
                 if (!grounded) this.body.velocity.y -= 10 * dt;
 
-                // 👣 FOOTSTEP SOUNDS
+                // 🔊 FOOTSTEP SOUNDS
                 if (inputLen > 0.1 && grounded) {
                     // Player is moving and on ground
                     this.stepTimer -= dt;

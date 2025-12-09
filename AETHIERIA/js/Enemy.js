@@ -282,7 +282,8 @@ export class Enemy {
         }
 
         // Standard Chase
-        if (dist > this.config.stats.attackRange) {
+        const attackRange = this.config.ai?.attackRange || 2.0;
+        if (dist > attackRange) {
             this.moveTowards(player.body.position, this.speed);
         } else {
             // In Range -> ATTACK
@@ -334,7 +335,8 @@ export class Enemy {
 
             // Check Hit (Cone/Area)
             // Just distance for now
-            if (dist <= this.config.stats.attackRange * 1.5) {
+            const attackRange = this.config.ai?.attackRange || 2.0;
+            if (dist <= attackRange * 1.5) {
                 if (player.takeDamage) player.takeDamage(this.damageVal);
             }
 
