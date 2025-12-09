@@ -14,6 +14,11 @@ import { LevelManager } from './managers/LevelManager.js';
 import { WeaponGenerator } from './generators/WeaponGenerator.js';
 import { Animator } from './components/Animator.js';
 import { Visuals } from './Visuals.js';
+import { ComboSystem } from './combat/ComboSystem.js';
+import { WeaponTrail } from './combat/WeaponTrail.js';
+import { ParticleSystem } from './combat/ParticleSystem.js';
+import { CombatEffects } from './combat/CombatEffects.js';
+import { WeaponAnimations } from './combat/WeaponAnimations.js';
 
 export class Player {
     /**
@@ -162,6 +167,17 @@ export class Player {
         // Advanced Combat Components
         this.animator = new Animator(this);
         this.visuals = new Visuals(this);
+
+        // 🎮 ADVANCED COMBAT SYSTEMS (Phase 1)
+        this.comboSystem = new ComboSystem(this);
+        this.weaponTrail = new WeaponTrail(this.world.scene, 'sword');
+        this.particleSystem = new ParticleSystem(this.world.scene);
+        this.combatEffects = new CombatEffects(this.camera, this.game.renderer);
+
+        // 🎯 WEAPON ANIMATIONS (Phase 2)
+        this.weaponAnimations = new WeaponAnimations(this);
+
+        console.log('⚔️ Advanced Combat Systems initialized');
 
         // Define Animations
         this.registerAnimations();
@@ -400,7 +416,7 @@ export class Player {
         // 🌐 CHECK FOR REMOTE MODEL
         const remoteModel = this.game.loader?.assets?.models?.hero;
 
-        if (remoteModel) {
+        if (false) { // GLB désactivé - matériaux invisibles (problème Three.js)
             console.log('🎮 Using remote character model!');
             this.initRemoteModel(remoteModel);
             return; // Skip procedural generation
@@ -479,9 +495,9 @@ export class Player {
             model.scale.set(scale, scale, scale);
             console.log(`🔧 Model was too small (${maxDim.toFixed(3)}), scaled up by ${scale.toFixed(1)}x`);
         } else {
-            // Force scale to 1,1,1 for consistency
-            model.scale.set(1, 1, 1);
-            console.log(`✅ Model size OK, forcing scale to (1, 1, 1)`);
+            // Force scale to 2x for visibility (not too big, not too small)
+            model.scale.set(2, 2, 2);
+            console.log(`✅ Model size OK, forcing scale to (2, 2, 2) for visibility`);
         }
 
         model.position.set(0, 0, 0);
@@ -514,17 +530,37 @@ export class Player {
                         mat.depthWrite = true;
                         mat.depthTest = true;
 
+                        // 🔥 FORCER ALPHATEST À 0 (afficher pixels semi-transparents)
+                        mat.alphaTest = 0;
+
                         // 3. SÉCURITÉ TEXTURE : Si le modèle est noir, on voit quand même la forme
                         if (!mat.map) {
                             mat.color.setHex(0xFFFFFF); // Blanc si pas de texture
                             untexturedCount++;
                             console.log(`  ⚪ Material without texture, set to white:`, mat.name || 'unnamed');
                         } else {
+                            // Texture présente = forcer blanc (multiplie avec texture)
+                            mat.color.setHex(0xFFFFFF);
                             texturedCount++;
+                        }
+
+                        // 🔥 SI MeshStandardMaterial, ajuster metalness/roughness
+                        if (mat.type === 'MeshStandardMaterial') {
+                            mat.metalness = 0.0;
+                            mat.roughness = 0.8;
                         }
 
                         mat.needsUpdate = true;
                     });
+
+                    // 🔥 DERNIER RECOURS : Remplacer complètement le matériau
+                    child.material = new THREE.MeshStandardMaterial({
+                        color: 0x00aaff,
+                        metalness: 0,
+                        roughness: 0.8,
+                        side: THREE.DoubleSide
+                    });
+                    console.log(`  🔵 Material REPLACED with blue`);
                 }
             }
         });
@@ -533,9 +569,59 @@ export class Player {
         console.log(`  📷 Textured materials: ${texturedCount}`);
         console.log(`  ⚪ Untextured materials (forced white): ${untexturedCount}`);
 
+        // 🚨 SI AUCUN MESH TROUVÉ = MODÈLE VIDE/CORROMPU
+        if (meshCount === 0) {
+            console.error('❌ MODÈLE VIDE ! Aucun mesh trouvé dans hero.glb');
+            console.log('🔄 Création d\'un personnage procédural de secours...');
+
+            // Créer un personnage procédural simple
+            const fallbackGroup = new THREE.Group();
+
+            // Corps (capsule)
+            const bodyGeom = new THREE.CapsuleGeometry(0.3, 1.2, 8, 16);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0x4488ff });
+            const body = new THREE.Mesh(bodyGeom, bodyMat);
+            body.position.y = 0.8;
+            body.castShadow = true;
+            fallbackGroup.add(body);
+
+            // Tête (sphère)
+            const headGeom = new THREE.SphereGeometry(0.25, 16, 16);
+            const headMat = new THREE.MeshStandardMaterial({ color: 0xffcc99 });
+            const head = new THREE.Mesh(headGeom, headMat);
+            head.position.y = 1.8;
+            head.castShadow = true;
+            fallbackGroup.add(head);
+
+            // Remplacer le modèle vide par le fallback
+            this.mesh.add(fallbackGroup);
+            this.bodyMesh = fallbackGroup;
+
+            console.log('✅ Personnage procédural créé avec succès');
+            return; // Sortir de la fonction
+        }
+
         // 3. AJOUTER À LA SCÈNE (via player mesh group)
         this.mesh.add(model);
         this.bodyMesh = model; // Reference for animations
+
+        // 🔴 DEBUG VISUEL : BoxHelper Rouge pour localiser le modèle
+        const boxHelper = new THREE.BoxHelper(model, 0xff0000);
+        this.world.scene.add(boxHelper);
+        console.log('🔴 BoxHelper rouge ajouté pour debug');
+
+        // 🟢 DEBUG VISUEL : Sphère verte au centre du modèle
+        const debugSphere = new THREE.Mesh(
+            new THREE.SphereGeometry(0.5, 16, 16),
+            new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: false })
+        );
+        debugSphere.position.copy(model.position);
+        this.mesh.add(debugSphere);
+        console.log('🟢 Sphère verte ajoutée au centre du modèle');
+
+        // 🔄 FORCER ROTATION pour faire face à la caméra
+        model.rotation.y = Math.PI; // 180 degrés
+        console.log('🔄 Rotation forcée : modèle face à la caméra');
 
         // 4. DEBUG DANS LA CONSOLE
         console.log('🎮 Hero Model Loaded and Added');
@@ -642,15 +728,55 @@ export class Player {
 
     initProceduralCharacter() {
 
-        // --- PALETTE ---
-        const cPrimary = new THREE.Color(this.characterData.palette[1]);
-        const cSecondary = new THREE.Color(this.characterData.palette[0]);
-        const cAccent = new THREE.Color(this.characterData.palette[2]);
+        // --- PALETTE PREMIUM ---
+        // Palette harmonieuse bleu/cyan/blanc
+        const cPrimary = new THREE.Color(0x2a4d6e);    // Bleu foncé (corps)
+        const cSecondary = new THREE.Color(0x4a7ba7);  // Bleu moyen (armure)
+        const cAccent = new THREE.Color(0x00d9ff);     // Cyan néon (accents)
+        const cHighlight = new THREE.Color(0xffffff);  // Blanc (highlights)
+        const cDark = new THREE.Color(0x1a1a2e);       // Bleu très foncé (joints)
 
-        const matBody = new THREE.MeshStandardMaterial({ color: cPrimary, roughness: 0.7, metalness: 0.5 });
-        const matArmor = new THREE.MeshStandardMaterial({ color: cSecondary, roughness: 0.5, metalness: 0.7 });
-        const matJoint = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
-        const matNeon = new THREE.MeshStandardMaterial({ color: cAccent, emissive: cAccent, emissiveIntensity: 2.0 });
+        // 🎨 MATÉRIAUX PREMIUM AAA
+        const matBody = new THREE.MeshStandardMaterial({
+            color: cPrimary,
+            roughness: 0.4,      // Plus lisse
+            metalness: 0.6,      // Plus métallique
+            envMapIntensity: 1.5 // Reflets environnement
+        });
+
+        const matArmor = new THREE.MeshStandardMaterial({
+            color: cSecondary,
+            roughness: 0.3,      // Très lisse (armure polie)
+            metalness: 0.8,      // Très métallique
+            envMapIntensity: 2.0 // Reflets forts
+        });
+
+        const matJoint = new THREE.MeshStandardMaterial({
+            color: cDark,
+            roughness: 0.9,      // Mat
+            metalness: 0.2,      // Peu métallique
+            emissive: cDark,
+            emissiveIntensity: 0.1 // Légère lueur
+        });
+
+        const matNeon = new THREE.MeshStandardMaterial({
+            color: cAccent,
+            emissive: cAccent,
+            emissiveIntensity: 3.0,  // Très lumineux
+            roughness: 0.2,
+            metalness: 0.9,
+            toneMapped: false        // Pas de tone mapping (plus brillant)
+        });
+
+        // ✨ MATÉRIAU HIGHLIGHT (pour détails)
+        const matHighlight = new THREE.MeshStandardMaterial({
+            color: cHighlight,
+            emissive: cHighlight,
+            emissiveIntensity: 1.5,
+            roughness: 0.1,
+            metalness: 1.0,
+            toneMapped: false
+        });
 
         // --- BODY ---
         this.bodyMesh = new THREE.Group();
@@ -666,28 +792,78 @@ export class Player {
         const chestGeo = new THREE.BoxGeometry(0.42, 0.3, 0.27);
         const chest = new THREE.Mesh(chestGeo, matArmor);
         chest.position.y = 0.35;
+        chest.castShadow = true;
         torso.add(chest);
 
-        const coreGeo = new THREE.BoxGeometry(0.1, 0.1, 0.05);
+        // ✨ CORE ÉNERGÉTIQUE (plus gros et lumineux)
+        const coreGeo = new THREE.BoxGeometry(0.15, 0.15, 0.06);
         const core = new THREE.Mesh(coreGeo, matNeon);
         core.position.set(0, 0.35, 0.15);
         torso.add(core);
 
-        // --- HEAD ---
+        // ✨ LIGNES NÉON VERTICALES (côtés du torse)
+        const neonLineGeo = new THREE.BoxGeometry(0.02, 0.4, 0.02);
+        const neonLineLeft = new THREE.Mesh(neonLineGeo, matNeon);
+        neonLineLeft.position.set(-0.18, 0.25, 0.1);
+        torso.add(neonLineLeft);
+
+        const neonLineRight = new THREE.Mesh(neonLineGeo, matNeon);
+        neonLineRight.position.set(0.18, 0.25, 0.1);
+        torso.add(neonLineRight);
+
+        // ✨ ACCENTS HORIZONTAUX (épaules sur torse)
+        const torsoShoulderAccentGeo = new THREE.BoxGeometry(0.15, 0.02, 0.02);
+        const torsoShoulderAccentL = new THREE.Mesh(torsoShoulderAccentGeo, matHighlight);
+        torsoShoulderAccentL.position.set(-0.15, 0.48, 0.05);
+        torso.add(torsoShoulderAccentL);
+
+        const torsoShoulderAccentR = new THREE.Mesh(torsoShoulderAccentGeo, matHighlight);
+        torsoShoulderAccentR.position.set(0.15, 0.48, 0.05);
+        torso.add(torsoShoulderAccentR);
+
+        // --- HEAD DÉTAILLÉE ---
         this.head = new THREE.Group();
         this.head.position.set(0, 0.55, 0);
         this.bodyMesh.add(this.head);
 
-        const headGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
-        const headMesh = new THREE.Mesh(headGeo, matBody);
+        // Casque/Tête principale (SPHÈRE pour look organique)
+        const headGeo = new THREE.SphereGeometry(0.18, 16, 16);
+        const headMesh = new THREE.Mesh(headGeo, matArmor);
         headMesh.position.y = 0.15;
         headMesh.castShadow = true;
         this.head.add(headMesh);
 
-        const visorGeo = new THREE.BoxGeometry(0.25, 0.08, 0.05);
-        const visor = new THREE.Mesh(visorGeo, matNeon);
-        visor.position.set(0, 0.15, 0.16);
+        // 👁️ YEUX ÉMISSIFS (2 sphères lumineuses)
+        const eyeGeo = new THREE.SphereGeometry(0.04, 8, 8);
+        const eyeLeft = new THREE.Mesh(eyeGeo, matNeon);
+        eyeLeft.position.set(-0.08, 0.18, 0.14);
+        this.head.add(eyeLeft);
+
+        const eyeRight = new THREE.Mesh(eyeGeo, matNeon);
+        eyeRight.position.set(0.08, 0.18, 0.14);
+        this.head.add(eyeRight);
+
+        // 😮 BOUCHE LUMINEUSE (ligne horizontale)
+        const mouthGeo = new THREE.BoxGeometry(0.12, 0.02, 0.02);
+        const mouth = new THREE.Mesh(mouthGeo, matNeon);
+        mouth.position.set(0, 0.08, 0.16);
+        this.head.add(mouth);
+
+        // Visor/Visière (plus grand)
+        const visorGeo = new THREE.BoxGeometry(0.28, 0.10, 0.04);
+        const visor = new THREE.Mesh(visorGeo, matHighlight);
+        visor.position.set(0, 0.17, 0.17);
         this.head.add(visor);
+
+        // 📡 ANTENNES (détails tech)
+        const antennaGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.15, 6);
+        const antennaLeft = new THREE.Mesh(antennaGeo, matNeon);
+        antennaLeft.position.set(-0.14, 0.35, 0);
+        this.head.add(antennaLeft);
+
+        const antennaRight = new THREE.Mesh(antennaGeo, matNeon);
+        antennaRight.position.set(0.14, 0.35, 0);
+        this.head.add(antennaRight);
 
         // --- ARMS ---
         const armW = 0.12, armL = 0.35, armD = 0.12;
@@ -700,6 +876,19 @@ export class Player {
         lUpper.castShadow = true;
         this.leftArm.add(lUpper);
 
+        // 🛡️ ÉPAULIÈRE GAUCHE (volumineuse)
+        const shoulderPadGeo = new THREE.BoxGeometry(0.18, 0.15, 0.18);
+        const shoulderPadL = new THREE.Mesh(shoulderPadGeo, matArmor);
+        shoulderPadL.position.set(0, 0.05, 0);
+        shoulderPadL.castShadow = true;
+        this.leftArm.add(shoulderPadL);
+
+        // Accent néon sur épaulière gauche
+        const leftArmAccentGeo = new THREE.BoxGeometry(0.16, 0.02, 0.02);
+        const leftArmAccent = new THREE.Mesh(leftArmAccentGeo, matNeon);
+        leftArmAccent.position.set(0, 0.08, 0.08);
+        this.leftArm.add(leftArmAccent);
+
         this.leftForeArm = new THREE.Group();
         this.leftForeArm.position.y = -armL;
         this.leftArm.add(this.leftForeArm);
@@ -711,8 +900,34 @@ export class Player {
         this.leftHand.position.y = -armL * 0.9;
         this.leftForeArm.add(this.leftHand);
 
+        // 🖐️ MAIN GAUCHE DÉTAILLÉE
+        // Paume
+        const palmGeo = new THREE.BoxGeometry(0.08, 0.06, 0.12);
+        const palm = new THREE.Mesh(palmGeo, matBody);
+        palm.position.set(0, -0.03, 0);
+        palm.castShadow = true;
+        this.leftHand.add(palm);
+
+        // 5 DOIGTS (simplifié - 2 phalanges par doigt)
+        const fingerW = 0.015, fingerL = 0.04;
+
+        // Pouce (à part, sur le côté)
+        const thumb1 = new THREE.Mesh(new THREE.BoxGeometry(fingerW, fingerL, fingerW), matJoint);
+        thumb1.position.set(-0.04, -0.03, 0.04);
+        thumb1.rotation.z = Math.PI / 4;
+        this.leftHand.add(thumb1);
+
+        // 4 doigts (index, majeur, annulaire, auriculaire)
+        for (let i = 0; i < 4; i++) {
+            const xOffset = -0.03 + i * 0.02;
+            const finger = new THREE.Mesh(new THREE.BoxGeometry(fingerW, fingerL, fingerW), matJoint);
+            finger.position.set(xOffset, -0.06, 0.06);
+            this.leftHand.add(finger);
+        }
+
         this.leftWeaponSlot = new THREE.Group();
         this.leftWeaponSlot.rotation.x = Math.PI / 2;
+        this.leftWeaponSlot.position.set(0, 0, 0.1); // Slightly forward
         this.leftHand.add(this.leftWeaponSlot);
 
         this.rightArm = new THREE.Group();
@@ -722,6 +937,19 @@ export class Player {
         rUpper.position.y = -armL / 2;
         rUpper.castShadow = true;
         this.rightArm.add(rUpper);
+
+        // 🛡️ ÉPAULIÈRE DROITE (volumineuse)
+        const shoulderPadRGeo = new THREE.BoxGeometry(0.18, 0.15, 0.18);
+        const shoulderPadR = new THREE.Mesh(shoulderPadRGeo, matArmor);
+        shoulderPadR.position.set(0, 0.05, 0);
+        shoulderPadR.castShadow = true;
+        this.rightArm.add(shoulderPadR);
+
+        // Accent néon sur épaulière droite
+        const rightArmAccentGeo = new THREE.BoxGeometry(0.16, 0.02, 0.02);
+        const rightArmAccent = new THREE.Mesh(rightArmAccentGeo, matNeon);
+        rightArmAccent.position.set(0, 0.08, 0.08);
+        this.rightArm.add(rightArmAccent);
 
         this.rightForeArm = new THREE.Group();
         this.rightForeArm.position.y = -armL;
@@ -734,9 +962,40 @@ export class Player {
         this.rightHand.position.y = -armL * 0.9;
         this.rightForeArm.add(this.rightHand);
 
+        // 🖐️ MAIN DROITE DÉTAILLÉE
+        // Paume
+        const palmRGeo = new THREE.BoxGeometry(0.08, 0.06, 0.12);
+        const palmR = new THREE.Mesh(palmRGeo, matBody);
+        palmR.position.set(0, -0.03, 0);
+        palmR.castShadow = true;
+        this.rightHand.add(palmR);
+
+        // 5 DOIGTS
+        // Pouce (réutilise fingerW et fingerL de la main gauche)
+        const thumbR1 = new THREE.Mesh(new THREE.BoxGeometry(fingerW, fingerL, fingerW), matJoint);
+        thumbR1.position.set(0.04, -0.03, 0.04);
+        thumbR1.rotation.z = -Math.PI / 4;
+        this.rightHand.add(thumbR1);
+
+        // 4 doigts
+        for (let i = 0; i < 4; i++) {
+            const xOffset = -0.03 + i * 0.02;
+            const finger = new THREE.Mesh(new THREE.BoxGeometry(fingerW, fingerL, fingerW), matJoint);
+            finger.position.set(xOffset, -0.06, 0.06);
+            this.rightHand.add(finger);
+        }
+
+        // 🗡️ RIGHT WEAPON SLOT (Main Hand)
         this.weaponSlot = new THREE.Group();
         this.weaponSlot.rotation.x = Math.PI / 2;
+        this.weaponSlot.position.set(0, 0, 0.1); // Slightly forward
         this.rightHand.add(this.weaponSlot);
+
+        // 🗡️ LEFT WEAPON SLOT (Off-Hand for Dual-Wield)
+        this.leftWeaponSlot = new THREE.Group();
+        this.leftWeaponSlot.rotation.x = Math.PI / 2;
+        this.leftWeaponSlot.position.set(0, 0, 0.1); // Slightly forward
+        this.leftHand.add(this.leftWeaponSlot);
 
         // --- LEGS ---
         const legW = 0.14, legL = 0.45, legD = 0.14;
@@ -756,6 +1015,14 @@ export class Player {
         lShin.position.y = -legL / 2;
         lShin.castShadow = true;
         this.leftShin.add(lShin);
+
+        // 🛡️ GENOUILLÈRE GAUCHE
+        const kneeGuardLGeo = new THREE.BoxGeometry(0.16, 0.12, 0.16);
+        const kneeGuardL = new THREE.Mesh(kneeGuardLGeo, matArmor);
+        kneeGuardL.position.set(0, 0, 0);
+        kneeGuardL.castShadow = true;
+        this.leftShin.add(kneeGuardL);
+
         this.leftFoot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.2), matJoint);
         this.leftFoot.position.set(0, -legL, 0.05);
         this.leftShin.add(this.leftFoot);
@@ -854,6 +1121,19 @@ export class Player {
         if (this.combat) this.combat.update(dt);
         if (this.animator) this.animator.update(dt);
         if (this.visuals) this.visuals.update(dt);
+
+        // 🎮 UPDATE ADVANCED COMBAT SYSTEMS
+        if (this.comboSystem) this.comboSystem.update(dt);
+        if (this.combatEffects) this.combatEffects.update(dt);
+        if (this.particleSystem) this.particleSystem.update(dt);
+        if (this.weaponAnimations) this.weaponAnimations.update(dt);
+
+        // Update weapon trail (needs weapon position)
+        if (this.weaponTrail && this.weaponSlot) {
+            const weaponPos = new THREE.Vector3();
+            this.weaponSlot.getWorldPosition(weaponPos);
+            this.weaponTrail.update(weaponPos);
+        }
 
         if (this.state === 'AIR' && this.combat && this.combat.isAiming) {
             this.stamina -= dt * 10;
@@ -1763,6 +2043,12 @@ export class Player {
             console.log(`🔧 GLB not found for ${item.weaponType}, using procedural weapon`);
             const meshGroup = WeaponGenerator.createWeapon(item);
             meshGroup.rotation.x = -Math.PI / 2;
+
+            // 🗡️ Make daggers bigger for visibility
+            if (item.weaponType === 'DAGGER' || item.weaponType === 'DOUBLE_BLADE') {
+                meshGroup.scale.set(1.0, 1.0, 1.0); // Taille normale
+            }
+
             this.weaponSlot.add(meshGroup);
         }
 
@@ -1772,17 +2058,44 @@ export class Player {
                 this.leftWeaponSlot.remove(this.leftWeaponSlot.children[0]);
             }
 
-            if (item.weaponType === 'DAGGER') {
-                // Use procedural for daggers (no GLB model yet)
+            if (item.weaponType === 'DAGGER' || item.weaponType === 'DOUBLE_BLADE') {
+                // 🗡️ Create off-hand dagger for dual-wield
                 const offHandMesh = WeaponGenerator.createWeapon(item);
                 offHandMesh.rotation.x = -Math.PI / 2;
+                offHandMesh.scale.set(1.0, 1.0, 1.0); // Taille normale
                 this.leftWeaponSlot.add(offHandMesh);
+                console.log(`🗡️ Dual-wield activated: ${item.name} x2`);
             }
         }
 
         if (this.combat) {
             // combat logic
         }
+
+        // 🎨 UPDATE WEAPON TRAIL COLOR
+        if (this.weaponTrail) {
+            const trailType = this.getWeaponTrailType(item.weaponType);
+            this.weaponTrail.setWeaponType(trailType);
+            console.log(`✨ Weapon trail set to: ${trailType}`);
+        }
+    }
+
+    /**
+     * Map weapon type to trail type
+     * @param {string} weaponType
+     * @returns {string}
+     */
+    getWeaponTrailType(weaponType) {
+        const trailMap = {
+            'SWORD': 'sword',
+            'GREATSWORD': 'sword',
+            'DAGGER': 'dagger',
+            'DOUBLE_BLADE': 'dagger',
+            'SPEAR': 'spear',
+            'BOW': 'bow',
+            'STAFF': 'staff'
+        };
+        return trailMap[weaponType] || 'sword';
     }
 
     /**

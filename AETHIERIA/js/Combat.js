@@ -308,14 +308,11 @@ export class Combat {
             return;
         }
 
-        const now = performance.now();
-        if (now - this.lastAttackTime < 1000) {
-            this.comboStep = (this.comboStep + 1) % 3;
-        } else {
-            this.comboStep = 0;
-        }
+        // 🎮 USE ADVANCED COMBO SYSTEM
+        const comboStep = this.player.comboSystem ? this.player.comboSystem.registerHit() : 1;
+        this.comboStep = comboStep - 1; // Keep for compatibility (0-indexed)
 
-        this.lastAttackTime = now;
+        this.lastAttackTime = performance.now();
         this.isAttacking = true;
         this.attackProgress = 0;
 
@@ -323,19 +320,28 @@ export class Combat {
         // @ts-ignore
         if (this.player.audio) this.player.audio.playSFX('sword');
 
-        // Play Procedural Animation
-        // DISABLED in favor of Evolved Weapon Math Visuals in Player.js
-        /* 
-        if (this.player.animator) {
-            const animName = `ATTACK_${this.comboStep + 1}`;
-            this.player.animator.play(animName, 1.2); // 1.2x speed
+        // 🎯 TRIGGER WEAPON-SPECIFIC ANIMATION
+        if (this.player.weaponAnimations && this.player.equippedWeapon) {
+            const weaponType = this.player.equippedWeapon.weaponType;
+            this.player.weaponAnimations.playAttackAnimation(weaponType, this.comboStep);
+            console.log(`🎯 ${weaponType} animation (combo ${comboStep})`);
         }
-        */
 
-        // Trigger Weapon Trail
+        // ✨ START WEAPON TRAIL
+        if (this.player.weaponTrail && this.player.weaponSlot) {
+            const weaponPos = new THREE.Vector3();
+            this.player.weaponSlot.getWorldPosition(weaponPos);
+            this.player.weaponTrail.start(weaponPos);
+
+            // Stop trail after attack duration
+            setTimeout(() => {
+                if (this.player.weaponTrail) this.player.weaponTrail.stop();
+            }, 400);
+        }
+
+        // Legacy trail (keep for compatibility)
         if (this.player.visuals) {
             this.player.visuals.startTrail();
-            // Stop trail after delay
             setTimeout(() => { if (this.player.visuals) this.player.visuals.stopTrail(); }, 300);
         }
 
@@ -378,12 +384,16 @@ export class Combat {
 
                 if (enemy.applyKnockback) enemy.applyKnockback(direction, force);
 
+                // 💪 CALCULATE DAMAGE WITH COMBO MULTIPLIER
                 // @ts-ignore
                 const baseAtk = this.player.stats ? this.player.stats.attack : 5;
                 const weaponDmg = (this.player.equippedWeapon && this.player.equippedWeapon.stats) ? this.player.equippedWeapon.stats.damage : 0;
                 let damage = baseAtk + weaponDmg;
 
-                if (this.comboStep === 2) damage *= 1.5;
+                // Apply combo multiplier
+                const comboMultiplier = this.player.comboSystem ? this.player.comboSystem.getDamageMultiplier() : 1.0;
+                damage *= comboMultiplier;
+
                 const isCrit = Math.random() < 0.1;
                 if (isCrit) damage *= 2.0;
 
@@ -396,20 +406,41 @@ export class Combat {
                     this.player.game.ui.showDamage(hitPos, Math.floor(damage), isCrit);
                 }
 
-                // Spawn Particles
+                // 💥 ADVANCED PARTICLE EFFECTS
+                const isComboFinisher = (this.comboStep === 2);
+
+                if (this.player.particleSystem) {
+                    if (isComboFinisher) {
+                        // Combo 3 = Explosion
+                        this.player.particleSystem.emitExplosion(hitPos);
+                    } else if (isCrit) {
+                        // Critical = Gold particles
+                        this.player.particleSystem.emitCriticalHit(hitPos);
+                    } else {
+                        // Normal = White sparks
+                        this.player.particleSystem.emitHitSparks(hitPos);
+                    }
+                }
+
+                // Legacy particles (keep for compatibility)
                 if (this.player.visuals) {
                     const el = this.player.equippedWeapon ? this.player.equippedWeapon.element : 'NONE';
                     this.player.visuals.spawnImpact(hitPos, el);
                 }
 
+                // 📳 ADVANCED COMBAT EFFECTS
+                if (this.player.combatEffects) {
+                    if (isComboFinisher) {
+                        this.player.combatEffects.comboFinisherEffect();
+                    } else if (isCrit) {
+                        this.player.combatEffects.criticalHitEffect();
+                    } else {
+                        this.player.combatEffects.normalHitEffect();
+                    }
+                }
+
                 // @ts-ignore
-                if (this.player.spawnHitParticles) this.player.spawnHitParticles(hitPos);
-                // @ts-ignore
-                if (this.player.hitStop) this.player.hitStop(0.05); // 50ms Hit Stop
-                // @ts-ignore
-                if (this.player.screenShake) this.player.screenShake(0.3, 0.2);
-                // @ts-ignore
-                if (this.player.screenShake) this.player.screenShake(0.3, 0.2);
+                if (this.player.hitStop) this.player.hitStop(0.05);
             }
         });
     }

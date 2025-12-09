@@ -4,12 +4,12 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // ========================================
-// 🌐 PLAYER MODEL URL (Customizable)
+// 🌐 PLAYER MODEL URL (Local Asset)
 // ========================================
-export const PLAYER_MODEL_URL = 'https://models.readyplayer.me/6937267a78f65986cc726825.glb';
+export const PLAYER_MODEL_URL = 'assets/hero.glb';
 
-// Fallback if PLAYER_MODEL_URL fails to load
-const FALLBACK_MODEL_URL = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb';
+// Fallback if hero.glb fails to load
+const FALLBACK_MODEL_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@dev/examples/models/gltf/Soldier.glb';
 
 // ========================================
 // 🎬 EXTERNAL ANIMATIONS FOR READY PLAYER ME

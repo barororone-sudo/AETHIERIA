@@ -1,5 +1,6 @@
 // js/Debug.js
 import { ItemsDb } from './data/ItemsDb.js';
+import { Enemy } from './Enemy.js';
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
@@ -106,10 +107,15 @@ export class DebugManager {
         };
 
         document.getElementById('dbg-items').onclick = () => {
-            this.game.player.inventory.addItem('sword_iron', 1);
+            // Weapons for testing
+            this.game.player.inventory.addItem('sword_starter', 1);
+            this.game.player.inventory.addItem('dagger_thief', 1);
+            this.game.player.inventory.addItem('dagger_void', 1);
+            this.game.player.inventory.addItem('greatsword_iron', 1);
+            // Consumables
             this.game.player.inventory.addItem('potion_health', 10);
             this.game.player.inventory.addItem('crystal_pyro', 5);
-            console.log("Debug: Items Given");
+            console.log("Debug: Items Given (including daggers!)");
         };
 
         document.getElementById('dbg-enemy').onclick = () => {
@@ -127,7 +133,7 @@ export class DebugManager {
             const rndId = types[Math.floor(Math.random() * types.length)];
 
             console.log(`Debug: Spawning ${rndId}`);
-            new this.game.world.Enemy(this.game.world, pos, rndId);
+            new Enemy(this.game.world, pos, rndId);
         };
 
         document.getElementById('dbg-golem').onclick = () => {
@@ -161,13 +167,13 @@ export class DebugManager {
         if (!select) return;
 
         ItemsDb.forEach(item => {
-            // Filter only weapons if needed, but ItemsDb seems to be mostly weapons now
-            if (item.type === 'WEAPON') {
+            // Filter weapons by category
+            if (item.category === 'WEAPON') {
                 const opt = document.createElement('option');
                 opt.value = item.id;
                 // [TYPE] Name (Rarity)
                 const typeInfo = item.weaponType ? `[${item.weaponType}] ` : '';
-                opt.text = `${typeInfo}${item.name} (${item.rarity})`;
+                opt.text = `${typeInfo}${item.name}`;
                 select.appendChild(opt);
             }
         });
