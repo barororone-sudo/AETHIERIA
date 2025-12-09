@@ -246,7 +246,7 @@ body {
     cursor: grab;
 }
 
-/* --- PAUSE MENU (Redesign) --- */
+/* --- PAUSE MENU (Smooth Fade Transition) --- */
 #pause-menu {
     position: fixed;
     top: 0;
@@ -257,12 +257,23 @@ body {
     /* Very light dim */
     /* Remove blur from full screen so Map is clear */
     /* backdrop-filter: blur(8px); */
-    display: none;
-    /* Flex when active */
+    display: flex;
+    /* Always flex, control visibility with opacity */
     justify-content: center;
     align-items: center;
     z-index: 5000;
     font-family: 'Cinzel', serif;
+
+    /* Smooth fade transition */
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+/* Visible state */
+#pause-menu.visible {
+    opacity: 1;
+    pointer-events: all;
 }
 
 .pause-menu-container {

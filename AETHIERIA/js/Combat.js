@@ -44,6 +44,42 @@ export class Combat {
         this.initReticle();
     }
 
+    /**
+     * ⚡ HIT FLASH EFFECT
+     * Flashes enemy mesh white for 100ms when taking damage
+     * @param {any} enemy - Enemy object with mesh property
+     */
+    flashEnemy(enemy) {
+        if (!enemy || !enemy.mesh) return;
+
+        const mesh = enemy.mesh;
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+
+        // Store original emissive values
+        const originalEmissive = materials.map(mat => ({
+            color: mat.emissive ? mat.emissive.clone() : new THREE.Color(0x000000),
+            intensity: mat.emissiveIntensity !== undefined ? mat.emissiveIntensity : 0
+        }));
+
+        // Flash white
+        materials.forEach(mat => {
+            if (mat.emissive) {
+                mat.emissive.setHex(0xffffff);
+                mat.emissiveIntensity = 10.0;
+            }
+        });
+
+        // Revert after 100ms
+        setTimeout(() => {
+            materials.forEach((mat, index) => {
+                if (mat.emissive && originalEmissive[index]) {
+                    mat.emissive.copy(originalEmissive[index].color);
+                    mat.emissiveIntensity = originalEmissive[index].intensity;
+                }
+            });
+        }, 100);
+    }
+
     initReticle() {
         // Simple Ring for Targeting
         const geo = new THREE.RingGeometry(0.3, 0.35, 32);
@@ -294,6 +330,10 @@ export class Combat {
         const enemy = enemies.find(e => e.mesh === root);
         if (enemy) {
             enemy.takeDamage(15, Elements.NONE, isWeakPoint);
+
+            // ⚡ HIT FLASH EFFECT
+            this.flashEnemy(enemy);
+
             // @ts-ignore
             if (this.player.hitStop) this.player.hitStop(0.05);
             // @ts-ignore
@@ -398,6 +438,9 @@ export class Combat {
                 if (isCrit) damage *= 2.0;
 
                 enemy.takeDamage(Math.floor(damage), Elements.NONE);
+
+                // ⚡ HIT FLASH EFFECT
+                this.flashEnemy(enemy);
 
                 const playerPos = new THREE.Vector3(this.player.body.position.x, this.player.body.position.y, this.player.body.position.z);
                 const hitPos = playerPos.add(direction.clone().multiplyScalar(1.0));

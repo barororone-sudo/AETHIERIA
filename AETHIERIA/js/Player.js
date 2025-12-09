@@ -1418,6 +1418,29 @@ export class Player {
                     this.body.velocity.z = 0;
                 }
                 if (!grounded) this.body.velocity.y -= 10 * dt;
+
+                // 👣 FOOTSTEP SOUNDS
+                if (inputLen > 0.1 && grounded) {
+                    // Player is moving and on ground
+                    this.stepTimer -= dt;
+
+                    if (this.stepTimer <= 0) {
+                        // Play footstep sound
+                        if (this.game.audio) {
+                            this.game.audio.playSFX('step');
+                        }
+
+                        // Reset timer based on speed
+                        if (this.state === 'SPRINT') {
+                            this.stepTimer = 0.25; // Faster steps when sprinting
+                        } else {
+                            this.stepTimer = 0.35; // Normal pace for RUN/WALK
+                        }
+                    }
+                } else {
+                    // Player stopped or in air - reset timer
+                    this.stepTimer = 0;
+                }
                 break;
         }
 
