@@ -210,8 +210,9 @@ export class LootManager {
                 continue;
             }
 
-            // Pickup Check
-            const dist = drop.mesh.position.distanceTo(pPos);
+            // 🎯 Pickup Check (Convert CANNON.Vec3 to THREE.Vector3)
+            const playerPos = new THREE.Vector3(pPos.x, pPos.y, pPos.z);
+            const dist = drop.mesh.position.distanceTo(playerPos);
             if (dist < pickupRange) {
                 this.collectLoot(i);
             }
@@ -235,10 +236,12 @@ export class LootManager {
         if (this.game.story) {
             this.game.story.notify('ITEM_PICKUP', drop.item.id);
         }
-        console.log(`Picked up ${drop.count} ${drop.item.name}`);
+        console.log(`✅ Picked up ${drop.count} ${drop.item.name}`);
 
-        // Sound
-        // this.game.audio.play('pop');
+        // 🔊 Pickup Sound
+        if (this.game.audio) {
+            this.game.audio.playSFX('pickup'); // Generic pickup sound
+        }
 
         this.removeDrop(index);
     }

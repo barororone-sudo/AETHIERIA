@@ -27,6 +27,9 @@ export class Combat {
         this.attackProgress = 0;
         this.isAttacking = false;
 
+        // 🎯 Hit tracking per attack swing (prevents multi-hit)
+        /** @type {Set<string>} */ this.hitEnemies = new Set();
+
         // Z-Targeting
         /** @type {import('./Enemy.js').Enemy | null} */ this.lockedTarget = null;
         this.reticle = null; // Visual Indicator
@@ -55,15 +58,20 @@ export class Combat {
         const mesh = enemy.mesh;
         const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 
-        // Store original emissive values
-        const originalEmissive = materials.map(mat => ({
-            color: mat.emissive ? mat.emissive.clone() : new THREE.Color(0x000000),
-            intensity: mat.emissiveIntensity !== undefined ? mat.emissiveIntensity : 0
-        }));
+        // Store original emissive values (only for materials that support it)
+        const originalEmissive = materials.map(mat => {
+            // Skip materials without emissive support
+            if (!mat || mat.emissive === undefined) return null;
 
-        // Flash white
-        materials.forEach(mat => {
-            if (mat.emissive) {
+            return {
+                color: mat.emissive.clone(),
+                intensity: mat.emissiveIntensity !== undefined ? mat.emissiveIntensity : 0
+            };
+        });
+
+        // Flash white (only materials with emissive support)
+        materials.forEach((mat, index) => {
+            if (mat && mat.emissive !== undefined) {
                 mat.emissive.setHex(0xffffff);
                 mat.emissiveIntensity = 10.0;
             }
@@ -72,7 +80,7 @@ export class Combat {
         // Revert after 100ms
         setTimeout(() => {
             materials.forEach((mat, index) => {
-                if (mat.emissive && originalEmissive[index]) {
+                if (mat && mat.emissive !== undefined && originalEmissive[index]) {
                     mat.emissive.copy(originalEmissive[index].color);
                     mat.emissiveIntensity = originalEmissive[index].intensity;
                 }
@@ -342,6 +350,7 @@ export class Combat {
     }
 
     attack() {
+        console.log('🎯 attack() called, isAttacking:', this.isAttacking);
         if (this.isAttacking) return;
         if (this.isAiming) {
             this.shootArrow();
@@ -355,6 +364,7 @@ export class Combat {
         this.lastAttackTime = performance.now();
         this.isAttacking = true;
         this.attackProgress = 0;
+        console.log('✅ Attack started, isAttacking now:', this.isAttacking);
 
         if (this.weapon) this.weapon.visible = true;
         // @ts-ignore
@@ -398,13 +408,17 @@ export class Combat {
     }
 
     checkHit() {
+        console.log('🔍 checkHit() called');
         if (!this.player.world || !this.player.body) return;
         /** @type {any[]} */
         const enemies = this.player.world.enemies || [];
+        console.log('👹 Enemies found:', enemies.length);
 
         enemies.forEach(enemy => {
             if (!this.player.body) return;
+
             const dist = this.player.body.position.distanceTo(enemy.body.position);
+            console.log(`📏 Distance to enemy: ${dist.toFixed(2)}`);
 
             let weaponRange = 3.0;
             if (this.player.equippedWeapon) {
@@ -419,6 +433,7 @@ export class Combat {
             const range = weaponRange + (enemy.hitRadius || 0);
 
             if (dist < range) {
+                console.log(`💥 HIT! Distance ${dist.toFixed(2)} < Range ${range.toFixed(2)}`);
                 const direction = new THREE.Vector3().subVectors(enemy.body.position, this.player.body.position).normalize();
                 const force = (this.comboStep === 2) ? 15 : 8;
 
@@ -497,6 +512,104 @@ export class Combat {
             if (this.weapon) this.weapon.visible = false;
             // if (this.bow) this.bow.visible = false;
         }
+    }
+
+    /**
+     * ⚡ SPECIAL SKILL - Genshin Impact Style
+     * AOE burst with damage, knockback, and visual effect
+     */
+    triggerSkill() {
+        console.log('⚡ SKILL ACTIVATED!');
+
+        // Reset cooldown
+        this.player.skillCooldown = this.player.skillMaxCooldown;
+
+        // Visual burst effect
+        this.createSkillBurst();
+
+        // AOE damage
+        this.applySkillDamage();
+
+        // Sound effect
+        if (this.player.game.audio) {
+            this.player.game.audio.playSFX('sword'); // Reuse sword sound for now
+        }
+    }
+
+    /**
+     * Create visual burst effect
+     */
+    createSkillBurst() {
+        const geo = new THREE.SphereGeometry(0.5, 32, 32);
+        const mat = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.8
+        });
+        const burst = new THREE.Mesh(geo, mat);
+        burst.position.copy(this.player.mesh.position);
+        this.player.world.scene.add(burst);
+
+        // Animate: scale + fade
+        let time = 0;
+        const animate = () => {
+            time += 0.016; // ~60fps
+            if (time > 0.5) {
+                burst.geometry.dispose();
+                burst.material.dispose();
+                this.player.world.scene.remove(burst);
+                return;
+            }
+
+            const scale = 1 + time * 20; // Scale to 10x
+            burst.scale.set(scale, scale, scale);
+            burst.material.opacity = 0.8 - time * 1.6;
+            requestAnimationFrame(animate);
+        };
+        animate();
+
+        // Use particle system if available
+        if (this.player.particleSystem) {
+            const pos = this.player.mesh.position.clone();
+            this.player.particleSystem.emitExplosion(pos);
+        }
+    }
+
+    /**
+     * Apply AOE damage to nearby enemies
+     */
+    applySkillDamage() {
+        const enemies = this.player.world.enemies || [];
+        const playerPos = this.player.body.position;
+        const skillRadius = 5.0;
+        const skillDamage = 200;
+
+        enemies.forEach(enemy => {
+            const dist = playerPos.distanceTo(enemy.body.position);
+            if (dist <= skillRadius) {
+                enemy.takeDamage(skillDamage, Elements.NONE);
+
+                // Flash effect
+                this.flashEnemy(enemy);
+
+                // Knockback
+                const dir = new THREE.Vector3()
+                    .subVectors(
+                        new THREE.Vector3(enemy.body.position.x, enemy.body.position.y, enemy.body.position.z),
+                        new THREE.Vector3(playerPos.x, playerPos.y, playerPos.z)
+                    )
+                    .normalize();
+                if (enemy.applyKnockback) {
+                    enemy.applyKnockback(dir, 20);
+                }
+
+                // Show damage
+                if (this.player.game.ui && this.player.game.ui.showDamage) {
+                    const hitPos = new THREE.Vector3(enemy.mesh.position.x, enemy.mesh.position.y, enemy.mesh.position.z);
+                    this.player.game.ui.showDamage(hitPos, skillDamage, false);
+                }
+            }
+        });
     }
 
     shootArrow() {

@@ -115,6 +115,10 @@ export class Player {
         this.canGlide = true;
         this.canSurf = true;
 
+        // ⚡ Special Skill System
+        this.skillCooldown = 0;
+        this.skillMaxCooldown = 6.0; // 6 seconds
+
         // Camera State
         this.cameraState = {
             distance: 5,
@@ -1117,6 +1121,18 @@ export class Player {
 
         // Update remote model animations
         if (this.mixer) this.mixer.update(dt);
+
+        // ⚡ SKILL COOLDOWN SYSTEM
+        if (this.skillCooldown > 0) {
+            this.skillCooldown -= dt;
+            if (this.skillCooldown < 0) this.skillCooldown = 0;
+        }
+
+        // Check skill activation (E key)
+        if (this.input.keys.skill && this.skillCooldown <= 0) {
+            if (this.combat) this.combat.triggerSkill();
+            this.input.keys.skill = false; // Prevent holding
+        }
 
         if (this.combat) this.combat.update(dt);
         if (this.animator) this.animator.update(dt);

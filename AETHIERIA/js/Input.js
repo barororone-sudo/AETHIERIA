@@ -11,6 +11,7 @@ export class Input {
             crouch: false, // Ctrl
             sprint: false,  // Shift
             interact: false,
+            skill: false,    // E - Special Skill
             confirm: false,
             p: false,
             map: false,
@@ -78,6 +79,9 @@ export class Input {
                 break;
             case 'KeyE':
                 this.keys.interact = isDown;
+                break;
+            case 'KeyU':
+                this.keys.skill = isDown;
                 break;
             case 'KeyP':
                 this.keys.p = isDown;
