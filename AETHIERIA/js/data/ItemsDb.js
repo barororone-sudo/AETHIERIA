@@ -70,6 +70,22 @@ export const SetBonuses = {
 };
 
 export const ItemsDb = [
+    // ========================================
+    // QUEST ITEMS
+    // ========================================
+    {
+        id: 'ancient_communicator',
+        name: 'Communicateur Ancien',
+        type: 'quest_item',
+        description: 'Un étrange dispositif qui vibre doucement.',
+        icon: '💎',
+        rarity: 'quest',
+        stackable: false
+    },
+
+    // ========================================
+    // WEAPONS
+    // ========================================
     // --- WEAPONS ---
     {
         id: 'sword_starter',

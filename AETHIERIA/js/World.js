@@ -97,6 +97,10 @@ export class World {
         // --- NPCS ---
         this.npcs = [];
 
+        // --- QUEST ITEMS ---
+        this.questItems = [];
+        this.populateStartingZone();
+
         // UPDRAFTS
         this.updrafts = [];
 
@@ -243,6 +247,42 @@ export class World {
             }
         };
         requestAnimationFrame(animate);
+    }
+
+    /**
+     * Populate starting zone with quest items
+     */
+    populateStartingZone() {
+        console.log('[World] Populating starting zone...');
+
+        // Spawn Ancient Communicator (first quest item)
+        const itemPos = { x: 10, y: 0.5, z: -15 };
+
+        // Create glowing cube for quest item
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x00FFFF,
+            emissive: 0x00FFFF,
+            emissiveIntensity: 0.5,
+            metalness: 0.8,
+            roughness: 0.2
+        });
+
+        const questItemMesh = new THREE.Mesh(geometry, material);
+        questItemMesh.position.set(itemPos.x, itemPos.y + 1, itemPos.z);
+        questItemMesh.userData.isQuestItem = true;
+        questItemMesh.userData.itemId = 'ancient_communicator';
+        this.scene.add(questItemMesh);
+
+        // Add point light
+        const light = new THREE.PointLight(0x00FFFF, 2, 5);
+        light.position.copy(questItemMesh.position);
+        this.scene.add(light);
+
+        // Store reference
+        this.questItems.push({ mesh: questItemMesh, light: light, time: 0 });
+
+        console.log(`[World] Quest item spawned at (${itemPos.x}, ${itemPos.z})`);
     }
 
     /**
@@ -985,6 +1025,16 @@ export class World {
 
         if (this.levelManager && this.levelManager.update) {
             this.levelManager.update(dt);
+        }
+
+        // Update quest items (floating animation)
+        if (this.questItems && this.questItems.length > 0) {
+            this.questItems.forEach(item => {
+                item.time += dt;
+                item.mesh.position.y = 1.5 + Math.sin(item.time * 2) * 0.2;
+                item.mesh.rotation.y += dt;
+                item.light.position.copy(item.mesh.position);
+            });
         }
     }
 

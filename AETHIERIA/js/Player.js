@@ -1355,6 +1355,7 @@ export class Player {
 
         // Interaction Check
         this.checkInteraction();
+        this.checkQuestItems(); // Check for quest items nearby
 
         if (this.combat && this.combat.isAttacking) {
             this.body.velocity.x = 0;
@@ -2094,6 +2095,52 @@ export class Player {
      */
     spawnHitParticles(pos, color) {
         // Implementation can be added back if needed
+    }
+
+    /**
+     * Check for nearby quest items
+     */
+    checkQuestItems() {
+        if (!this.game.world || !this.game.world.questItems) return;
+        if (!this.input.keys['KeyE']) return;
+
+        const playerPos = this.body.position;
+        const interactionRange = 3;
+
+        for (let i = 0; i < this.game.world.questItems.length; i++) {
+            const item = this.game.world.questItems[i];
+            const itemPos = item.mesh.position;
+            const dx = itemPos.x - playerPos.x;
+            const dz = itemPos.z - playerPos.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+
+            if (dist < interactionRange) {
+                const itemId = item.mesh.userData.itemId;
+                console.log(`[Player] Collecting quest item: ${itemId}`);
+
+                // Add to inventory
+                if (this.inventory) {
+                    this.inventory.addItem(itemId, 1);
+                }
+
+                // Remove from world
+                this.game.world.scene.remove(item.mesh);
+                this.game.world.scene.remove(item.light);
+                this.game.world.questItems.splice(i, 1);
+
+                // Trigger quest event
+                if (this.game.questManager) {
+                    this.game.questManager.checkQuestProgress('COLLECT_ITEM', { itemId });
+                }
+
+                // Show feedback
+                if (this.game.ui) {
+                    this.game.ui.showToast(`✅ Objet de quête obtenu !`);
+                }
+
+                return; // Only collect one item per frame
+            }
+        }
     }
 
     checkInteraction() {
