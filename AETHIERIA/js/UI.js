@@ -32,7 +32,7 @@ export class UIManager {
         this.initInput();
         this.initBossUI();
         this.initCrosshair();
-        this.initFullscreen();
+        // Fullscreen button removed
         this.initHUD();
     }
 

@@ -1,56 +1,173 @@
+/*
+ * AETHIERIA - DIALOGUES DATABASE
+ * Progressive dialogue system based on quest state
+ */
+
 export const DialoguesDb = {
-    'lumina_intro': {
-        start: {
-            text: "Salutations, ECHO-7. Je suis Lumina, ton interface de navigation. Le monde a bien changé depuis ta mise en veille.",
-            next: 'intro_2'
+    // ========================================
+    // ELARA - Main Story NPC (Village Elder)
+    // ========================================
+    'elara': {
+        // Default dialogue (no active quest)
+        'default': {
+            speaker: 'Elara',
+            text: "Bonjour, voyageur. Que puis-je faire pour vous ?",
+            next: null
         },
-        intro_2: {
-            text: "Tes systèmes sont encore instables. Je détecte une arme rudimentaire à proximité. Va la chercher.",
-            next: 'intro_3'
+
+        // When mq_01_wakeup is active
+        'mq_01_wakeup': {
+            speaker: 'Elara',
+            text: "Regardez autour de vous. Cherchez le dispositif. Il devrait émettre une lueur bleue.",
+            next: 'hint'
         },
-        intro_3: {
-            text: "Attention, les gardiens de ce monde ne te reconnaissent plus comme un allié.",
-            choices: [
-                { text: "Compris.", next: 'end' },
-                { text: "Où suis-je ?", next: 'explanation' }
-            ]
+        'hint': {
+            speaker: 'Elara',
+            text: "Les Anciens ont laissé des artefacts partout. Celui-ci est proche.",
+            next: null
         },
-        explanation: {
-            text: "Nous sommes dans les Plaines d'Aethieria. Autrefois un havre de paix, aujourd'hui un champ de ruines.",
-            next: 'intro_3'
+
+        // When mq_02_first_contact is active (player found communicator)
+        'mq_02_first_contact': {
+            speaker: 'Elara',
+            text: "Vous l'avez trouvé ! Vous êtes le Marcheur d'Écho décrit dans les prophéties.",
+            next: 'prophecy'
         },
-        end: {
-            text: "Bonne chance, unité."
+        'prophecy': {
+            speaker: 'Elara',
+            text: "Les Anciens ont prédit qu'un être comme vous se réveillerait pour restaurer l'équilibre du monde brisé.",
+            next: 'mission'
+        },
+        'mission': {
+            speaker: 'Elara',
+            text: "La Corruption du Vide dévore nos îles. Vous seul pouvez stabiliser la réalité.",
+            next: null
+        },
+
+        // When mq_03_training is active
+        'mq_03_training': {
+            speaker: 'Elara',
+            text: "Prouvez-moi que vous êtes capable de vous battre. Éliminez les Golems d'Entraînement près du camp.",
+            next: 'training_tip'
+        },
+        'training_tip': {
+            speaker: 'Elara',
+            text: "Utilisez vos compétences de combat. Les Golems sont résistants mais prévisibles.",
+            next: null
+        },
+
+        // When mq_04_forbidden_ruins is active
+        'mq_04_forbidden_ruins': {
+            speaker: 'Elara',
+            text: "Soyez prudent aux Ruines. L'énergie là-bas est instable.",
+            next: 'warning'
+        },
+        'warning': {
+            speaker: 'Elara',
+            text: "Le Gardien Construct protège le Fragment de Clé. C'est un adversaire redoutable créé par les Anciens.",
+            next: 'advice'
+        },
+        'advice': {
+            speaker: 'Elara',
+            text: "Étudiez ses mouvements. Chaque boss a une faiblesse.",
+            next: null
+        },
+
+        // After completing Act 1
+        'act1_complete': {
+            speaker: 'Elara',
+            text: "Vous avez prouvé votre valeur, Marcheur d'Écho. Les Temples Élémentaires vous attendent.",
+            next: 'act2_hint'
+        },
+        'act2_hint': {
+            speaker: 'Elara',
+            text: "Cherchez les trois Fragments : Pyro, Cryo, et Electro. Ils restaureront l'équilibre.",
+            next: null
         }
     },
-    'lumina_sword_found': {
-        start: {
-            text: "Excellente trouvaille. Cette épée est vieille, mais elle tranchera le métal rouillé.",
-            next: 'sword_2'
+
+    // ========================================
+    // LYRA - Side Quest NPC (Lost Pendant)
+    // ========================================
+    'lyra': {
+        'default': {
+            speaker: 'Lyra',
+            text: "Bonjour... Vous semblez capable. Pourriez-vous m'aider ?",
+            next: 'request'
         },
-        sword_2: {
-            text: "Maintenant, dirige-toi vers le pont. Le Gardien doit être neutralisé pour accéder à la Tour.",
-            choices: [
-                { text: "Je suis prêt.", next: 'end' }
-            ]
+        'request': {
+            speaker: 'Lyra',
+            text: "J'ai perdu le pendentif de ma mère près de la cascade. C'est tout ce qu'il me reste d'elle.",
+            next: null,
+            questTrigger: 'side_01_lost_pendant' // Triggers side quest
         },
-        end: {
-            text: "Que le code soit avec toi."
+
+        'side_01_lost_pendant': {
+            speaker: 'Lyra',
+            text: "Merci de m'aider. La cascade est au nord, près des rochers moussus.",
+            next: null
+        },
+
+        'quest_complete': {
+            speaker: 'Lyra',
+            text: "Vous l'avez retrouvé ! Merci infiniment. Voici une petite récompense.",
+            next: null
         }
     },
-    'lumina_act1_end': {
-        start: {
-            text: "Tour activée. Analyse des données... Terminé. Je capte un signal étrange venant de la Forêt à l'Est.",
-            next: 'act1_2'
+
+    // ========================================
+    // ELDER - Tutorial NPC
+    // ========================================
+    'elder': {
+        'default': {
+            speaker: 'L\'Ancien',
+            text: "Bienvenue, Marcheur d'Écho. Le monde a besoin de vous.",
+            next: 'explanation'
         },
-        act1_2: {
-            text: "C'est une signature énergétique corrompue. Nous devons enquêter.",
-            choices: [
-                { text: "En route pour la Forêt.", next: 'end' }
-            ]
+        'explanation': {
+            speaker: 'L\'Ancien',
+            text: "La Fracture a brisé notre réalité. Seuls les Marcheurs comme vous peuvent stabiliser les îles.",
+            next: 'warning'
         },
-        end: {
-            text: "Reste sur tes gardes. Les ombres cachent bien des dangers."
+        'warning': {
+            speaker: 'L\'Ancien',
+            text: "Méfiez-vous de la Corruption du Vide. Elle dévore tout ce qu'elle touche.",
+            next: null
         }
     }
+};
+
+/**
+ * Get dialogue for NPC based on current quest state
+ * @param {string} npcId - NPC identifier
+ * @param {string} questId - Current active quest ID
+ * @returns {object} Dialogue node
+ */
+export const getDialogue = (npcId, questId = 'default') => {
+    const npcDialogues = DialoguesDb[npcId];
+    if (!npcDialogues) {
+        console.warn(`[DialoguesDb] NPC ${npcId} not found`);
+        return null;
+    }
+
+    // Try to get quest-specific dialogue
+    if (questId && npcDialogues[questId]) {
+        return npcDialogues[questId];
+    }
+
+    // Fallback to default
+    return npcDialogues['default'];
+};
+
+/**
+ * Get next dialogue node
+ */
+export const getNextDialogue = (npcId, currentNodeId) => {
+    const npcDialogues = DialoguesDb[npcId];
+    if (!npcDialogues) return null;
+
+    const currentNode = npcDialogues[currentNodeId];
+    if (!currentNode || !currentNode.next) return null;
+
+    return npcDialogues[currentNode.next];
 };

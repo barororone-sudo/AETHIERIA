@@ -22,6 +22,7 @@ import { WaypointManager } from './managers/WaypointManager.js';
 import { AudioManager } from './AudioManager.js';
 import { DebugManager } from './Debug.js';
 import { DialogueManager } from './managers/DialogueManager.js';
+import { QuestManager } from './managers/QuestManager.js';
 import { StoryManager } from './managers/StoryManager.js';
 import { DataManager } from './managers/DataManager.js';
 import { Input } from './Input.js';
@@ -53,6 +54,7 @@ export class Game {
         /** @type {AudioManager} */ this.audio = new AudioManager();
         /** @type {DebugManager} */ this.debug = new DebugManager(this);
         /** @type {DialogueManager} */ this.dialogueManager = new DialogueManager(this);
+        /** @type {QuestManager} */ this.questManager = new QuestManager(this);
         /** @type {CombatUI} */ this.combatUI = new CombatUI(this);
         /** @type {LootManager} */ this.lootManager = new LootManager(this);
         /** @type {ParticleManager|null} */ this.particles = null; // Kept as null, initialized later
@@ -298,6 +300,20 @@ export class Game {
             if (this.world) this.renderer.instance.render(this.world.scene, this.camera);
             return;
         }
+
+        // FPS cap to reduce CPU usage
+        const targetFPS = 40; // Limited to 40 FPS as requested
+        const minFrameTime = 1000 / targetFPS;
+        const now = performance.now();
+        if (!this._lastFrameTime) this._lastFrameTime = now;
+        const frameElapsed = now - this._lastFrameTime;
+
+        if (frameElapsed < minFrameTime) {
+            // Skip this frame if we're running too fast
+            requestAnimationFrame(this.animate.bind(this));
+            return;
+        }
+        this._lastFrameTime = now;
 
         // Logic Updates
         let timeScale = 1;

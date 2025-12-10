@@ -925,26 +925,36 @@ export class World {
             this.npcs.forEach(npc => npc.update(dt));
         }
 
-        // 👾 UPDATE ENEMIES with optimizations
+        // 👾 UPDATE ENEMIES with aggressive optimizations
         if (this.enemies && this.enemies.length > 0) {
             const playerPos = this.game.player?.body?.position;
             let updatedCount = 0;
-            const MAX_UPDATES_PER_FRAME = 30;
+            const MAX_UPDATES_PER_FRAME = 30; // Balanced limit
+            const CULL_DISTANCE_SQ = 8100; // 90^2 (reduced from 100)
 
-            // Remove dead enemies
-            this.enemies = this.enemies.filter(enemy => !enemy.isDead);
+            // Remove dead enemies (do this less frequently)
+            if (!this._enemyCleanupFrame) this._enemyCleanupFrame = 0;
+            this._enemyCleanupFrame++;
+            if (this._enemyCleanupFrame % 60 === 0) { // Every 60 frames (~1 second)
+                this.enemies = this.enemies.filter(enemy => !enemy.isDead);
+            }
 
-            this.enemies.forEach(enemy => {
+            this.enemies.forEach((enemy, index) => {
                 if (!enemy) return;
 
-                // Distance culling: only update enemies within 100 units
+                // Distance culling: only update enemies within 90 units
                 if (playerPos) {
                     const dx = enemy.body.position.x - playerPos.x;
                     const dz = enemy.body.position.z - playerPos.z;
                     const distSq = dx * dx + dz * dz;
 
-                    if (distSq > 10000) { // 100^2
-                        return;
+                    if (distSq > CULL_DISTANCE_SQ) {
+                        return; // Skip distant enemies
+                    }
+
+                    // Frame skipping for medium-distance enemies (50-90 units)
+                    if (distSq > 2500 && index % 2 !== 0) { // 50^2
+                        return; // Update only every other enemy at medium distance
                     }
                 }
 

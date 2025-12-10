@@ -37,19 +37,97 @@ export class StoryManager {
         console.log("Starting New Game Sequence...");
         this.state = 'CINEMATIC';
         this.game.player.isInTutorial = true;
-        this.game.player.inputLocked = true; // Lock completely during cinematic
+        this.game.player.inputLocked = true;
 
-        // Phase 1: Cinematic
-        // Sequence of texts
+        // New intro sequence - The Shattered Aether
         this.playCinematicSequence([
-            { text: "Système redémarré...", duration: 3000 },
-            { text: `Année ${this.context.YEAR}. ${this.context.EVENT} a tout effacé.`, duration: 4000 },
-            { text: `Unité : ${this.context.PLAYER_UNIT}. Statut : Opérationnel.`, duration: 3000 },
-            { text: `Mission : ${this.context.MISSION}.`, duration: 3000 },
-            { text: "Initialisation du protocole d'éveil...", duration: 3000 }
+            { text: "Il y a longtemps...", duration: 3000 },
+            { text: "La Fracture a brisé le monde en îles flottantes.", duration: 4000 },
+            { text: "Le temps s'écoule différemment sur chaque fragment.", duration: 4000 },
+            { text: "La Corruption du Vide dévore la réalité.", duration: 4000 },
+            { text: "Vous êtes un Marcheur d'Écho...", duration: 3000 },
+            { text: "Seul capable de stabiliser ce qui reste.", duration: 3000 }
         ], () => {
+            // After intro, check if we should start first quest
+            const hasQuests = this.game.questManager &&
+                (this.game.questManager.activeQuests.length > 0 ||
+                    this.game.questManager.completedQuests.length > 0);
+
+            if (!hasQuests) {
+                // New game - start first quest with Act intro
+                setTimeout(() => {
+                    this.startQuest('mq_01_wakeup');
+                }, 1000);
+            }
+
             this.startTutorial();
         });
+    }
+
+    /**
+     * Start a quest with optional Act intro
+     */
+    startQuest(questId) {
+        if (questId === 'mq_01_wakeup' && !this.hasShownActIntro) {
+            // Show Act 1 intro before starting quest
+            this.showActIntro('ACTE I : L\'ÉCHO DU SILENCE', () => {
+                this.game.questManager.activateQuest(questId);
+                this.hasShownActIntro = true;
+            });
+        } else {
+            this.game.questManager.activateQuest(questId);
+        }
+    }
+
+    /**
+     * Show Act intro UI
+     */
+    showActIntro(actTitle, onComplete) {
+        const overlay = document.createElement('div');
+        overlay.id = 'act-intro';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 1s ease-in-out;
+        `;
+
+        const title = document.createElement('div');
+        title.style.cssText = `
+            font-family: 'Cinzel', serif;
+            font-size: 48px;
+            font-weight: bold;
+            color: #ffd700;
+            text-align: center;
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+            letter-spacing: 4px;
+        `;
+        title.textContent = actTitle;
+
+        overlay.appendChild(title);
+        document.body.appendChild(overlay);
+
+        // Fade in
+        setTimeout(() => {
+            overlay.style.opacity = '1';
+        }, 100);
+
+        // Fade out after 3 seconds
+        setTimeout(() => {
+            overlay.style.opacity = '0';
+            setTimeout(() => {
+                overlay.remove();
+                if (onComplete) onComplete();
+            }, 1000);
+        }, 3000);
     }
 
     playCinematicSequence(sequence, onComplete) {

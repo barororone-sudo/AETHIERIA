@@ -56,84 +56,6 @@ export class QuestManager {
         const currentStep = activeQuest.steps.find(s => !s.isCompleted);
         if (currentStep) {
             this.game.ui.updateObjective(currentStep.description);
-
-            // Create visual marker if step has a position
-            if (currentStep.targetPos) {
-                this.createObjectiveMarker(currentStep.targetPos);
-            }
-        }
-    }
-
-    /**
-     * Create visual objective marker (beam of light)
-     */
-    createObjectiveMarker(position) {
-        // Remove old marker
-        this.removeObjectiveMarker();
-
-        // Wait a bit for world to be ready
-        setTimeout(() => {
-            if (!this.game.world || !this.game.world.scene) {
-                console.warn('[QuestManager] World not ready for marker');
-                return;
-            }
-
-            const THREE = window.THREE;
-            if (!THREE) {
-                console.warn('[QuestManager] THREE not available');
-                return;
-            }
-
-            // Create beam of light
-            const geometry = new THREE.CylinderGeometry(0.5, 0.5, 200, 8, 1, true);
-            const material = new THREE.MeshBasicMaterial({
-                color: 0xFFD700,
-                transparent: true,
-                opacity: 0.4,
-                side: THREE.DoubleSide,
-                depthWrite: false,
-                blending: THREE.AdditiveBlending
-            });
-
-            this.objectiveBeam = new THREE.Mesh(geometry, material);
-            this.objectiveBeam.position.set(position.x, 100, position.z);
-            this.game.world.scene.add(this.objectiveBeam);
-
-            // Animate the beam
-            this.animateBeam();
-
-            console.log(`[QuestManager] ✨ Objective marker created at (${position.x}, ${position.z})`);
-        }, 500);
-    }
-
-    /**
-     * Animate objective beam
-     */
-    animateBeam() {
-        if (!this.objectiveBeam) return;
-
-        const animate = () => {
-            if (!this.objectiveBeam) return;
-
-            this.objectiveBeam.rotation.y += 0.01;
-            const scale = 1 + Math.sin(Date.now() * 0.002) * 0.1;
-            this.objectiveBeam.scale.set(scale, 1, scale);
-
-            requestAnimationFrame(animate);
-        };
-
-        animate();
-    }
-
-    /**
-     * Remove objective marker
-     */
-    removeObjectiveMarker() {
-        if (this.objectiveBeam && this.game.world && this.game.world.scene) {
-            this.game.world.scene.remove(this.objectiveBeam);
-            if (this.objectiveBeam.geometry) this.objectiveBeam.geometry.dispose();
-            if (this.objectiveBeam.material) this.objectiveBeam.material.dispose();
-            this.objectiveBeam = null;
         }
     }
 
@@ -186,7 +108,6 @@ export class QuestManager {
                 if (currentStep.currentCount >= currentStep.targetCount) {
                     this.completeStep(activeQuest, currentStep);
                 } else {
-                    // Update UI with progress
                     this.updateObjective();
                 }
             } else {
@@ -203,12 +124,9 @@ export class QuestManager {
         step.isCompleted = true;
         console.log(`[QuestManager] ✅ Step completed: ${step.description}`);
 
-        // Sound removed - audio.play() not available
-
         // Check if all steps completed
         const allComplete = quest.steps.every(s => s.isCompleted);
         if (allComplete) {
-            this.removeObjectiveMarker();
             this.completeQuest(quest.id);
         } else {
             // Move to next step
@@ -241,10 +159,8 @@ export class QuestManager {
         // Show completion UI
         if (this.game.ui) {
             this.game.ui.showQuestUpdate(quest.title, 'COMPLETED');
-            this.updateObjective(); // Update to next quest or clear
+            this.updateObjective();
         }
-
-        // Sound removed - audio.play() not available
 
         // Auto-activate next quest
         if (quest.onComplete && quest.onComplete.unlocks) {
