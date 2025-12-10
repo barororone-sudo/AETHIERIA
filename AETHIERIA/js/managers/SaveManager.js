@@ -105,6 +105,7 @@ export class SaveManager {
             },
             worldGen: (this.game.world && this.game.world.levelManager) ? this.game.world.levelManager.getData() : { camps: [] },
             story: this.game.story ? this.game.story.getData() : { state: 'START' },
+            quests: this.game.questManager ? this.game.questManager.getData() : { activeQuests: [], completedQuests: [] },
             world: {
                 time: this.game.world.time,
                 fog: this.game.world.fogGrid ?
@@ -200,6 +201,11 @@ export class SaveManager {
             // Restore Story
             if (data.story && this.game.story) {
                 this.game.story.loadData(data.story);
+            }
+
+            // Restore Quests
+            if (data.quests && this.game.questManager) {
+                this.game.questManager.loadData(data.quests);
             }
 
             // Restore World

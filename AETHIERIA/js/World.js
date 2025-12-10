@@ -255,34 +255,31 @@ export class World {
     populateStartingZone() {
         console.log('[World] Populating starting zone...');
 
-        // Spawn Ancient Communicator (first quest item)
-        const itemPos = { x: 10, y: 0.5, z: -15 };
+        // Spawn Ancient Communicator - RIGHT IN FRONT OF SPAWN
+        const itemPos = { x: 0, y: 3, z: -10 };
 
-        // Create glowing cube for quest item
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshStandardMaterial({
-            color: 0x00FFFF,
-            emissive: 0x00FFFF,
-            emissiveIntensity: 0.5,
-            metalness: 0.8,
-            roughness: 0.2
+        // Create BRIGHT cube - MeshBasicMaterial (always visible)
+        const geometry = new THREE.BoxGeometry(2, 2, 2);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x00FFFF
         });
 
         const questItemMesh = new THREE.Mesh(geometry, material);
-        questItemMesh.position.set(itemPos.x, itemPos.y + 1, itemPos.z);
+        questItemMesh.position.set(itemPos.x, itemPos.y, itemPos.z);
         questItemMesh.userData.isQuestItem = true;
         questItemMesh.userData.itemId = 'ancient_communicator';
         this.scene.add(questItemMesh);
 
-        // Add point light
-        const light = new THREE.PointLight(0x00FFFF, 2, 5);
+        // Add VERY bright light
+        const light = new THREE.PointLight(0x00FFFF, 10, 20);
         light.position.copy(questItemMesh.position);
         this.scene.add(light);
 
         // Store reference
         this.questItems.push({ mesh: questItemMesh, light: light, time: 0 });
 
-        console.log(`[World] Quest item spawned at (${itemPos.x}, ${itemPos.z})`);
+        console.log(`[World] ✅ QUEST ITEM SPAWNED at (${itemPos.x}, ${itemPos.y}, ${itemPos.z})`);
+        console.log(`[World] Quest items array length: ${this.questItems.length}`);
     }
 
     /**
