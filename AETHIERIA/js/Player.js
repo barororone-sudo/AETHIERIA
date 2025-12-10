@@ -2101,8 +2101,15 @@ export class Player {
      * Check for nearby quest items
      */
     checkQuestItems() {
-        if (!this.game.world || !this.game.world.questItems) return;
+        if (!this.game.world || !this.game.world.questItems) {
+            console.log('[Player] No world or quest items');
+            return;
+        }
+
         if (!this.input.keys['KeyE']) return;
+
+        console.log('[Player] E key pressed, checking quest items...');
+        console.log(`[Player] Quest items available: ${this.game.world.questItems.length}`);
 
         const playerPos = this.body.position;
         const interactionRange = 3;
@@ -2114,9 +2121,11 @@ export class Player {
             const dz = itemPos.z - playerPos.z;
             const dist = Math.sqrt(dx * dx + dz * dz);
 
+            console.log(`[Player] Distance to item ${i + 1}: ${dist.toFixed(2)} units`);
+
             if (dist < interactionRange) {
                 const itemId = item.mesh.userData.itemId;
-                console.log(`[Player] Collecting quest item: ${itemId}`);
+                console.log(`[Player] ✅ COLLECTING quest item: ${itemId}`);
 
                 // Add to inventory
                 if (this.inventory) {
@@ -2141,6 +2150,8 @@ export class Player {
                 return; // Only collect one item per frame
             }
         }
+
+        console.log('[Player] No quest items in range');
     }
 
     checkInteraction() {
