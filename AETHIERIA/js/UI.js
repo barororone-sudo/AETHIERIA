@@ -34,6 +34,7 @@ export class UIManager {
         this.initCrosshair();
         // Fullscreen button removed
         this.initHUD();
+        this.initQuestUI(); // Quest UI
     }
 
     // --- INITIALIZATION ---
@@ -695,6 +696,87 @@ export class UIManager {
     hideTutorialInstruction() { }
 
     playSound(id) { if (this.game.audio) this.game.audio.playSFX(id); }
+
+    /**
+     * Initialize Quest UI elements
+     */
+    initQuestUI() {
+        // Create Quest HUD (objective display)
+        this.questHud = document.createElement('div');
+        this.questHud.id = 'quest-hud';
+        this.questHud.className = 'hidden';
+        document.body.appendChild(this.questHud);
+
+        // Create Quest Toast (notification banner)
+        this.questToast = document.createElement('div');
+        this.questToast.id = 'quest-toast';
+        this.questToast.innerHTML = `
+            <div class="quest-title"></div>
+            <div class="quest-status"></div>
+        `;
+        document.body.appendChild(this.questToast);
+    }
+
+    /**
+     * Update quest objective display
+     */
+    updateObjective(text) {
+        if (!this.questHud) return;
+
+        if (text) {
+            this.questHud.textContent = text;
+            this.questHud.classList.remove('hidden');
+        } else {
+            this.questHud.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Show quest notification banner
+     */
+    showQuestUpdate(title, status) {
+        if (!this.questToast) return;
+
+        const titleEl = this.questToast.querySelector('.quest-title');
+        const statusEl = this.questToast.querySelector('.quest-status');
+
+        titleEl.textContent = title;
+
+        // Set status text and color
+        let statusText = '';
+        let statusClass = '';
+
+        switch (status) {
+            case 'STARTED':
+                statusText = 'QUÊTE DÉMARRÉE';
+                statusClass = 'started';
+                break;
+            case 'UPDATED':
+                statusText = 'OBJECTIF MIS À JOUR';
+                statusClass = 'updated';
+                break;
+            case 'COMPLETED':
+                statusText = 'QUÊTE TERMINÉE';
+                statusClass = 'completed';
+                break;
+        }
+
+        statusEl.textContent = statusText;
+
+        // Reset classes
+        this.questToast.className = '';
+        this.questToast.classList.add(statusClass);
+
+        // Show animation
+        setTimeout(() => {
+            this.questToast.classList.add('show');
+        }, 100);
+
+        // Hide after 4 seconds
+        setTimeout(() => {
+            this.questToast.classList.remove('show');
+        }, 4000);
+    }
 
     // --- SLOT SELECTION (Zelda TOTK Style) ---
     async createSlotSelectionUI(slots) {

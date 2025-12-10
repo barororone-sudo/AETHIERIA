@@ -29,6 +29,7 @@ import { Input } from './Input.js';
 import { Utils } from './Utils.js';
 import { CombatUI } from './ui/CombatUI.js';
 import { ParticleManager } from './managers/ParticleManager.js';
+import { QuestBeacon } from './vfx/QuestBeacon.js';
 import { LootManager } from './managers/LootManager.js';
 
 // Initialize Error Handler FIRST
@@ -58,6 +59,7 @@ export class Game {
         /** @type {CombatUI} */ this.combatUI = new CombatUI(this);
         /** @type {LootManager} */ this.lootManager = new LootManager(this);
         /** @type {ParticleManager|null} */ this.particles = null; // Kept as null, initialized later
+        /** @type {QuestBeacon|null} */ this.questBeacon = null; // Initialized after world
 
         // Asset Loader
         /** @type {AssetLoader} */ this.loader = new AssetLoader(this);
@@ -133,8 +135,16 @@ export class Game {
             await this.loader.loadAll();
             this.loader.updateProgress(85);
 
-            // Init Game Logic
+            // World
+            console.log("Creating World...");
             this.world = new World(this);
+
+            // Initialize Quest Beacon (needs world scene)
+            this.questBeacon = new QuestBeacon(this.world.scene);
+            console.log("Quest Beacon initialized");
+
+            // Player
+            console.log("Creating Player...");
             this.player = new Player(this, this.camera);
             this.player.world = this.world; // Link World to Player
             if (this.player.combat) this.player.combat.init(); // Init Combat (Pools)
@@ -326,6 +336,11 @@ export class Game {
             if (this.world) this.world.update(dt * timeScale, this.player ? this.player.body : null);
         } catch (e) {
             console.warn("Erreur World:", e);
+        }
+
+        // Update Quest Beacon animation
+        if (this.questBeacon) {
+            this.questBeacon.update(dt);
         }
 
         this.updatePhysicsDebug();

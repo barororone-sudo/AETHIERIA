@@ -56,6 +56,16 @@ export class QuestManager {
         const currentStep = activeQuest.steps.find(s => !s.isCompleted);
         if (currentStep) {
             this.game.ui.updateObjective(currentStep.description);
+
+            // Spawn visual beacon if step has target position
+            if (currentStep.targetPos && this.game.questBeacon) {
+                this.game.questBeacon.spawnBeacon(currentStep.targetPos.x, currentStep.targetPos.z);
+            }
+        } else {
+            // No active step, remove beacon
+            if (this.game.questBeacon) {
+                this.game.questBeacon.removeBeacon();
+            }
         }
     }
 
@@ -123,6 +133,11 @@ export class QuestManager {
     completeStep(quest, step) {
         step.isCompleted = true;
         console.log(`[QuestManager] ✅ Step completed: ${step.description}`);
+
+        // Remove beacon
+        if (this.game.questBeacon) {
+            this.game.questBeacon.removeBeacon();
+        }
 
         // Check if all steps completed
         const allComplete = quest.steps.every(s => s.isCompleted);

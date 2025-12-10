@@ -13,12 +13,112 @@
     outline: none;
 }
 
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow: hidden;
+    background: #000;
+}
+
+canvas {
+    display: block;
+}
+
+/* Quest HUD - Top Left */
+#quest-hud {
+    position: fixed;
+    top: 120px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 2px solid rgba(255, 215, 0, 0.5);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: white;
+    font-family: 'Cinzel', serif;
+    font-size: 14px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    max-width: 300px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+#quest-hud::before {
+    content: '◆';
+    color: #ffd700;
+    margin-right: 8px;
+    font-size: 16px;
+}
+
+#quest-hud.hidden {
+    display: none;
+}
+
+/* Quest Notification Banner */
+#quest-toast {
+    position: fixed;
+    top: 50px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100px);
+    background: linear-gradient(135deg, rgba(20, 20, 20, 0.95), rgba(40, 40, 40, 0.95));
+    border: 3px solid #ffd700;
+    border-radius: 12px;
+    padding: 20px 40px;
+    color: white;
+    font-family: 'Cinzel', serif;
+    text-align: center;
+    z-index: 10000;
+    opacity: 0;
+    transition: all 0.5s ease-in-out;
+    box-shadow: 0 8px 24px rgba(255, 215, 0, 0.3);
+    min-width: 400px;
+}
+
+#quest-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+#quest-toast .quest-title {
+    font-size: 24px;
+    font-weight: bold;
+    color: #ffd700;
+    margin-bottom: 8px;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+#quest-toast .quest-status {
+    font-size: 16px;
+    color: #fff;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+#quest-toast.started {
+    border-color: #4ade80;
+}
+
+#quest-toast.updated {
+    border-color: #60a5fa;
+}
+
+#quest-toast.completed {
+    border-color: #fbbf24;
+}
+
+/* The original body rule is modified to use the new font and background, and the other properties are kept */
 body {
     margin: 0;
     overflow: hidden;
-    font-family: 'Inter', sans-serif;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    /* Changed font */
     user-select: none;
-    background: var(--bg);
+    background: #000;
+    /* Changed background */
     color: var(--text);
 }
 
