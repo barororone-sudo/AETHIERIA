@@ -114,6 +114,7 @@ export class SaveManager {
                     acc[tower.id] = tower.isUnlocked;
                     return acc;
                 }, {}) : {},
+                waypoints: this.game.waypointManager ? this.game.waypointManager.getData() : [],
                 chests: (this.game.world && this.game.world.chests) ? this.game.world.chests.map(c => c.isOpened).filter(o => o) : [] // Basic chest tracking placeholder
             },
             meta: {
@@ -224,6 +225,11 @@ export class SaveManager {
                             }
                         }
                     });
+                }
+
+                // Restore Waypoints
+                if (data.world.waypoints && this.game.waypointManager) {
+                    this.game.waypointManager.loadData(data.world.waypoints);
                 }
             }
 

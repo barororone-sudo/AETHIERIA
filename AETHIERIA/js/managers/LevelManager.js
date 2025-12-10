@@ -51,19 +51,32 @@ export class LevelManager {
     }
 
     populateCamps() {
-        const worldSize = 400; // -200 to 200
-        const campCount = 10;
+        const worldSize = 4000; // Updated for larger map
+        const campCount = 30; // Increased from 10
+        const minCampDistance = 150; // Minimum spacing between camps
 
         for (let i = 0; i < campCount; i++) {
             let attempts = 0;
             let placed = false;
 
-            while (attempts < 10 && !placed) {
+            while (attempts < 20 && !placed) {
                 const x = (Math.random() - 0.5) * worldSize;
                 const z = (Math.random() - 0.5) * worldSize;
 
                 // Don't spawn too close to start (0,0)
-                if (Math.sqrt(x * x + z * z) < 30) {
+                if (Math.sqrt(x * x + z * z) < 50) {
+                    attempts++;
+                    continue;
+                }
+
+                // Check distance from other camps
+                const tooClose = this.activeCamps.some(camp => {
+                    const dx = camp.x - x;
+                    const dz = camp.z - z;
+                    return Math.sqrt(dx * dx + dz * dz) < minCampDistance;
+                });
+
+                if (tooClose) {
                     attempts++;
                     continue;
                 }
@@ -76,6 +89,8 @@ export class LevelManager {
                 attempts++;
             }
         }
+
+        console.log(`[LevelManager] Spawned ${this.activeCamps.length} camps.`);
     }
 
     isAreaFlat(x, z, radius) {
@@ -102,8 +117,6 @@ export class LevelManager {
     spawnCamp(x, z) {
         const y = this.terrain ? this.terrain.getGlobalHeight(x, z) : 0;
         const dist = Math.sqrt(x * x + z * z);
-
-        console.log(`Spawning Camp at (${x.toFixed(0)}, ${z.toFixed(0)}) Dist: ${dist.toFixed(0)}`);
 
         // Campfire (Keep existing visual code)
         // ... (lines 81-96 kept implicitly or assume exist, I will rewrite spawnCamp body)
@@ -176,18 +189,48 @@ export class LevelManager {
     }
 
     spawnHiddenChests() {
-        // Scatter Common Chests
-        for (let i = 0; i < 5; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const r = 50 + Math.random() * 100;
-            const x = Math.cos(angle) * r;
-            const z = Math.sin(angle) * r;
-            const y = this.terrain ? this.terrain.getGlobalHeight(x, z) : 0;
+        // Scatter chests across the map with different tiers
+        const chestConfigs = [
+            { count: 40, tier: 1, minDist: 100, maxDist: 1800 },  // Common
+            { count: 15, tier: 3, minDist: 300, maxDist: 1800 },  // Rare
+            { count: 4, tier: 4, minDist: 800, maxDist: 1800 }    // Epic
+        ];
 
-            // Simple Common Chest
-            const chest = new Chest(this.game, this.world, new THREE.Vector3(x, y, z), 1, false);
-            if (this.world.chests) this.world.chests.push(chest);
-        }
+        const minChestDistance = 100; // Minimum spacing between chests
+        const spawnedChests = [];
+
+        chestConfigs.forEach(config => {
+            for (let i = 0; i < config.count; i++) {
+                let attempts = 0;
+                let placed = false;
+
+                while (attempts < 20 && !placed) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const r = config.minDist + Math.random() * (config.maxDist - config.minDist);
+                    const x = Math.cos(angle) * r;
+                    const z = Math.sin(angle) * r;
+                    const y = this.terrain ? this.terrain.getGlobalHeight(x, z) : 0;
+
+                    // Check distance from other chests
+                    const tooClose = spawnedChests.some(pos => {
+                        const dx = pos.x - x;
+                        const dz = pos.z - z;
+                        return Math.sqrt(dx * dx + dz * dz) < minChestDistance;
+                    });
+
+                    // Not underwater and not too close
+                    if (!tooClose && y >= 2.0) {
+                        const chest = new Chest(this.game, this.world, new THREE.Vector3(x, y, z), config.tier, false);
+                        if (this.world.chests) this.world.chests.push(chest);
+                        spawnedChests.push({ x, z });
+                        placed = true;
+                    }
+                    attempts++;
+                }
+            }
+        });
+
+        console.log(`[LevelManager] Spawned ${spawnedChests.length} hidden chests.`);
     }
 
     spawnLegendaryChest() {

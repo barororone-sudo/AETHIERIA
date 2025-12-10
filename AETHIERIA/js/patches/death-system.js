@@ -4,9 +4,9 @@
 console.log('[PATCH] Death System loading...');
 
 // Wait for game to be ready
-const waitForGame = setInterval(() => {
+const waitForGameDeath = setInterval(() => {
     if (window.game && window.game.ui) {
-        clearInterval(waitForGame);
+        clearInterval(waitForGameDeath);
         initializeDeathSystem();
     }
 }, 100);

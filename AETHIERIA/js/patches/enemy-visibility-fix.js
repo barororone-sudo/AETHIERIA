@@ -25,6 +25,7 @@ function applyEnemyVisibilityFix() {
 
         // Force visibility on all meshes
         enemy.mesh.visible = true;
+        enemy.mesh.frustumCulled = false; // 🔧 FIX: Disable frustum culling
 
         // Traverse all children and fix them
         enemy.mesh.traverse((child) => {
@@ -32,6 +33,7 @@ function applyEnemyVisibilityFix() {
                 child.visible = true;
                 child.castShadow = true;
                 child.receiveShadow = true;
+                child.frustumCulled = false; // 🔧 FIX: Prevent disappearing
 
                 // Fix material issues
                 if (child.material) {
@@ -50,8 +52,6 @@ function applyEnemyVisibilityFix() {
                 fixedCount++;
             }
         });
-
-        console.log(`[PATCH] Fixed enemy ${index}: ${enemy.name || 'Unknown'}`);
     });
 
     console.log(`[PATCH] ✅ Fixed ${fixedCount} enemy meshes across ${enemies.length} enemies`);

@@ -6,6 +6,7 @@ import { Golem } from './Golem.js';
 import { Elements } from './Chemistry.js';
 import { NPC } from './NPC.js';
 import { Tower } from './world/Tower.js';
+import { Waypoint } from './world/Waypoint.js';
 import { MonsterFactory } from './MonsterFactory.js';
 import { TerrainManager } from './world/TerrainManager.js';
 import { Chest } from './world/Chest.js';
@@ -106,6 +107,17 @@ export class World {
         // FOREST (Act 2)
         this.generateForest();
 
+        // WAYPOINTS (Fast Travel)
+        this.spawnWaypoints();
+
+        // Log summary of fast travel points
+        if (this.game.waypointManager) {
+            const totalPoints = this.game.waypointManager.waypoints.size;
+            const towers = Array.from(this.game.waypointManager.waypoints.values()).filter(w => w.type === 'tower').length;
+            const waypoints = totalPoints - towers;
+            console.log(`[Fast Travel] Registered ${totalPoints} points (${towers} towers, ${waypoints} waypoints)`);
+        }
+
         // LOOT
         this.loot = [];
 
@@ -118,18 +130,84 @@ export class World {
     }
 
     spawnTowers() {
-        // Tower 1 (Quest Objective)
-        const tower1Pos = new THREE.Vector3(50, 0, 50);
-        if (this.terrainManager) {
-            tower1Pos.y = this.terrainManager.getGlobalHeight(tower1Pos.x, tower1Pos.z);
-        }
-        // Constructor: world, x, z, id, y
-        new Tower(this, tower1Pos.x, tower1Pos.z, 'tower_central', tower1Pos.y);
+        // Cardinal Towers for Fast Travel Network (Closer to spawn)
+        const cardinalPositions = [
+            { x: 0, z: 200, id: 'tower_north' },
+            { x: 200, z: 0, id: 'tower_east' },
+            { x: 0, z: -200, id: 'tower_south' },
+            { x: -200, z: 0, id: 'tower_west' }
+        ];
+
+        // Diagonal Towers for extended coverage
+        const diagonalPositions = [
+            { x: 300, z: 300, id: 'tower_northeast' },
+            { x: 300, z: -300, id: 'tower_southeast' },
+            { x: -300, z: -300, id: 'tower_southwest' },
+            { x: -300, z: 300, id: 'tower_northwest' }
+        ];
+
+        const allTowers = [...cardinalPositions, ...diagonalPositions];
+
+        allTowers.forEach(pos => {
+            const y = this.terrainManager ? this.terrainManager.getGlobalHeight(pos.x, pos.z) : 0;
+            new Tower(this, pos.x, pos.z, pos.id, y);
+        });
+
+        console.log(`[World] Spawned ${allTowers.length} towers.`);
     }
 
     generateForest() {
         this.forest = new ForestGenerator(this);
         this.forest.generate();
+    }
+
+    spawnWaypoints() {
+        const count = 20; // Increased for larger map coverage
+        const minDist = 200; // Scaled for larger map
+        const maxDist = 1600; // Scaled to cover most of the 4000x4000 map
+        const waterLevel = 2.0; // Don't spawn underwater
+
+        this.waypoints = []; // Track waypoints
+        const biomeTargets = ['DESERT', 'FOREST', 'SNOW', 'MOUNTAIN', 'PLAINS', 'CITY'];
+        const foundBiomes = new Set();
+
+        for (let i = 0; i < count; i++) {
+            let x, z, y, biome;
+            let attempts = 0;
+            let validPosition = false;
+
+            // Try to find positions in different biomes for variety
+            do {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = minDist + Math.random() * (maxDist - minDist);
+                x = Math.cos(angle) * dist;
+                z = Math.sin(angle) * dist;
+
+                if (this.terrainManager) {
+                    y = this.terrainManager.getGlobalHeight(x, z);
+                    biome = this.terrainManager.getBiomeAt(x, z);
+                } else {
+                    y = 0;
+                    biome = 'PLAINS';
+                }
+
+                // Valid if: not underwater AND (new biome OR enough attempts)
+                validPosition = y >= waterLevel && (
+                    !foundBiomes.has(biome) || attempts > 15
+                );
+
+                attempts++;
+            } while (!validPosition && attempts < 30);
+
+            // Only spawn if we found a valid position
+            if (validPosition && y >= waterLevel) {
+                const waypoint = new Waypoint(this, x, z, `waypoint_${i}`);
+                this.waypoints.push(waypoint);
+                foundBiomes.add(biome);
+            }
+        }
+
+        console.log(`[World] Spawned ${this.waypoints.length} waypoints across ${foundBiomes.size} biomes.`);
     }
 
     /**
@@ -701,7 +779,7 @@ export class World {
 
     generateFogGrid() {
         this.fogGrid = [];
-        const worldSize = 2000; // Assuming 2000x2000 world
+        const worldSize = 4000; // Updated to match new map size
         const gridSize = 50; // 50 meters
         const halfSize = worldSize / 2;
 
@@ -861,6 +939,13 @@ export class World {
                 // Update enemy AI
                 enemy.update(dt, playerBody ? playerBody.position : null);
             }
+        }
+
+        // Update Waypoints
+        if (this.waypoints) {
+            this.waypoints.forEach(waypoint => {
+                if (waypoint && waypoint.update) waypoint.update(dt);
+            });
         }
 
         if (this.chests) {

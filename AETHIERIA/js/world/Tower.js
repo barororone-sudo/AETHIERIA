@@ -58,6 +58,11 @@ export class Tower {
         if (this.world.interactables) {
             this.world.interactables.push(this);
         }
+
+        // 5. Register with WaypointManager (Fast Travel)
+        if (this.game.waypointManager) {
+            this.game.waypointManager.register(this.id, this.position, 'tower', this);
+        }
     }
 
     update(dt) {
@@ -119,6 +124,11 @@ export class Tower {
 
         // console.log("ACTIVATION TOUR");
         this.hideInteractButton();
+
+        // Register unlock with WaypointManager
+        if (this.game.waypointManager) {
+            this.game.waypointManager.unlock(this.id);
+        }
 
         // 1. HIDE UI
         if (this.game.ui) {

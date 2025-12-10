@@ -10,8 +10,8 @@ export class MapManager {
         this.fogCtx = null;
         this.iconLayer = null;
 
-        this.mapSize = 2000; // World Size in Pixels (1:1 with World Units)
-        this.worldSize = 2000; // World units
+        this.mapSize = 4000; // Doubled map size (was 2000)
+        this.worldSize = 4000; // Doubled world size (was 2000)
         this.scale = this.mapSize / this.worldSize; // 1.0
 
         this.icons = new Map(); // Map of object ID -> DOM Element
@@ -111,6 +111,24 @@ export class MapManager {
         this.iconLayer.style.zIndex = '10';
         // CRITICAL: Content is parent. Icons follow content's transform automatically.
         this.content.appendChild(this.iconLayer);
+
+        // Process pending waypoint icons
+        if (this.game._pendingWaypointIcons) {
+            this.game._pendingWaypointIcons.forEach(waypoint => {
+                this.addWaypointIcon(waypoint);
+            });
+            this.game._pendingWaypointIcons = [];
+        }
+
+        // Process pending tower icons
+        if (this.pendingIcons) {
+            this.pendingIcons.forEach(pending => {
+                if (pending.type === 'tower') {
+                    this.addTowerIcon(pending.tower, pending.index);
+                }
+            });
+            this.pendingIcons = [];
+        }
 
         // 4. Setup Fog Context
         this.fogCtx = this.fogCanvas.getContext('2d');
@@ -213,8 +231,17 @@ export class MapManager {
         }
 
         // 1. Update Icon Positions (Pure Map Coords)
-        this.updatePlayerIcon();
+        // Update Enemy Icons
         this.updateEnemyIcons();
+
+        // Update Camp Icons (show when nearby)
+        this.updateCampIcons();
+
+        // Update Waypoint Icons (update unlock status)
+        this.updateWaypointIcons();
+
+        // Update Player Icon
+        this.updatePlayerIcon();
 
         // Quest Marker
         if (this.activeQuestMarker) {
@@ -378,8 +405,66 @@ export class MapManager {
         });
     }
 
+    updateCampIcons() {
+        if (!this.game.world || !this.game.world.levelManager) return;
+
+        const camps = this.game.world.levelManager.activeCamps;
+        const player = this.game.player;
+        const DETECTION_RANGE = 50; // Show camps within 50 units
+
+        camps.forEach(camp => {
+            // Create icon if it doesn't exist
+            if (!camp.mapIcon) {
+                this.addCampIcon(camp);
+            }
+
+            if (player && player.body && camp.mapIcon) {
+                const dx = camp.x - player.body.position.x;
+                const dz = camp.z - player.body.position.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+
+                // Show if within detection range
+                if (dist < DETECTION_RANGE) {
+                    camp.mapIcon.style.display = 'block';
+                    // Update color based on cleared status
+                    camp.mapIcon.style.backgroundColor = camp.cleared ? '#888888' : '#ff4444';
+                } else {
+                    camp.mapIcon.style.display = 'none';
+                }
+            }
+        });
+    }
+
+    updateWaypointIcons() {
+        if (!this.game.world || !this.game.world.waypoints) return;
+
+        const waypoints = this.game.world.waypoints;
+
+        waypoints.forEach(waypoint => {
+            if (!waypoint.mapIcon) return;
+
+            const isUnlocked = this.game.waypointManager && this.game.waypointManager.isUnlocked(waypoint.id);
+            const isRevealed = this.isFogRevealed(waypoint.position.x, waypoint.position.z);
+            const shouldShow = isUnlocked || isRevealed;
+
+            if (shouldShow) {
+                waypoint.mapIcon.style.display = 'block';
+                waypoint.mapIcon.style.backgroundColor = isUnlocked ? '#33ccff' : '#888888';
+                waypoint.mapIcon.style.boxShadow = isUnlocked ? '0 0 6px #33ccff' : 'none';
+                waypoint.mapIcon.style.opacity = isUnlocked ? '1' : '0.6';
+                waypoint.mapIcon.style.cursor = isUnlocked ? 'pointer' : 'default';
+                waypoint.mapIcon.style.pointerEvents = isUnlocked ? 'auto' : 'none';
+            } else {
+                waypoint.mapIcon.style.display = 'none';
+            }
+        });
+    }
+
     addTowerIcon(tower, index) {
+        console.log('[MapManager] addTowerIcon called for:', tower.id, 'iconLayer ready:', !!this.iconLayer);
+
         if (!this.iconLayer) {
+            console.warn('[MapManager] Icon layer not ready, deferring tower icon:', tower.id);
             if (!this.pendingIcons) this.pendingIcons = [];
             this.pendingIcons.push({ type: 'tower', tower, index });
             return;
@@ -387,16 +472,18 @@ export class MapManager {
 
         const icon = document.createElement('div');
         icon.className = 'map-icon-tower';
+        icon.dataset.towerId = tower.id;
         Object.assign(icon.style, {
             width: '12px', height: '12px',
             backgroundColor: 'red',
             border: '2px solid white',
             borderRadius: '2px',
-            borderRadius: '2px',
             position: 'absolute',
             transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))',
             zIndex: '8',
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            cursor: 'default',
+            display: 'block' // Always visible
         });
         this.iconLayer.appendChild(icon);
         tower.icon = icon;
@@ -404,6 +491,17 @@ export class MapManager {
         const pos = this.worldToMap(tower.position.x, tower.position.z);
         icon.style.left = `${pos.x}px`;
         icon.style.top = `${pos.y}px`;
+
+        console.log('[MapManager] Tower icon created:', tower.id, 'at map pos:', pos);
+
+        // Add click handler for fast travel (will be enabled when unlocked)
+        icon.onclick = (e) => {
+            if (tower.isUnlocked && this.game.waypointManager) {
+                e.stopPropagation();
+                this.game.waypointManager.teleport(tower.id);
+                this.toggleMap(false);
+            }
+        };
     }
 
     unlockTower(tower) {
@@ -412,11 +510,90 @@ export class MapManager {
             tower.icon.style.backgroundColor = '#00ccff';
             tower.icon.style.boxShadow = '0 0 10px #00ccff';
             tower.icon.style.zIndex = '20';
+            tower.icon.style.pointerEvents = 'auto';
+            tower.icon.style.cursor = 'pointer';
         } else {
             console.warn("Tower has no icon to unlock!", tower);
         }
         // Force immediate large reveal
         this.revealZone(tower.position.x, tower.position.z, 150);
+    }
+
+    addWaypointIcon(waypoint) {
+        if (!this.iconLayer) {
+            console.warn("[MapManager] Icon layer not ready, cannot add waypoint icon.");
+            return;
+        }
+
+        const icon = document.createElement('div');
+        icon.className = 'map-icon-waypoint';
+        icon.dataset.waypointId = waypoint.id;
+
+        // Check unlock status
+        const isUnlocked = this.game.waypointManager && this.game.waypointManager.isUnlocked(waypoint.id);
+
+        Object.assign(icon.style, {
+            width: '10px',
+            height: '10px',
+            backgroundColor: isUnlocked ? '#33ccff' : '#888888',
+            border: '2px solid white',
+            borderRadius: '50%',
+            position: 'absolute',
+            transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))',
+            zIndex: '6',
+            cursor: isUnlocked ? 'pointer' : 'default',
+            pointerEvents: isUnlocked ? 'auto' : 'none',
+            boxShadow: isUnlocked ? '0 0 6px #33ccff' : 'none',
+            opacity: isUnlocked ? '1' : '0.6',
+            display: isUnlocked ? 'block' : 'none' // Initially hidden if locked, shown by updateWaypointIcons
+        });
+
+        // Click handler (will be activated by updateWaypointIcons)
+        icon.onclick = (e) => {
+            if (isUnlocked && this.game.waypointManager) {
+                e.stopPropagation();
+                this.game.waypointManager.teleport(waypoint.id);
+                this.toggleMap(false);
+            }
+        };
+
+        const pos = this.worldToMap(waypoint.position.x, waypoint.position.z);
+        icon.style.left = `${pos.x}px`;
+        icon.style.top = `${pos.y}px`;
+
+        this.iconLayer.appendChild(icon);
+        waypoint.mapIcon = icon;
+    }
+
+    addCampIcon(camp) {
+        if (!this.iconLayer) {
+            console.warn("[MapManager] Icon layer not ready, cannot add camp icon.");
+            return;
+        }
+
+        const icon = document.createElement('div');
+        icon.className = 'map-icon-camp';
+        icon.dataset.campId = `camp_${camp.x}_${camp.z}`;
+
+        Object.assign(icon.style, {
+            width: '8px',
+            height: '8px',
+            backgroundColor: camp.cleared ? '#888888' : '#ff4444',
+            border: '1px solid white',
+            borderRadius: '50%',
+            position: 'absolute',
+            transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))',
+            zIndex: '5',
+            pointerEvents: 'none',
+            display: 'none' // Hidden by default, shown when player is nearby
+        });
+
+        const pos = this.worldToMap(camp.x, camp.z);
+        icon.style.left = `${pos.x}px`;
+        icon.style.top = `${pos.y}px`;
+
+        this.iconLayer.appendChild(icon);
+        camp.mapIcon = icon;
     }
 
     // --- UTILS ---
@@ -624,5 +801,24 @@ export class MapManager {
 
     hide() {
         if (this.container) this.container.style.display = 'none';
+    }
+
+    /**
+     * Check if a world position is revealed in the fog of war
+     * @param {number} worldX - World X coordinate
+     * @param {number} worldZ - World Z coordinate
+     * @returns {boolean} - True if revealed, false if fogged
+     */
+    isFogRevealed(worldX, worldZ) {
+        if (!this.fogCtx || !this.fogCanvas) return true;
+
+        const pos = this.worldToMap(worldX, worldZ);
+
+        if (pos.x < 0 || pos.x >= this.mapSize || pos.y < 0 || pos.y >= this.mapSize) {
+            return false;
+        }
+
+        const pixelData = this.fogCtx.getImageData(pos.x, pos.y, 1, 1).data;
+        return pixelData[3] === 0;
     }
 }

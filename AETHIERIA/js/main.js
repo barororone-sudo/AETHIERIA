@@ -18,6 +18,7 @@ import { World } from './World.js';
 import { Player } from './Player.js';
 import { UIManager } from './UI.js';
 import { SaveManager } from './managers/SaveManager.js';
+import { WaypointManager } from './managers/WaypointManager.js';
 import { AudioManager } from './AudioManager.js';
 import { DebugManager } from './Debug.js';
 import { DialogueManager } from './managers/DialogueManager.js';
@@ -47,13 +48,14 @@ export class Game {
         /** @type {Input} */ this.input = new Input();
         /** @type {DataManager} */ this.data = new DataManager(this);
         /** @type {SaveManager} */ this.saveManager = new SaveManager(this);
+        /** @type {WaypointManager} */ this.waypointManager = new WaypointManager(this); // Added WaypointManager
         /** @type {UIManager} */ this.ui = new UIManager(this);
         /** @type {AudioManager} */ this.audio = new AudioManager();
         /** @type {DebugManager} */ this.debug = new DebugManager(this);
         /** @type {DialogueManager} */ this.dialogueManager = new DialogueManager(this);
         /** @type {CombatUI} */ this.combatUI = new CombatUI(this);
         /** @type {LootManager} */ this.lootManager = new LootManager(this);
-        /** @type {ParticleManager|null} */ this.particles = null;
+        /** @type {ParticleManager|null} */ this.particles = null; // Kept as null, initialized later
 
         // Asset Loader
         /** @type {AssetLoader} */ this.loader = new AssetLoader(this);

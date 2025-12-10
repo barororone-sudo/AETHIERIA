@@ -4,9 +4,9 @@
 console.log('[PATCH] Stamina UI loading...');
 
 // Wait for game to be ready
-const waitForGame = setInterval(() => {
+const waitForGameStamina = setInterval(() => {
     if (window.game && window.game.ui) {
-        clearInterval(waitForGame);
+        clearInterval(waitForGameStamina);
         initializeStaminaUI();
     }
 }, 100);
