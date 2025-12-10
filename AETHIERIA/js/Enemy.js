@@ -282,11 +282,15 @@ export class Enemy {
         // Ranged Kiting Behavior
         if (this.type === EnemyType.RANGED && dist < 5.0) {
             // RUN AWAY!
-            const away = new CANNON.Vec3().subVectors(this.body.position, player.body.position);
-            away.y = 0; // Dont fly
-            away.normalize();
-            this.body.velocity.x = away.x * this.speed;
-            this.body.velocity.z = away.z * this.speed;
+            const playerPos = player.body.position;
+            const fleeDir = new CANNON.Vec3(
+                this.body.position.x - playerPos.x,
+                0,
+                this.body.position.z - playerPos.z
+            );
+            fleeDir.normalize();
+            this.body.velocity.x = fleeDir.x * this.speed;
+            this.body.velocity.z = fleeDir.z * this.speed;
             this.lookAt(player.mesh.position); // Look at threat while backing up
             return;
         }

@@ -925,20 +925,37 @@ export class World {
             this.npcs.forEach(npc => npc.update(dt));
         }
 
-        // 👾 UPDATE ENEMIES (CRITICAL - Was missing!)
+        // 👾 UPDATE ENEMIES with optimizations
         if (this.enemies && this.enemies.length > 0) {
-            for (let i = this.enemies.length - 1; i >= 0; i--) {
-                const enemy = this.enemies[i];
+            const playerPos = this.game.player?.body?.position;
+            let updatedCount = 0;
+            const MAX_UPDATES_PER_FRAME = 30;
 
-                // Remove dead enemies
-                if (enemy.isDead) {
-                    this.enemies.splice(i, 1);
-                    continue;
+            // Remove dead enemies
+            this.enemies = this.enemies.filter(enemy => !enemy.isDead);
+
+            this.enemies.forEach(enemy => {
+                if (!enemy) return;
+
+                // Distance culling: only update enemies within 100 units
+                if (playerPos) {
+                    const dx = enemy.body.position.x - playerPos.x;
+                    const dz = enemy.body.position.z - playerPos.z;
+                    const distSq = dx * dx + dz * dz;
+
+                    if (distSq > 10000) { // 100^2
+                        return;
+                    }
                 }
 
-                // Update enemy AI
+                // Limit updates per frame
+                if (updatedCount >= MAX_UPDATES_PER_FRAME) {
+                    return;
+                }
+
                 enemy.update(dt, playerBody ? playerBody.position : null);
-            }
+                updatedCount++;
+            });
         }
 
         // Update Waypoints

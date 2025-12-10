@@ -1,0 +1,290 @@
+/*
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 📖 AETHIERIA - MAIN STORYLINE STRUCTURE
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 
+ * 🌟 ACT 1: THE ECHO OF AWAKENING
+ * ─────────────────────────────────────────────────────────────────────────
+ * Theme: Discovery & Tutorial
+ * Location: Spawn Plains, First Village, Ancient Ruins
+ * 
+ * Synopsis:
+ * ECHO-7, an ancient android, awakens after centuries of dormancy. The world
+ * has changed - civilization has fallen, and mysterious creatures roam the land.
+ * Guided by Elara, a lone survivor, ECHO-7 must recover their memories and
+ * prove their worth by defeating the Guardian Construct protecting the first
+ * Waypoint Tower.
+ * 
+ * Key Quests:
+ * - mq_01_wakeup: Find the Ancient Communicator
+ * - mq_02_first_contact: Meet Elara at the Camp
+ * - mq_03_training: Defeat 3 Training Golems
+ * - mq_04_forbidden_ruins: Explore the Ruins & defeat Guardian Construct
+ * 
+ * Boss: Guardian Construct (Mini-Boss)
+ * Reward: First Tower Unlocked, Basic Combat Skills
+ * 
+ * 
+ * 🔥 ACT 2: THE ELEMENTAL FRAGMENTS
+ * ─────────────────────────────────────────────────────────────────────────
+ * Theme: Open World Exploration & Elemental Powers
+ * Locations: Pyro Temple (Desert), Cryo Temple (Snow), Electro Temple (Mountain)
+ * 
+ * Synopsis:
+ * Elara reveals the truth: the world is held together by three Elemental Cores,
+ * now corrupted and guarded by powerful Elemental Guardians. ECHO-7 must journey
+ * to each temple, purify the cores, and absorb their power to unlock new abilities.
+ * 
+ * Key Quests:
+ * - mq_05_pyro_temple: Journey to the Desert Temple of Fire
+ * - mq_06_cryo_temple: Ascend to the Frozen Peak Temple
+ * - mq_07_electro_temple: Navigate the Storm Mountain Temple
+ * 
+ * Bosses: Pyro Guardian, Cryo Guardian, Electro Guardian
+ * Reward: Elemental Abilities Unlocked, Map Fully Revealed
+ * 
+ * 
+ * ⚫ ACT 3: THE VOID INVASION
+ * ─────────────────────────────────────────────────────────────────────────
+ * Theme: World Transformation & Escalation
+ * Locations: All Biomes (Corrupted Versions)
+ * 
+ * Synopsis:
+ * With the cores purified, a catastrophic event occurs: the Void tears open
+ * the sky. Enemies become stronger, new Void creatures appear, and the world
+ * darkens. Elara is captured by Void forces. ECHO-7 must rally the scattered
+ * survivors and prepare for the final assault on the Sky Citadel.
+ * 
+ * Key Quests:
+ * - mq_08_void_breach: Survive the first Void wave
+ * - mq_09_rescue_elara: Infiltrate the Void Outpost
+ * - mq_10_final_preparation: Gather allies and legendary weapons
+ * 
+ * Boss: Void Commander (Elite Boss)
+ * Reward: Legendary Weapon, Sky Citadel Access
+ * 
+ * 
+ * ☁️ ACT 4: THE SKY CITADEL
+ * ─────────────────────────────────────────────────────────────────────────
+ * Theme: Final Climb & Ultimate Confrontation
+ * Location: The Sky Citadel (Floating Fortress)
+ * 
+ * Synopsis:
+ * The source of the Void corruption is revealed: an ancient AI gone rogue,
+ * known as the "Architect". It seeks to reset the world and erase all organic
+ * life. ECHO-7 must climb the Sky Citadel, face the Architect's deadliest
+ * creations, and make a choice: destroy the Architect or merge with it to
+ * save the world.
+ * 
+ * Key Quests:
+ * - mq_11_citadel_ascent: Climb the 5 floors of the Citadel
+ * - mq_12_architect_confrontation: Face the Architect
+ * - mq_13_final_choice: Choose the fate of Aethieria
+ * 
+ * Boss: The Architect (Final Boss)
+ * Endings: 
+ *   - Destroy: World is saved, but technology is lost
+ *   - Merge: ECHO-7 becomes the new guardian, eternal but alone
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+export const QuestsDb = [
+    // ═══════════════════════════════════════════════════════════════════════
+    // 🌟 ACT 1: THE ECHO OF AWAKENING
+    // ═══════════════════════════════════════════════════════════════════════
+
+    {
+        id: 'mq_01_wakeup',
+        title: "Le Réveil de l'Écho",
+        description: "Vous vous réveillez dans un monde inconnu. Trouvez le Communicateur Ancien pour établir un contact.",
+        prereq: null, // First quest
+        steps: [
+            {
+                id: 'find_communicator',
+                description: "Cherchez le Communicateur Ancien près du point d'apparition",
+                targetType: 'COLLECT_ITEM',
+                targetId: 'ancient_communicator',
+                targetPos: { x: 10, y: 0, z: -15 }, // Near spawn
+                isCompleted: false,
+                onComplete: (game) => {
+                    game.ui.showToast(\"📡 Communicateur Ancien trouvé !\", 'success');
+                    if (game.player.inventory) {
+                        game.player.inventory.addItem('ancient_communicator', 1);
+                    }
+                }
+            }
+        ],
+        rewards: {
+            exp: 50,
+            item: 'sword_starter',
+            gold: 100
+        },
+        onQuestComplete: (game) => {
+            game.ui.showToast(\"🎉 Quête terminée : Le Réveil de l'Écho\", 'success');
+            // Unlock next quest
+            if (game.questManager) {
+                game.questManager.unlockQuest('mq_02_first_contact');
+            }
+        }
+    },
+
+    {
+        id: 'mq_02_first_contact',
+        title: \"Premier Contact\",
+        description: \"Le communicateur émet un signal. Suivez-le jusqu'au campement d'Elara.\",
+        prereq: 'mq_01_wakeup',
+        steps: [
+            {
+                id: 'find_camp',
+                description: \"Trouvez le campement d'Elara\",
+                targetType: 'ENTER_ZONE',
+                targetId: 'elara_camp',
+                targetPos: { x: -30, y: 0, z: 40 },
+                radius: 10,
+                isCompleted: false
+            },
+            {
+                id: 'talk_elara',
+                description: \"Parlez à Elara\",
+                targetType: 'TALK',
+                targetId: 'elara',
+                isCompleted: false,
+                onComplete: (game) => {
+                    game.ui.showToast(\"💬 Elara : 'Bienvenue, Marcheur d'Écho.'\", 'info');
+                }
+            }
+        ],
+        rewards: {
+            exp: 100,
+            gold: 200
+        },
+        onQuestComplete: (game) => {
+            game.ui.showToast(\"🎉 Quête terminée : Premier Contact\", 'success');
+            if (game.questManager) {
+                game.questManager.unlockQuest('mq_03_training');
+            }
+        }
+    },
+
+    {
+        id: 'mq_03_training',
+        title: \"Entraînement au Combat\",
+        description: \"Elara vous demande de prouver vos capacités en combattant des Golems d'Entraînement.\",
+        prereq: 'mq_02_first_contact',
+        steps: [
+            {
+                id: 'defeat_golems',
+                description: \"Éliminez 3 Golems d'Entraînement\",
+                targetType: 'KILL_ENEMY',
+                targetId: 'training_golem',
+                targetCount: 3,
+                currentCount: 0,
+                isCompleted: false,
+                onProgress: (game, count) => {
+                    game.ui.showToast(`⚔️ Golems éliminés : ${count}/3`, 'info');
+                },
+                onComplete: (game) => {
+                    game.ui.showToast(\"✅ Entraînement terminé !\", 'success');
+                }
+            }
+        ],
+        rewards: {
+            exp: 200,
+            item: 'shield_basic',
+            gold: 300
+        },
+        onQuestComplete: (game) => {
+            game.ui.showToast(\"🎉 Quête terminée : Entraînement au Combat\", 'success');
+            game.ui.showToast(\"🛡️ Nouveau : Bouclier Basique obtenu !\", 'success');
+            if (game.questManager) {
+                game.questManager.unlockQuest('mq_04_forbidden_ruins');
+            }
+        }
+    },
+
+    {
+        id: 'mq_04_forbidden_ruins',
+        title: \"Les Ruines Interdites\",
+        description: \"Elara vous envoie explorer les Ruines Anciennes pour trouver un Fragment de Clé et affronter le Gardien Construct.\",
+        prereq: 'mq_03_training',
+        steps: [
+            {
+                id: 'travel_ruins',
+                description: \"Voyagez jusqu'à la Porte des Ruines\",
+                targetType: 'ENTER_ZONE',
+                targetId: 'ruined_gate',
+                targetPos: { x: 150, y: 0, z: -50 },
+                radius: 15,
+                isCompleted: false,
+                onComplete: (game) => {
+                    game.ui.showToast(\"🏛️ Vous êtes arrivé aux Ruines Interdites\", 'info');
+                }
+            },
+            {
+                id: 'find_key_fragment',
+                description: \"Trouvez le Fragment de Clé Alpha\",
+                targetType: 'COLLECT_ITEM',
+                targetId: 'key_fragment_alpha',
+                targetPos: { x: 165, y: 0, z: -60 },
+                isCompleted: false,
+                onComplete: (game) => {
+                    game.ui.showToast(\"🔑 Fragment de Clé Alpha obtenu !\", 'success');
+                    if (game.player.inventory) {
+                        game.player.inventory.addItem('key_fragment_alpha', 1);
+                    }
+                }
+            },
+            {
+                id: 'defeat_guardian',
+                description: \"Éliminez le Gardien Construct (Mini-Boss)\",
+                targetType: 'KILL_ENEMY',
+                targetId: 'guardian_construct',
+                targetCount: 1,
+                currentCount: 0,
+                isCompleted: false,
+                onComplete: (game) => {
+                    game.ui.showToast(\"💀 Gardien Construct vaincu !\", 'success');
+                    game.ui.showToast(\"🎊 ACTE 1 TERMINÉ !\", 'success');
+                }
+            }
+        ],
+        rewards: {
+            exp: 500,
+            item: 'sword_steel',
+            gold: 1000
+        },
+        onQuestComplete: (game) => {
+            game.ui.showToast(\"🏆 Quête terminée : Les Ruines Interdites\", 'success');
+            game.ui.showToast(\"⚔️ Lame d'Acier obtenue !\", 'success');
+            // TODO: Unlock Act 2 when implemented
+            // if (game.questManager) {
+            //     game.questManager.unlockQuest('mq_05_pyro_temple');
+            // }
+        }
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 🔥 ACT 2: THE ELEMENTAL FRAGMENTS (To be implemented)
+    // ═══════════════════════════════════════════════════════════════════════
+    // mq_05_pyro_temple
+    // mq_06_cryo_temple
+    // mq_07_electro_temple
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ⚫ ACT 3: THE VOID INVASION (To be implemented)
+    // ═══════════════════════════════════════════════════════════════════════
+    // mq_08_void_breach
+    // mq_09_rescue_elara
+    // mq_10_final_preparation
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ☁️ ACT 4: THE SKY CITADEL (To be implemented)
+    // ═══════════════════════════════════════════════════════════════════════
+    // mq_11_citadel_ascent
+    // mq_12_architect_confrontation
+    // mq_13_final_choice
+
+];
+
+export const getQuestById = (id) => QuestsDb.find(q => q.id === id);

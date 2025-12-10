@@ -88,31 +88,120 @@ export class WeaponGenerator {
 
     static buildSword(group, vStats, bladeMat, handleMat, guardMat) {
         const len = vStats.bladeLength || 1.0;
-        const width = 0.15;
 
-        // Blade
-        const bladeGeo = new THREE.BoxGeometry(width, len, 0.05);
-        // Taper the tip (hacky way: scale top vertices? No, basic box for now)
+        // Determine sword style
+        const style = vStats.style || 'STANDARD';
+
+        if (style === 'KATANA') {
+            this.buildKatana(group, len, bladeMat, handleMat, guardMat);
+        } else if (style === 'RAPIER') {
+            this.buildRapier(group, len, bladeMat, handleMat, guardMat);
+        } else if (style === 'LONGSWORD') {
+            this.buildLongsword(group, len, bladeMat, handleMat, guardMat);
+        } else {
+            // Standard sword
+            const width = 0.15;
+            const bladeGeo = new THREE.BoxGeometry(width, len, 0.05);
+            const blade = new THREE.Mesh(bladeGeo, bladeMat);
+            blade.position.y = len / 2 + 0.1;
+            group.add(blade);
+
+            const guardGeo = new THREE.BoxGeometry(0.5, 0.05, 0.15);
+            const guard = new THREE.Mesh(guardGeo, guardMat);
+            guard.position.y = 0.1;
+            group.add(guard);
+
+            const handleGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.25, 8);
+            const handle = new THREE.Mesh(handleGeo, handleMat);
+            handle.position.y = -0.025;
+            group.add(handle);
+
+            const pommelGeo = new THREE.SphereGeometry(0.06);
+            const pommel = new THREE.Mesh(pommelGeo, guardMat);
+            pommel.position.y = -0.16;
+            group.add(pommel);
+        }
+    }
+
+    static buildKatana(group, len, bladeMat, handleMat, guardMat) {
+        const width = 0.12;
+        const bladeGeo = new THREE.BoxGeometry(width, len, 0.03);
         const blade = new THREE.Mesh(bladeGeo, bladeMat);
-        blade.position.y = len / 2 + 0.1; // 0.1 above guard
+        blade.position.y = len / 2 + 0.1;
+        blade.rotation.x = -0.05;
         group.add(blade);
 
-        // Guard
-        const guardGeo = new THREE.BoxGeometry(0.5, 0.05, 0.15);
-        const guard = new THREE.Mesh(guardGeo, guardMat);
-        guard.position.y = 0.1;
-        group.add(guard);
+        const tsubaGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.02, 16);
+        const tsuba = new THREE.Mesh(tsubaGeo, guardMat);
+        tsuba.position.y = 0.1;
+        tsuba.rotation.x = Math.PI / 2;
+        group.add(tsuba);
 
-        // Handle
-        const handleGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.25, 8);
+        const handleGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.35, 8);
         const handle = new THREE.Mesh(handleGeo, handleMat);
-        handle.position.y = -0.025; // Below guard
+        handle.position.y = -0.075;
         group.add(handle);
 
-        // Pommel
-        const pommelGeo = new THREE.SphereGeometry(0.06);
+        const pommelGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.03, 8);
         const pommel = new THREE.Mesh(pommelGeo, guardMat);
-        pommel.position.y = -0.16;
+        pommel.position.y = -0.26;
+        group.add(pommel);
+    }
+
+    static buildRapier(group, len, bladeMat, handleMat, guardMat) {
+        const width = 0.06;
+        const bladeGeo = new THREE.BoxGeometry(width, len * 1.2, 0.02);
+        const blade = new THREE.Mesh(bladeGeo, bladeMat);
+        blade.position.y = len * 0.6 + 0.1;
+        group.add(blade);
+
+        const guardGeo = new THREE.SphereGeometry(0.12, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+        const guard = new THREE.Mesh(guardGeo, guardMat);
+        guard.position.y = 0.1;
+        guard.rotation.x = Math.PI;
+        group.add(guard);
+
+        const handleGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.2, 8);
+        const handle = new THREE.Mesh(handleGeo, handleMat);
+        handle.position.y = 0;
+        group.add(handle);
+
+        const pommelGeo = new THREE.SphereGeometry(0.04);
+        const pommel = new THREE.Mesh(pommelGeo, guardMat);
+        pommel.position.y = -0.12;
+        group.add(pommel);
+    }
+
+    static buildLongsword(group, len, bladeMat, handleMat, guardMat) {
+        const width = 0.18;
+        const bladeGeo = new THREE.BoxGeometry(width, len, 0.06);
+        const blade = new THREE.Mesh(bladeGeo, bladeMat);
+        blade.position.y = len / 2 + 0.15;
+        group.add(blade);
+
+        const fullerGeo = new THREE.BoxGeometry(0.04, len * 0.8, 0.03);
+        const fullerMat = new THREE.MeshStandardMaterial({
+            color: 0x333333,
+            roughness: 0.8,
+            metalness: 0.5
+        });
+        const fuller = new THREE.Mesh(fullerGeo, fullerMat);
+        fuller.position.set(0, len / 2 + 0.15, 0.035);
+        group.add(fuller);
+
+        const guardGeo = new THREE.BoxGeometry(0.6, 0.06, 0.12);
+        const guard = new THREE.Mesh(guardGeo, guardMat);
+        guard.position.y = 0.15;
+        group.add(guard);
+
+        const handleGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.35, 8);
+        const handle = new THREE.Mesh(handleGeo, handleMat);
+        handle.position.y = -0.025;
+        group.add(handle);
+
+        const pommelGeo = new THREE.SphereGeometry(0.07);
+        const pommel = new THREE.Mesh(pommelGeo, guardMat);
+        pommel.position.y = -0.22;
         group.add(pommel);
     }
 

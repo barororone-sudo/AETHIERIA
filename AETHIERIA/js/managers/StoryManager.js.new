@@ -1,0 +1,79 @@
+import * as THREE from 'three';
+
+export class StoryManager {
+    constructor(game) {
+        this.game = game;
+        this.state = 'IDLE';
+    }
+
+    startNewGameSequence() {
+        console.log("Starting Game...");
+        this.state = 'PLAYING';
+
+        // Wait for terrain to fully load before spawning player
+        setTimeout(() => {
+            if (this.game.player && this.game.player.body) {
+                // Spawn VERY high to ensure terrain is loaded
+                this.game.player.body.position.set(0, 100, 0);
+                this.game.player.body.velocity.set(0, 0, 0);
+                this.game.player.mesh.position.copy(this.game.player.body.position);
+                console.log("Player teleported to (0, 100, 0)");
+            }
+        }, 2000); // Wait 2 seconds for terrain to load
+
+        // Unlock player
+        if (this.game.player) {
+            this.game.player.isInTutorial = false;
+            this.game.player.inputLocked = false;
+        }
+
+        // Hide loading screen
+        const loadingScreen = document.getElementById('loading-screen');
+        if (loadingScreen) {
+            loadingScreen.style.opacity = '0';
+            setTimeout(() => {
+                loadingScreen.style.display = 'none';
+            }, 500);
+        }
+
+        // Show game UI
+        const gameUI = document.getElementById('game-ui');
+        if (gameUI) {
+            gameUI.style.display = 'block';
+        }
+
+        // Lock pointer after a delay
+        setTimeout(() => {
+            if (document.body.requestPointerLock) {
+                document.body.requestPointerLock();
+            }
+        }, 500);
+
+        // Start first quest
+        setTimeout(() => {
+            if (this.game.questManager) {
+                this.game.questManager.activateQuest('mq_01_wakeup');
+                console.log("[StoryManager] First quest activated");
+            }
+
+            if (this.game.ui) {
+                this.game.ui.showToast("Bienvenue dans AETHIERIA", 'info');
+            }
+        }, 1000);
+    }
+
+    update(dt) {
+        // No complex logic needed
+    }
+
+    getData() {
+        return {
+            state: this.state
+        };
+    }
+
+    loadData(data) {
+        if (!data) return;
+        this.state = data.state || 'IDLE';
+    }
+}

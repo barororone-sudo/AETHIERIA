@@ -131,7 +131,7 @@ export class MapManager {
         }
 
         // 4. Setup Fog Context
-        this.fogCtx = this.fogCanvas.getContext('2d');
+        this.fogCtx = this.fogCanvas.getContext('2d', { willReadFrequently: true });
         this.fogCtx.fillStyle = '#000000';
         this.fogCtx.fillRect(0, 0, this.mapSize, this.mapSize);
 
