@@ -258,13 +258,13 @@ export class World {
         console.log('[World] SPAWNING QUEST ITEMS - MULTIPLE POSITIONS');
         console.log('[World] ========================================');
 
-        // Create multiple cubes at different positions
+        // Create multiple cubes at different positions - HIGHER UP
         const positions = [
-            { x: 0, y: 3, z: -10, name: 'Front' },
-            { x: 5, y: 3, z: -5, name: 'Right' },
-            { x: -5, y: 3, z: -5, name: 'Left' },
-            { x: 0, y: 10, z: 0, name: 'Above' },
-            { x: 0, y: 3, z: 5, name: 'Behind' }
+            { x: 0, y: 10, z: -10, name: 'Front' },
+            { x: 5, y: 10, z: -5, name: 'Right' },
+            { x: -5, y: 10, z: -5, name: 'Left' },
+            { x: 0, y: 15, z: 0, name: 'Above' },
+            { x: 0, y: 10, z: 5, name: 'Behind' }
         ];
 
         positions.forEach((pos, index) => {
