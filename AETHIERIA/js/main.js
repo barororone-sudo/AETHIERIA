@@ -155,6 +155,7 @@ export class Game {
             if (this.world) {
                 await this.world.init();
             }
+            if (this.ui) this.ui.initMinimap(); // Initialize Map AFTER World is ready
             if (this.world) this.particles = new ParticleManager(this.world.scene);
 
             this.loader.updateProgress(90);

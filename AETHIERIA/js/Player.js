@@ -1166,8 +1166,9 @@ export class Player {
             case 'SPRINT':
                 // 🛑 INSTANT STOP when grounded with no input
                 if (grounded && speed < 0.1) {
-                    this.body.velocity.x = 0;
-                    this.body.velocity.z = 0;
+                    // Lock position to prevent sliding on slopes
+                    this.body.velocity.set(0, 0, 0);
+                    this.body.angularVelocity.set(0, 0, 0);
                 }
 
                 if (this.input.keys.forward && !this.exhausted && this.checkWall()) {
@@ -1184,8 +1185,8 @@ export class Player {
                         this.body.velocity.z = dodgeDir.z * force;
                         this.body.velocity.y = 5;
                     } else {
-                        // JUMP FORCE TUNED (15 -> 12)
-                        this.body.velocity.y = 12;
+                        // JUMP FORCE TUNED (12 -> 10)
+                        this.body.velocity.y = 10;
                         this.state = 'AIR';
                         this.lastJumpTime = Date.now();
                         this.hasReleasedJump = false;
@@ -1227,7 +1228,10 @@ export class Player {
                         this.state = 'DIVE';
                     }
                 } else if (this.input.keys.forward && !this.exhausted && this.checkWall()) {
-                    this.state = 'CLIMB';
+                    // PREVENT RAPID RE-ENTRY IF JUMPING OFF WALL
+                    if (this.hasReleasedJump) {
+                        this.state = 'CLIMB';
+                    }
                 }
 
                 if (grounded && this.body.velocity.y <= 0) this.state = 'IDLE';
@@ -1282,6 +1286,7 @@ export class Player {
                     if (this.input.keys.jump) {
                         this.body.velocity.y = 6;
                         this.body.velocity.addScaledVector(this.getForwardVector(), -4);
+                        this.hasReleasedJump = false; // Mark jump as held
                     }
                 } else if (!this.checkWall()) {
                     // Check wall again to ensure we don't float
