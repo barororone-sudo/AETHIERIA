@@ -51,46 +51,55 @@ export class LevelManager {
     }
 
     populateCamps() {
-        const worldSize = 4000; // Updated for larger map
-        const campCount = 30; // Increased from 10
-        const minCampDistance = 150; // Minimum spacing between camps
+        const worldSize = 4000;
+        const totalCamps = 60;
+        const zones = 8;
+        const campsPerZone = Math.ceil(totalCamps / zones);
+        const minCampDistance = 150;
+        const minStartDist = 250; // Keep clear of start area
 
-        for (let i = 0; i < campCount; i++) {
-            let attempts = 0;
-            let placed = false;
+        console.log(`[LevelManager] Spawning ${totalCamps} camps across ${zones} zones...`);
 
-            while (attempts < 20 && !placed) {
-                const x = (Math.random() - 0.5) * worldSize;
-                const z = (Math.random() - 0.5) * worldSize;
+        let spawnedCount = 0;
 
-                // Don't spawn too close to start (0,0)
-                if (Math.sqrt(x * x + z * z) < 50) {
+        for (let z = 0; z < zones; z++) {
+            // Calculate sector angles
+            const angleStart = (z / zones) * Math.PI * 2;
+            const angleEnd = ((z + 1) / zones) * Math.PI * 2;
+
+            for (let i = 0; i < campsPerZone; i++) {
+                if (spawnedCount >= totalCamps) break;
+
+                let attempts = 0;
+                let placed = false;
+
+                while (attempts < 30 && !placed) {
+                    // Random angle within sector
+                    const angle = angleStart + Math.random() * (angleEnd - angleStart);
+                    // Random distance (weighted slightly outwards for better spread)
+                    const dist = minStartDist + Math.pow(Math.random(), 0.8) * (worldSize * 0.4 - minStartDist);
+
+                    const x = Math.cos(angle) * dist;
+                    const z = Math.sin(angle) * dist;
+
+                    // Distance check
+                    const tooClose = this.activeCamps.some(camp => {
+                        const dx = camp.x - x;
+                        const dz = camp.z - z;
+                        return (dx * dx + dz * dz) < (minCampDistance * minCampDistance);
+                    });
+
+                    if (!tooClose && this.isAreaFlat(x, z, 5)) {
+                        this.spawnCamp(x, z);
+                        placed = true;
+                        spawnedCount++;
+                    }
                     attempts++;
-                    continue;
                 }
-
-                // Check distance from other camps
-                const tooClose = this.activeCamps.some(camp => {
-                    const dx = camp.x - x;
-                    const dz = camp.z - z;
-                    return Math.sqrt(dx * dx + dz * dz) < minCampDistance;
-                });
-
-                if (tooClose) {
-                    attempts++;
-                    continue;
-                }
-
-                // Check Flatness
-                if (this.isAreaFlat(x, z, 5)) {
-                    this.spawnCamp(x, z);
-                    placed = true;
-                }
-                attempts++;
             }
         }
 
-        console.log(`[LevelManager] Spawned ${this.activeCamps.length} camps.`);
+        console.log(`[LevelManager] Spawned ${spawnedCount} camps.`);
     }
 
     isAreaFlat(x, z, radius) {

@@ -166,48 +166,61 @@ export class World {
     }
 
     spawnWaypoints() {
-        const count = 20; // Increased for larger map coverage
-        const minDist = 200; // Scaled for larger map
-        const maxDist = 1600; // Scaled to cover most of the 4000x4000 map
-        const waterLevel = 2.0; // Don't spawn underwater
+        const totalWaypoints = 60;
+        const zones = 8;
+        const waypointsPerZone = Math.ceil(totalWaypoints / zones);
+        const minStartDist = 300; // Keep clear of start area
+        const maxDist = 1800;
+        const waterLevel = 2.0;
 
-        this.waypoints = []; // Track waypoints
-        const biomeTargets = ['DESERT', 'FOREST', 'SNOW', 'MOUNTAIN', 'PLAINS', 'CITY'];
+        this.waypoints = [];
         const foundBiomes = new Set();
 
-        for (let i = 0; i < count; i++) {
-            let x, z, y, biome;
-            let attempts = 0;
-            let validPosition = false;
+        console.log(`[World] Spawning waypoints across ${zones} zones...`);
 
-            // Try to find positions in different biomes for variety
-            do {
-                const angle = Math.random() * Math.PI * 2;
-                const dist = minDist + Math.random() * (maxDist - minDist);
-                x = Math.cos(angle) * dist;
-                z = Math.sin(angle) * dist;
+        let spawnedCount = 0;
 
-                if (this.terrainManager) {
-                    y = this.terrainManager.getGlobalHeight(x, z);
-                    biome = this.terrainManager.getBiomeAt(x, z);
-                } else {
-                    y = 0;
-                    biome = 'PLAINS';
+        for (let z = 0; z < zones; z++) {
+            // Zone angle
+            const angleStart = (z / zones) * Math.PI * 2;
+            const angleEnd = ((z + 1) / zones) * Math.PI * 2;
+
+            for (let i = 0; i < waypointsPerZone; i++) {
+                if (spawnedCount >= totalWaypoints) break;
+
+                let attempts = 0;
+                let validPosition = false;
+                let x, z, y, biome;
+
+                do {
+                    // Random position in slice
+                    const angle = angleStart + Math.random() * (angleEnd - angleStart);
+                    const dist = minStartDist + Math.random() * (maxDist - minStartDist);
+
+                    x = Math.cos(angle) * dist;
+                    z = Math.sin(angle) * dist;
+
+                    if (this.terrainManager) {
+                        y = this.terrainManager.getGlobalHeight(x, z);
+                        biome = this.terrainManager.getBiomeAt(x, z);
+                    } else {
+                        y = 0;
+                        biome = 'PLAINS';
+                    }
+
+                    // Valid if: not underwater
+                    // Note: We relax biome requirements to ensure distribution takes priority
+                    validPosition = y >= waterLevel;
+
+                    attempts++;
+                } while (!validPosition && attempts < 30);
+
+                if (validPosition) {
+                    const waypoint = new Waypoint(this, x, z, `waypoint_${z}_${i}`);
+                    this.waypoints.push(waypoint);
+                    foundBiomes.add(biome);
+                    spawnedCount++;
                 }
-
-                // Valid if: not underwater AND (new biome OR enough attempts)
-                validPosition = y >= waterLevel && (
-                    !foundBiomes.has(biome) || attempts > 15
-                );
-
-                attempts++;
-            } while (!validPosition && attempts < 30);
-
-            // Only spawn if we found a valid position
-            if (validPosition && y >= waterLevel) {
-                const waypoint = new Waypoint(this, x, z, `waypoint_${i}`);
-                this.waypoints.push(waypoint);
-                foundBiomes.add(biome);
             }
         }
 
