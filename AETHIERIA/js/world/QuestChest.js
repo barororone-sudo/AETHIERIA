@@ -1,6 +1,6 @@
-// Use global THREE from window
-const THREE = window.THREE;
-const CANNON = window.CANNON;
+// QuestChest.js
+// Access THREE from window when needed
+
 
 /**
  * Quest Chest - Special chest for quest items
@@ -18,6 +18,14 @@ export class QuestChest {
     }
 
     init() {
+        // Access global THREE
+        if (!window.THREE) {
+            console.error('THREE is not defined!');
+            return;
+        }
+        const THREE = window.THREE;
+        const CANNON = window.CANNON;
+
         // Create golden chest mesh
         const geometry = new THREE.BoxGeometry(1.5, 1.2, 1);
         const material = new THREE.MeshStandardMaterial({
