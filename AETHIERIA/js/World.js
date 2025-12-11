@@ -208,9 +208,21 @@ export class World {
                         biome = 'PLAINS';
                     }
 
-                    // Valid if: not underwater
-                    // Note: We relax biome requirements to ensure distribution takes priority
+                    // Valid if: not underwater AND far enough from other waypoints
                     validPosition = y >= waterLevel;
+
+                    if (validPosition) {
+                        // Check distance from existing waypoints
+                        for (const wp of this.waypoints) {
+                            const dx = wp.mesh.position.x - x;
+                            const dz = wp.mesh.position.z - z;
+                            const distSq = dx * dx + dz * dz;
+                            if (distSq < 250 * 250) { // Min distance 250
+                                validPosition = false;
+                                break;
+                            }
+                        }
+                    }
 
                     attempts++;
                 } while (!validPosition && attempts < 30);
