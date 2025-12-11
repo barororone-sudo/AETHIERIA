@@ -35,7 +35,17 @@ export class InventoryManager {
         if (count > 0) {
             for (let i = 0; i < this.slots.length; i++) {
                 if (this.slots[i] === null) {
-                    this.slots[i] = { id: itemId, count: count };
+                    const slotData = { id: itemId, count: count };
+
+                    // Initialize Weapon Properties
+                    if (itemDef.category === ItemCategory.WEAPON) {
+                        slotData.properties = {
+                            level: 1,
+                            xp: 0
+                        };
+                    }
+
+                    this.slots[i] = slotData;
                     return true;
                 }
             }
@@ -131,5 +141,46 @@ export class InventoryManager {
      */
     hasItem(itemId) {
         return this.slots.some(slot => slot && slot.id === itemId);
+    }
+
+    removeItemById(itemId, count = 1) {
+        const index = this.slots.findIndex(slot => slot && slot.id === itemId);
+        if (index === -1) return false;
+
+        // Check count
+        if (this.slots[index].count < count) return false; // Not enough in this stack (simple check)
+
+        return this.removeItem(index, count);
+    }
+
+    /**
+     * Upgrade a weapon in a specific slot
+     * @param {number} slotIndex 
+     */
+    upgradeWeapon(slotIndex) {
+        const slot = this.slots[slotIndex];
+        if (!slot || !slot.properties) return false;
+
+        const item = this.player.game.data.getItem(slot.id);
+        if (!item || item.category !== ItemCategory.WEAPON) return false;
+
+        // Cost: 1 Iron Ore per Level
+        const currentLevel = slot.properties.level || 1;
+        const costItem = 'iron_ore';
+        const costAmount = currentLevel; // Level 1 -> 1 Ore, Level 2 -> 2 Ores
+
+        if (this.removeItemById(costItem, costAmount)) {
+            slot.properties.level++;
+            this.player.game.ui.showToast(`✅ Arme améliorée: Niveau ${slot.properties.level} !`);
+
+            // Re-calculate stats if equipped
+            if (this.player.equippedWeaponSlot === slot) {
+                this.player.updateStats();
+            }
+            return true;
+        } else {
+            this.player.game.ui.showToast(`❌ Matériaux manquants: ${costAmount} x Minerai de Fer`, 'error');
+            return false;
+        }
     }
 }

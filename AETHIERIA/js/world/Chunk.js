@@ -51,6 +51,7 @@ export class Chunk {
 
         // OPTIMIZATION: Use Shared Material
         this.mesh = new THREE.Mesh(geometry, this.tm.assets.groundMaterial);
+        this.mesh.name = 'terrainChunk';
         this.mesh.receiveShadow = true;
         this.tm.group.add(this.mesh);
     }

@@ -6,12 +6,13 @@ export class TerrainManager {
     constructor(world) {
         this.world = world;
         this.chunkSize = 64;
-        this.chunkResolution = 33; // Vertices per edge
+        this.chunkResolution = 65; // High Res (1 vertex per meter) to prevent physics holes
         this.renderDistance = 2; // Radius
         this.unloadDistance = 3;
 
         this.chunks = new Map();
         this.group = new THREE.Group();
+        this.group.name = 'terrainGroup'; // Essential for Raycasting
         this.world.scene.add(this.group);
 
         // Initialize Noise
@@ -104,27 +105,24 @@ export class TerrainManager {
         // 1. Altitude Overrides (Global Peaks)
         if (height > 55) return 'SNOW'; // Higher peaks
 
-        // 2. Radial Sectors (8 Zones)
+        // 2. Radial Sectors (10 Zones for Expansion)
         const angle = Math.atan2(z, x); // -PI to PI
-        // Normalize to 0-360 deg approx
         const deg = (angle * 180 / Math.PI + 360) % 360;
 
-        // 8 Sectors of 45 degrees
-        // Sector 0 (East): 337.5 to 22.5
-        // Sector 1 (NE): 22.5 to 67.5
-        // ...
-
-        const sector = Math.round(deg / 45) % 8;
+        // 10 Sectors of 36 degrees
+        const sector = Math.round(deg / 36) % 10;
 
         switch (sector) {
-            case 0: return 'FOREST';        // East
-            case 1: return 'MOUNTAIN';      // North-East
-            case 2: return 'SNOW';          // North
-            case 3: return 'HIGHLANDS';     // North-West (New)
-            case 4: return 'PLAINS';        // West
-            case 5: return 'BADLANDS';      // South-West (New)
-            case 6: return 'DESERT';        // South
-            case 7: return 'SWAMP';         // South-East (New)
+            case 0: return 'FOREST';
+            case 1: return 'MOUNTAIN';
+            case 2: return 'SNOW';
+            case 3: return 'HIGHLANDS';
+            case 4: return 'PLAINS';
+            case 5: return 'BADLANDS';
+            case 6: return 'DESERT';
+            case 7: return 'SWAMP';
+            case 8: return 'VOLCANO'; // New
+            case 9: return 'JUNGLE';  // New
         }
         return 'PLAINS';
     }
@@ -135,14 +133,9 @@ export class TerrainManager {
     getGlobalHeight(x, z) {
         if (!Utils.Noise || !Utils.Noise.perlin2) return 0;
 
-        // Get Base Biome from Coordinates (Reuse logic loosely or call getBiome with dummy height)
-        // We need the biome to determine height parameters *before* we calculate height.
-        // Circular dependency? No, getBiome uses height for SNOW override only.
-        // Let's copy the sector logic for parameters.
-
         const angle = Math.atan2(z, x);
         const deg = (angle * 180 / Math.PI + 360) % 360;
-        const sector = Math.round(deg / 45) % 8;
+        const sector = Math.round(deg / 36) % 10; // Updated to 10
 
         let biomeType = 'PLAINS';
         switch (sector) {
@@ -154,6 +147,8 @@ export class TerrainManager {
             case 5: biomeType = 'BADLANDS'; break;
             case 6: biomeType = 'DESERT'; break;
             case 7: biomeType = 'SWAMP'; break;
+            case 8: biomeType = 'VOLCANO'; break;
+            case 9: biomeType = 'JUNGLE'; break;
         }
 
         // Topography Settings
@@ -164,29 +159,26 @@ export class TerrainManager {
 
         switch (biomeType) {
             case 'DESERT':
-                amplitude = 15; frequency = 0.005; octaves = 4; baseHeight = 5;
-                break;
+                amplitude = 15; frequency = 0.005; octaves = 4; baseHeight = 5; break;
             case 'FOREST':
-                amplitude = 20; frequency = 0.01; octaves = 4; baseHeight = 8;
-                break;
+                amplitude = 20; frequency = 0.01; octaves = 4; baseHeight = 8; break;
             case 'PLAINS':
-                amplitude = 8; frequency = 0.005; octaves = 3; baseHeight = 5;
-                break;
-            case 'SNOW': // Ice plains essentially, mountains handled by global noise add
-                amplitude = 15; frequency = 0.01; octaves = 4; baseHeight = 10;
-                break;
+                amplitude = 8; frequency = 0.005; octaves = 3; baseHeight = 5; break;
+            case 'SNOW':
+                amplitude = 15; frequency = 0.01; octaves = 4; baseHeight = 10; break;
             case 'MOUNTAIN':
-                amplitude = 80; frequency = 0.008; octaves = 5; baseHeight = 20;
-                break;
+                amplitude = 80; frequency = 0.008; octaves = 5; baseHeight = 20; break;
             case 'HIGHLANDS':
-                amplitude = 40; frequency = 0.006; octaves = 4; baseHeight = 30; // High plateau
-                break;
+                amplitude = 40; frequency = 0.006; octaves = 4; baseHeight = 30; break;
             case 'BADLANDS':
-                amplitude = 30; frequency = 0.01; octaves = 5; baseHeight = 15; // Mesa Terraces
-                // Mesas often have flat tops, we might need custom noise, but FBM is okay for now.
-                break;
+                amplitude = 30; frequency = 0.01; octaves = 5; baseHeight = 15; break;
             case 'SWAMP':
-                amplitude = 3; frequency = 0.02; octaves = 2; baseHeight = 1; // Very flat, low
+                amplitude = 3; frequency = 0.02; octaves = 2; baseHeight = 1; break;
+            case 'VOLCANO':
+                amplitude = 60; frequency = 0.01; octaves = 5; baseHeight = 25; // High & jagged
+                break;
+            case 'JUNGLE':
+                amplitude = 25; frequency = 0.015; octaves = 4; baseHeight = 10; // Dense variation
                 break;
         }
 
@@ -201,23 +193,24 @@ export class TerrainManager {
             freq *= 2.0;
         }
 
-        // Global Mountain Pass (Add extra height in Mountain/Snow zones strongly)
-        if (biomeType === 'MOUNTAIN' || biomeType === 'SNOW') {
+        // Global Mountain Pass
+        if (biomeType === 'MOUNTAIN' || biomeType === 'SNOW' || biomeType === 'VOLCANO') {
             const mNoise = Utils.Noise.perlin2(x * 0.005, z * 0.005);
             if (mNoise > 0) y += mNoise * 50;
         }
 
-        // Mesa Terracing Effect for Badlands
+        // Mesa Terracing
         if (biomeType === 'BADLANDS') {
-            // Quantize height levels
             y = Math.floor(y / 8) * 8;
         }
 
+        // Volcano Crater Logic? (Simple version: just high)
+
         y += baseHeight;
 
-        // Flatten Valleys / Water (Swamp should be near water level)
+        // Flatten Valleys
         if (y < 2) y = THREE.MathUtils.lerp(y, 1, 0.5);
-        if (biomeType === 'SWAMP' && y < 3) y = 1.5; // Force water level
+        if (biomeType === 'SWAMP' && y < 3) y = 1.5;
 
         return Math.max(0.5, y);
     }
@@ -230,41 +223,24 @@ export class TerrainManager {
         const noise = Utils.Noise.perlin2(x * 0.2, z * 0.2) * 0.1;
 
         switch (biome) {
-            case 'DESERT':
-                color.setHex(0xe6c288); // Sand
-                color.r += noise * 0.5;
+            case 'DESERT': color.setHex(0xe6c288); color.r += noise * 0.5; break;
+            case 'FOREST': color.setHex(0x2d4a2d); color.g += noise; break;
+            case 'PLAINS': color.setHex(0x55aa55); color.g += noise; color.r += noise * 0.5; break;
+            case 'SNOW': color.setHex(0xffffff); color.b -= noise * 0.1; break;
+            case 'MOUNTAIN': color.setHex(0x555555); color.r += noise; break;
+            case 'HIGHLANDS': color.setHex(0x8da336); color.r += noise; break;
+            case 'BADLANDS': color.setHex(0xd2691e); color.r += noise * 0.5; break;
+            case 'SWAMP': color.setHex(0x2f4f4f); color.g += noise * 0.5; break;
+            case 'VOLCANO':
+                color.setHex(0x221111); // Dark Obsidian/Ash
+                color.r += noise * 0.5; // Reddish tint
+                if (height > 60) color.setHex(0xffaa00); // Lava caps?
                 break;
-            case 'FOREST':
-                color.setHex(0x2d4a2d); // Dark Green
+            case 'JUNGLE':
+                color.setHex(0x006600); // Vibrant Deep Green
                 color.g += noise;
                 break;
-            case 'PLAINS':
-                color.setHex(0x55aa55); // Grass
-                color.g += noise;
-                color.r += noise * 0.5;
-                break;
-            case 'SNOW':
-                color.setHex(0xffffff); // White
-                color.b -= noise * 0.1;
-                break;
-            case 'MOUNTAIN':
-                color.setHex(0x555555); // Dark Grey
-                color.r += noise; color.g += noise; color.b += noise;
-                break;
-            case 'HIGHLANDS':
-                color.setHex(0x8da336); // Olive Green
-                color.r += noise;
-                break;
-            case 'BADLANDS':
-                color.setHex(0xd2691e); // Chocolate/Terracotta
-                color.r += noise * 0.5;
-                break;
-            case 'SWAMP':
-                color.setHex(0x2f4f4f); // Dark Slate Gray (Muddy Green)
-                color.g += noise * 0.5;
-                break;
-            default:
-                color.setHex(0xff00ff); // Error
+            default: color.setHex(0xff00ff);
         }
 
         return color;

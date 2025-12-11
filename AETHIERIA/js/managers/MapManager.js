@@ -10,8 +10,8 @@ export class MapManager {
         this.fogCtx = null;
         this.iconLayer = null;
 
-        this.mapSize = 4000; // Doubled map size (was 2000)
-        this.worldSize = 4000; // Doubled world size (was 2000)
+        this.mapSize = 6000; // Increased map size (was 4000)
+        this.worldSize = 6000; // Increased world coverage (was 4000)
         this.scale = this.mapSize / this.worldSize; // 1.0
 
         this.icons = new Map(); // Map of object ID -> DOM Element

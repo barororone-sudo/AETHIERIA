@@ -287,7 +287,7 @@ export class UIManager {
             el.innerHTML = `<div style="font-size: 24px;">${item.icon || (item.category === 'WEAPON' ? '⚔️' : '📦')}</div>`;
             el.title = item.name;
 
-            // Count
+            // Count or Level
             if (slot.count > 1) {
                 const count = document.createElement('div');
                 count.innerText = slot.count;
@@ -296,6 +296,14 @@ export class UIManager {
                     fontSize: '12px', fontWeight: 'bold', color: 'white', textShadow: '0 0 2px black'
                 });
                 el.appendChild(count);
+            } else if (item.category === 'WEAPON' && slot.properties) {
+                const lvl = document.createElement('div');
+                lvl.innerText = `L${slot.properties.level || 1}`;
+                Object.assign(lvl.style, {
+                    position: 'absolute', bottom: '2px', right: '4px',
+                    fontSize: '10px', fontWeight: 'bold', color: '#f1c40f', textShadow: '0 0 2px black'
+                });
+                el.appendChild(lvl);
             }
 
             // Rarity Border
@@ -303,9 +311,13 @@ export class UIManager {
             el.style.borderColor = colors[item.rarity] || '#555';
 
             // Interaction
-            el.onclick = () => {
-                this.game.player.inventory.useItem(index);
-                this.updateInventory(); // Refresh for consumables
+            el.onclick = (e) => {
+                if (e.shiftKey && item.category === ItemCategory.WEAPON) {
+                    this.game.player.inventory.upgradeWeapon(index);
+                } else {
+                    this.game.player.inventory.useItem(index);
+                }
+                this.updateInventory(); // Refresh
                 this.renderStats();
             };
 
@@ -315,6 +327,10 @@ export class UIManager {
         if (this.grid.children.length === 0) {
             this.grid.innerHTML = `<div style="color:gray; grid-column: 1/-1; text-align:center;">Aucun objet dans cette catégorie.</div>`;
         }
+
+        // Update Description Text
+        const desc = document.getElementById('inv-desc');
+        if (desc) desc.innerText = "Clic pour utiliser/équiper. Shift+Clic pour améliorer (Coût: Minerai).";
     }
 
     renderStats() {
@@ -414,7 +430,7 @@ export class UIManager {
         group.appendChild(hpBar.container);
 
         // XP
-        const xpBar = this.createBar(200, 10, '#f1c40f', '#f39c12');
+        const xpBar = this.createBar(200, 16, '#f1c40f', '#f39c12');
         this.hudXp = xpBar.fill;
         group.appendChild(xpBar.container);
 

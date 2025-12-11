@@ -3,7 +3,7 @@ console.log('[PATCH] Quest chest spawning loading...');
 
 window.addEventListener('DOMContentLoaded', () => {
     const checkGame = setInterval(async () => {
-        if (window.game && window.game.world && window.game.world.scene) {
+        if (window.game && window.game.world && window.game.world.scene && window.game.world.terrainManager) {
             clearInterval(checkGame);
 
             console.log('[PATCH] Spawning quest chest...');
@@ -11,10 +11,18 @@ window.addEventListener('DOMContentLoaded', () => {
             // Import QuestChest
             const { QuestChest } = await import('../world/QuestChest.js');
 
-            // Spawn quest chest at beacon location (10, 0, -15)
+            const tm = window.game.world.terrainManager;
+            const x = 10;
+            const z = -15;
+            let y = tm.getGlobalHeight(x, z);
+
+            // Ensure not underwater (Water level ~2.0)
+            if (y < 2.5) y = 2.5;
+
+            // Spawn quest chest at beacon location
             const questChest = new QuestChest(
                 window.game,
-                { x: 10, y: 0, z: -15 },
+                { x, y, z },
                 'ancient_communicator'
             );
 
@@ -35,7 +43,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 }
             };
 
-            console.log('[PATCH] ✅ Quest chest spawned at beacon location');
+            console.log(`[PATCH] ✅ Quest chest spawned at (${x}, ${y.toFixed(2)}, ${z})`);
         }
     }, 100);
 });

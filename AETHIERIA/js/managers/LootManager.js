@@ -31,24 +31,57 @@ export class LootManager {
         const drops = [];
         const add = (id, count = 1) => drops.push({ itemId: id, count: count });
 
-        // TIER 1 (Common) - Potion + Iron
+        // Helper to get random weapon by rarity
+        const getWeapon = (rarity) => {
+            const pool = ItemsDb.filter(i => i.category === 'WEAPON' && i.rarity === rarity);
+            if (pool.length === 0) return null;
+            return pool[Math.floor(Math.random() * pool.length)].id;
+        };
+
+        // Helper to get random material
+        const getMaterial = (rarity) => {
+            const pool = ItemsDb.filter(i => (i.category === 'MATERIAL' || i.category === 'MATERIAL_WEAPON') && i.rarity === rarity);
+            if (pool.length === 0) return 'iron_ore';
+            return pool[Math.floor(Math.random() * pool.length)].id;
+        };
+
+        // PROBABILITY LOGIC
+        // Tier 1 (Common Chest): 80% Common Wep, 10% Uncommon Wep
+        // Tier 2 (Rare Chest): 60% Uncommon, 20% Rare
+        // Tier 3 (Epic Chest): 50% Rare, 30% Epic
+        // Tier 4 (Legendary Chest): 40% Epic, 40% Legendary
+
+        const roll = Math.random();
+        let weaponId = null;
+        let materialId = null;
+
         if (tier === 1) {
-            add('potion_health', 1);
-            add('iron_ore', 1); // "mat_iron" mapped to existing iron_ore
+            if (roll < 0.8) weaponId = getWeapon(1);
+            else if (roll < 0.9) weaponId = getWeapon(2);
+            materialId = 'iron_ore';
+        } else if (tier === 2) {
+            if (roll < 0.6) weaponId = getWeapon(2);
+            else if (roll < 0.8) weaponId = getWeapon(3);
+            else weaponId = getWeapon(1); // Filler
+            materialId = 'crystal_ethereal';
+        } else if (tier === 3) {
+            if (roll < 0.5) weaponId = getWeapon(3);
+            else if (roll < 0.8) weaponId = getWeapon(4);
+            else weaponId = getWeapon(2);
+            materialId = 'golem_core';
+        } else if (tier >= 4) {
+            if (roll < 0.4) weaponId = getWeapon(4);
+            else if (roll < 0.8) weaponId = getWeapon(5);
+            else weaponId = getWeapon(3);
+            materialId = 'golem_core';
+            add('ancient_key', 1); // Bonus key
         }
-        // TIER 2 (Rare) - Steel Sword + Crystal
-        else if (tier === 2) {
-            add('sword_steel', 1);
-            add('crystal_ethereal', 1); // "mat_crystal"
-        }
-        // TIER 3 (Legendary) - Unique Weapon + Golem Core
-        else if (tier >= 3) {
-            // Random Unique/Legendary
-            const uniques = ['sword_plasma', 'greatsword_magma', 'dagger_void'];
-            const w = uniques[Math.floor(Math.random() * uniques.length)];
-            add(w, 1);
-            add('golem_core', 1);
-        }
+
+        if (weaponId) add(weaponId, 1);
+        if (materialId) add(materialId, Math.floor(Math.random() * 3) + 1);
+
+        // Potion Chance
+        if (Math.random() < 0.5) add('potion_health', 1);
 
         return drops;
     }

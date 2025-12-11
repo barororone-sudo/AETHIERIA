@@ -64,6 +64,14 @@ export class Player {
         this.level = 1;
         this.exp = 0;
         this.expToNextLevel = 100;
+        this.skillPoints = 0; // New: Points to spend
+
+        // Skills (Skill Tree)
+        this.skills = {
+            strength: 0, // +Damage
+            vitality: 0, // +HP
+            agility: 0   // +Speed/Stamina
+        };
 
         // BASE STATS (High HP RPG Style)
         this.baseStats = {
@@ -73,17 +81,16 @@ export class Player {
             speed: 1.0
         };
 
-        this.levelProgress = 0.0;
-
         this.hp = this.baseStats.hp;
         this.maxHp = this.baseStats.hp;
 
-        // EFFECTIVE STATS (Updated via updateStats)
+        // EFFECTIVE STATS
         this.stats = { ...this.baseStats };
 
+        this.levelProgress = 0.0;
+
         // HP System
-        this.hp = 500;
-        this.maxHp = 500;
+        // (Redundant assignment removed)
 
         // Inventory
         this.inventory = new InventoryManager(this);
@@ -291,6 +298,7 @@ export class Player {
             this.level++;
             this.exp -= this.expToNextLevel;
             this.expToNextLevel = Math.floor(this.expToNextLevel * 1.5);
+            this.skillPoints += 1; // Gain 1 SP
 
             // RPG Growth: +10% HP, +5% Atk (Compound)
             this.baseStats.hp = Math.floor(this.baseStats.hp * 1.10);
@@ -301,7 +309,7 @@ export class Player {
             this.maxHp = this.baseStats.hp;
 
             this.updateStats();
-            if (this.game.ui) this.game.ui.showToast(`NIVEAU SUIVANT ! (Lvl ${this.level})`);
+            if (this.game.ui) this.game.ui.showToast(`NIVEAU SUIVANT ! (Lvl ${this.level}) Points: ${this.skillPoints}`);
         }
 
         // Calculate Progress (0.0 - 1.0)
@@ -313,8 +321,22 @@ export class Player {
         this.stats.defense = this.baseStats.defense;
         this.maxHp = this.baseStats.hp;
 
+        // Skill Bonuses being applied
+        if (this.skills) {
+            this.stats.attack += (this.skills.strength || 0) * 5;
+            this.maxHp += (this.skills.vitality || 0) * 50;
+            this.stats.speed = this.baseStats.speed + ((this.skills.agility || 0) * 0.05);
+        }
+
         if (this.equippedWeapon && this.equippedWeapon.stats) {
-            const dmg = this.equippedWeapon.stats.damage || 0;
+            let dmg = this.equippedWeapon.stats.damage || 0;
+
+            // Apply Level Multiplier
+            if (this.equippedWeaponSlot && this.equippedWeaponSlot.properties) {
+                const lvl = this.equippedWeaponSlot.properties.level || 1;
+                dmg = Math.floor(dmg * (1 + 0.2 * (lvl - 1)));
+            }
+
             this.stats.attack += dmg;
         }
 
@@ -361,6 +383,69 @@ export class Player {
                 if (this.combat) this.combat.toggleLock();
             }
         });
+        // Mouse Wheel Callback
+        if (this.input) {
+            this.input.onScroll = (dir) => this.switchWeapon(dir);
+        }
+    }
+
+    /**
+     * Cycle through weapons in inventory
+     * @param {number} dir +1 or -1
+     */
+    switchWeapon(dir) {
+        if (this.isAttacking || this.isDead) return;
+
+        const weapons = this.inventory.getSlotsByCategory('WEAPON');
+        if (weapons.length === 0) return;
+
+        let currentIndex = -1;
+        if (this.equippedWeapon) {
+            currentIndex = weapons.findIndex(w => w.slot.id === this.equippedWeapon.id);
+        }
+
+        let nextIndex = currentIndex + dir;
+        if (nextIndex >= weapons.length) nextIndex = 0;
+        if (nextIndex < 0) nextIndex = weapons.length - 1;
+
+        const nextWeapon = weapons[nextIndex];
+        if (nextWeapon) {
+            this.equip(nextWeapon.slot); // Pass full slot object
+        }
+    }
+
+    /**
+     * Equip a specific weapon from a slot
+     * @param {object} slot The inventory slot ({ id, count, properties })
+     */
+    equip(slot) {
+        if (!slot || !slot.id) return;
+        const itemId = slot.id;
+
+        const item = this.game.data.getItem(itemId);
+        if (!item) return;
+
+        // If already equipped (same ID, we ignore instance diff for now to keep it simple, or check ref)
+        if (this.equippedWeapon && this.equippedWeapon.id === itemId && this.equippedWeaponSlot === slot) return;
+
+        this.equippedWeapon = item;
+        this.equippedWeaponSlot = slot; // Store reference to slot for Level/Stats
+        console.log(`⚔️ Equipped: ${item.name} (Lvl ${slot.properties ? slot.properties.level : 1})`);
+
+        // Update Stats
+        this.updateStats();
+
+        // Update Visuals
+        if (this.visuals) {
+            this.visuals.equipWeapon(itemId);
+            // Pass level to visuals for effect? Maybe later
+        }
+
+        // Show Toast
+        if (this.game.ui) {
+            const lvl = slot.properties ? slot.properties.level : 1;
+            this.game.ui.showToast(`Équipé: ${item.name} +${lvl - 1}`);
+        }
     }
 
     initPhysics() {
@@ -2127,58 +2212,53 @@ export class Player {
      * Check for nearby quest items
      */
     checkQuestItems() {
-        if (!this.game.world || !this.game.world.questItems) {
-            console.log('[Player] No world or quest items');
-            return;
-        }
+        if (!this.game.world) return;
 
-        if (!this.input.keys['KeyE']) return;
-
-        console.log('[Player] E key pressed, checking quest items...');
-        console.log(`[Player] Quest items available: ${this.game.world.questItems.length}`);
+        // Check E key
+        if (!this.input.keys.interact) return; // interact is mapped from 'E'
 
         const playerPos = this.body.position;
-        const interactionRange = 3;
+        const interactionRange = 4; // Use 4 units range
 
-        for (let i = 0; i < this.game.world.questItems.length; i++) {
-            const item = this.game.world.questItems[i];
-            const itemPos = item.mesh.position;
-            const dx = itemPos.x - playerPos.x;
-            const dz = itemPos.z - playerPos.z;
-            const dist = Math.sqrt(dx * dx + dz * dz);
+        // 1. Check Quest Items (Pickups)
+        if (this.game.world.questItems) {
+            for (let i = this.game.world.questItems.length - 1; i >= 0; i--) {
+                const item = this.game.world.questItems[i];
+                const itemPos = item.mesh.position;
+                const dist = Math.sqrt((itemPos.x - playerPos.x) ** 2 + (itemPos.z - playerPos.z) ** 2);
 
-            console.log(`[Player] Distance to item ${i + 1}: ${dist.toFixed(2)} units`);
+                if (dist < interactionRange) {
+                    const itemId = item.mesh.userData.itemId;
+                    if (this.inventory) this.inventory.addItem(itemId, 1);
+                    if (this.game.questManager) this.game.questManager.checkQuestProgress('COLLECT_ITEM', { itemId });
+                    if (this.game.ui) this.game.ui.showToast(`Objet trouvé: ${itemId}`);
 
-            if (dist < interactionRange) {
-                const itemId = item.mesh.userData.itemId;
-                console.log(`[Player] ✅ COLLECTING quest item: ${itemId}`);
-
-                // Add to inventory
-                if (this.inventory) {
-                    this.inventory.addItem(itemId, 1);
+                    // Remove
+                    this.game.world.scene.remove(item.mesh);
+                    this.game.world.questItems.splice(i, 1);
+                    return; // Pick one at a time
                 }
-
-                // Remove from world
-                this.game.world.scene.remove(item.mesh);
-                this.game.world.scene.remove(item.light);
-                this.game.world.questItems.splice(i, 1);
-
-                // Trigger quest event
-                if (this.game.questManager) {
-                    this.game.questManager.checkQuestProgress('COLLECT_ITEM', { itemId });
-                }
-
-                // Show feedback
-                if (this.game.ui) {
-                    this.game.ui.showToast(`✅ Objet de quête obtenu !`);
-                }
-
-                return; // Only collect one item per frame
             }
         }
 
-        console.log('[Player] No quest items in range');
+        // 2. Check Quest CHESTS
+        if (this.game.world.questChests) {
+            for (const chest of this.game.world.questChests) {
+                if (chest.isOpen) continue;
+
+                const chestPos = chest.mesh.position;
+                const dist = Math.sqrt((chestPos.x - playerPos.x) ** 2 + (chestPos.z - playerPos.z) ** 2);
+
+                if (dist < interactionRange) {
+                    console.log(`[Player] Opening Quest Chest!`);
+                    chest.open();
+                    return;
+                }
+            }
+        }
     }
+
+
 
     checkInteraction() {
         // Debounce Logic

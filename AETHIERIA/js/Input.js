@@ -37,6 +37,14 @@ export class Input {
                 this.toggleFullscreen();
             }
         });
+
+        // Mouse Wheel (Weapon Switch)
+        window.addEventListener('wheel', (e) => {
+            if (this.onScroll) {
+                // Normalize delta: positive (down) = +1, negative (up) = -1
+                this.onScroll(Math.sign(e.deltaY));
+            }
+        }, { passive: true });
     }
 
     onKey(e, isDown) {
