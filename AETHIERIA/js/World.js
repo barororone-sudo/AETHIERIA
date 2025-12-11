@@ -254,46 +254,33 @@ export class World {
      */
     populateStartingZone() {
         console.log('[World] Populating starting zone...');
-        console.log('[World] ========================================');
-        console.log('[World] SPAWNING QUEST ITEMS - MULTIPLE POSITIONS');
-        console.log('[World] ========================================');
 
-        // Create multiple cubes at different positions - HIGHER UP
-        const positions = [
-            { x: 0, y: 10, z: -10, name: 'Front' },
-            { x: 5, y: 10, z: -5, name: 'Right' },
-            { x: -5, y: 10, z: -5, name: 'Left' },
-            { x: 0, y: 15, z: 0, name: 'Above' },
-            { x: 0, y: 10, z: 5, name: 'Behind' }
-        ];
+        // Spawn Ancient Communicator at BEACON POSITION (10, 0, -15)
+        const itemPos = { x: 10, y: 1, z: -15 };
 
-        positions.forEach((pos, index) => {
-            // Create BRIGHT cube - MeshBasicMaterial (always visible)
-            const geometry = new THREE.BoxGeometry(3, 3, 3); // Even bigger
-            const material = new THREE.MeshBasicMaterial({
-                color: 0x00FFFF
-            });
-
-            const questItemMesh = new THREE.Mesh(geometry, material);
-            questItemMesh.position.set(pos.x, pos.y, pos.z);
-            questItemMesh.userData.isQuestItem = true;
-            questItemMesh.userData.itemId = 'ancient_communicator';
-            this.scene.add(questItemMesh);
-
-            // Add VERY bright light
-            const light = new THREE.PointLight(0x00FFFF, 15, 30);
-            light.position.copy(questItemMesh.position);
-            this.scene.add(light);
-
-            // Store reference
-            this.questItems.push({ mesh: questItemMesh, light: light, time: 0 });
-
-            console.log(`[World] ✅ CUBE ${index + 1} (${pos.name}) at (${pos.x}, ${pos.y}, ${pos.z})`);
+        // Create small cube - MeshBasicMaterial (always visible)
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x00FFFF,
+            transparent: false
         });
 
-        console.log('[World] ========================================');
-        console.log(`[World] TOTAL QUEST ITEMS: ${this.questItems.length}`);
-        console.log('[World] ========================================');
+        const questItemMesh = new THREE.Mesh(geometry, material);
+        questItemMesh.position.set(itemPos.x, itemPos.y, itemPos.z);
+        questItemMesh.userData.isQuestItem = true;
+        questItemMesh.userData.itemId = 'ancient_communicator';
+        this.scene.add(questItemMesh);
+
+        // Add bright light
+        const light = new THREE.PointLight(0x00FFFF, 5, 10);
+        light.position.copy(questItemMesh.position);
+        this.scene.add(light);
+
+        // Store reference
+        this.questItems.push({ mesh: questItemMesh, light: light, time: 0 });
+
+        console.log(`[World] ✅ Quest item at BEACON position (${itemPos.x}, ${itemPos.y}, ${itemPos.z})`);
+        console.log(`[World] Quest items count: ${this.questItems.length}`);
     }
 
     /**
