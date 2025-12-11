@@ -8,11 +8,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
             console.log('[PATCH] Applying performance optimizations...');
 
-            // 1. REDUCE FPS TARGET
+            // 1. REDUCE FPS TARGET TO 30
             if (window.game.animate) {
                 const originalAnimate = window.game.animate.bind(window.game);
                 let lastFrame = 0;
-                const targetFPS = 40; // Lower FPS for better performance
+                const targetFPS = 30; // 30 FPS for better performance
                 const frameTime = 1000 / targetFPS;
 
                 window.game.animate = function () {
