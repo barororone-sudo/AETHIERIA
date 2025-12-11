@@ -152,7 +152,9 @@ export class Game {
             this.story = new StoryManager(this);
 
             // Phase 2: Initialization
-            if (this.world) this.world.init();
+            if (this.world) {
+                await this.world.init();
+            }
             if (this.world) this.particles = new ParticleManager(this.world.scene);
 
             this.loader.updateProgress(90);
@@ -320,7 +322,7 @@ export class Game {
 
         if (frameElapsed < minFrameTime) {
             // Skip this frame if we're running too fast
-            requestAnimationFrame(this.animate.bind(this));
+            // requestAnimationFrame is already called at start of function (line 296)
             return;
         }
         this._lastFrameTime = now;

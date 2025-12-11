@@ -92,7 +92,8 @@ export class World {
         // this.spawnGolem(new CANNON.Vec3(0, 5, -40)); // Moved to LevelManager logic or kept as arena boss
 
         // Use World Builder
-        this.levelManager.generate();
+        // Moved to init()
+        // this.levelManager.generate();
 
         // --- NPCS ---
         this.npcs = [];
@@ -106,21 +107,16 @@ export class World {
 
         // TOWERS
         this.towers = [];
-        this.spawnTowers();
+        // Moved to init()
+        // this.spawnTowers();
 
         // FOREST (Act 2)
-        this.generateForest();
+        // Moved to init()
+        // this.generateForest();
 
         // WAYPOINTS (Fast Travel)
-        this.spawnWaypoints();
-
-        // Log summary of fast travel points
-        if (this.game.waypointManager) {
-            const totalPoints = this.game.waypointManager.waypoints.size;
-            const towers = Array.from(this.game.waypointManager.waypoints.values()).filter(w => w.type === 'tower').length;
-            const waypoints = totalPoints - towers;
-            console.log(`[Fast Travel] Registered ${totalPoints} points (${towers} towers, ${waypoints} waypoints)`);
-        }
+        // Moved to init()
+        // this.spawnWaypoints();
 
         // LOOT
         this.loot = [];
@@ -132,6 +128,38 @@ export class World {
         this.gameTime = 0.25; // Start at 6am (0.25)
         this.dayDuration = 1440; // 24 minutes in seconds
     }
+
+    async init() {
+        console.log('[World] Starting Async Initialization...');
+
+        // 1. Generate Camps
+        this.levelManager.generate();
+        await new Promise(r => setTimeout(r, 10)); // Yield
+
+        // 2. Spawn Towers
+        this.spawnTowers();
+        await new Promise(r => setTimeout(r, 10)); // Yield
+
+        // 3. Generate Forest
+        this.generateForest();
+        await new Promise(r => setTimeout(r, 10)); // Yield
+
+        // 4. Spawn Waypoints (Heavy loop)
+        this.spawnWaypoints();
+        await new Promise(r => setTimeout(r, 10)); // Yield
+
+        // Log summary of fast travel points
+        if (this.game.waypointManager) {
+            const totalPoints = this.game.waypointManager.waypoints.size;
+            const towers = Array.from(this.game.waypointManager.waypoints.values()).filter(w => w.type === 'tower').length;
+            const waypoints = totalPoints - towers;
+            console.log(`[Fast Travel] Registered ${totalPoints} points (${towers} towers, ${waypoints} waypoints)`);
+        }
+
+        console.log('[World] Async Initialization Complete.');
+    }
+
+
 
     spawnTowers() {
         // Cardinal Towers for Fast Travel Network (Closer to spawn)
@@ -153,8 +181,14 @@ export class World {
         const allTowers = [...cardinalPositions, ...diagonalPositions];
 
         allTowers.forEach(pos => {
-            const y = this.terrainManager ? this.terrainManager.getGlobalHeight(pos.x, pos.z) : 0;
-            new Tower(this, pos.x, pos.z, pos.id, y);
+            let y = this.terrainManager ? this.terrainManager.getGlobalHeight(pos.x, pos.z) : 0;
+            y += 1.0; // Safety offset to prevent burial
+            const t = new Tower(this, pos.x, pos.z, pos.id, y);
+
+            // Force Map Icon Registration
+            if (this.game.ui && this.game.ui.mapManager) {
+                this.game.ui.mapManager.addTowerIcon(t, t.id);
+            }
         });
 
         console.log(`[World] Spawned ${allTowers.length} towers.`);
@@ -166,74 +200,80 @@ export class World {
     }
 
     spawnWaypoints() {
-        const totalWaypoints = 60;
+        // Structured Equidistant Distribution (10 per zone)
+        // 3 Rings: Inner (3), Middle (3), Outer (4)
         const zones = 8;
-        const waypointsPerZone = Math.ceil(totalWaypoints / zones);
-        const minStartDist = 300; // Keep clear of start area
-        const maxDist = 1800;
         const waterLevel = 2.0;
+
+        const distributions = [
+            { dist: 600, count: 3 },
+            { dist: 1100, count: 3 },
+            { dist: 1600, count: 4 }
+        ];
 
         this.waypoints = [];
         const foundBiomes = new Set();
 
-        console.log(`[World] Spawning waypoints across ${zones} zones...`);
-
-        let spawnedCount = 0;
+        console.log(`[World] Spawning waypoints with Structured Ring Distribution...`);
 
         for (let z = 0; z < zones; z++) {
-            // Zone angle
             const angleStart = (z / zones) * Math.PI * 2;
-            const angleEnd = ((z + 1) / zones) * Math.PI * 2;
+            const angleSlice = (Math.PI * 2) / zones; // 45 degrees
 
-            for (let i = 0; i < waypointsPerZone; i++) {
-                if (spawnedCount >= totalWaypoints) break;
+            distributions.forEach((ring, rIndex) => {
+                // Distribute 'ring.count' points evenly across this angle slice
+                // Add phase shift for each ring to stagger them (Zig-Zag pattern)
+                const stagger = (rIndex % 2 === 0) ? 0 : (angleSlice / (ring.count * 2));
 
-                let attempts = 0;
-                let validPosition = false;
-                let x, z, y, biome;
+                for (let i = 0; i < ring.count; i++) {
+                    // 0.5 offset to center them in the partitions
+                    const pct = (i + 0.5) / ring.count;
+                    const angle = angleStart + (pct * angleSlice) + (Math.random() * 0.1 - 0.05); // Slight jitter
+                    const dist = ring.dist + (Math.random() * 100 - 50);
 
-                do {
-                    // Random position in slice
-                    const angle = angleStart + Math.random() * (angleEnd - angleStart);
-                    const dist = minStartDist + Math.random() * (maxDist - minStartDist);
-
-                    x = Math.cos(angle) * dist;
-                    z = Math.sin(angle) * dist;
+                    let x = Math.cos(angle) * dist;
+                    let z = Math.sin(angle) * dist;
+                    let y = 0;
+                    let biome = 'PLAINS';
 
                     if (this.terrainManager) {
                         y = this.terrainManager.getGlobalHeight(x, z);
                         biome = this.terrainManager.getBiomeAt(x, z);
-                    } else {
-                        y = 0;
-                        biome = 'PLAINS';
                     }
 
-                    // Valid if: not underwater AND far enough from other waypoints
-                    validPosition = y >= waterLevel;
-
-                    if (validPosition) {
-                        // Check distance from existing waypoints
-                        for (const wp of this.waypoints) {
-                            const dx = wp.mesh.position.x - x;
-                            const dz = wp.mesh.position.z - z;
-                            const distSq = dx * dx + dz * dz;
-                            if (distSq < 250 * 250) { // Min distance 250
-                                validPosition = false;
-                                break;
+                    // Water Check
+                    if (y < waterLevel) {
+                        // Search outwards for land
+                        let foundLand = false;
+                        for (let attempt = 0; attempt < 10; attempt++) {
+                            const searchDist = 50 + attempt * 20;
+                            // Try 4 directions
+                            const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+                            for (const d of dirs) {
+                                const tx = x + d[0] * searchDist;
+                                const tz = z + d[1] * searchDist;
+                                const ty = this.terrainManager ? this.terrainManager.getGlobalHeight(tx, tz) : 0;
+                                if (ty >= waterLevel) {
+                                    x = tx; z = tz; y = ty;
+                                    foundLand = true;
+                                    break;
+                                }
                             }
+                            if (foundLand) break;
                         }
+                        if (!foundLand) continue; // Skip if deep ocean
                     }
 
-                    attempts++;
-                } while (!validPosition && attempts < 30);
+                    y += 0.5; // Offset from ground
 
-                if (validPosition) {
-                    const waypoint = new Waypoint(this, x, z, `waypoint_${z}_${i}`);
-                    this.waypoints.push(waypoint);
-                    foundBiomes.add(biome);
-                    spawnedCount++;
+                    if (Math.abs(x) > 200 || Math.abs(z) > 200) { // Safety check away from spawn
+                        const wpId = `waypoint_${z}_${rIndex}_${i}`;
+                        const waypoint = new Waypoint(this, x, z, wpId);
+                        this.waypoints.push(waypoint);
+                        foundBiomes.add(biome);
+                    }
                 }
-            }
+            });
         }
 
         console.log(`[World] Spawned ${this.waypoints.length} waypoints across ${foundBiomes.size} biomes.`);
@@ -334,9 +374,9 @@ export class World {
         this.sunLight.position.set(10, 20, 10);
         this.sunLight.castShadow = true;
 
-        // 🌟 High-Resolution Shadow Map (Genshin Style)
-        this.sunLight.shadow.mapSize.width = 4096;
-        this.sunLight.shadow.mapSize.height = 4096;
+        // 🌟 High-Resolution Shadow Map (Optimized to Medium 1024)
+        this.sunLight.shadow.mapSize.width = 1024;
+        this.sunLight.shadow.mapSize.height = 1024;
 
         // 🎨 Shadow Quality Settings
         this.sunLight.shadow.bias = -0.0003; // Removes shadow acne
@@ -360,8 +400,8 @@ export class World {
         this.moonLight.castShadow = true;
 
         // Moon shadow settings (lower quality for performance)
-        this.moonLight.shadow.mapSize.width = 2048;
-        this.moonLight.shadow.mapSize.height = 2048;
+        this.moonLight.shadow.mapSize.width = 512;
+        this.moonLight.shadow.mapSize.height = 512;
         this.moonLight.shadow.bias = -0.0003;
         this.moonLight.shadow.normalBias = 0.02;
 

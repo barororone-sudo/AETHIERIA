@@ -516,7 +516,7 @@ export class MapManager {
             console.warn("Tower has no icon to unlock!", tower);
         }
         // Force immediate large reveal
-        this.revealZone(tower.position.x, tower.position.z, 150);
+        this.revealZone(tower.position.x, tower.position.z, 1200);
     }
 
     addWaypointIcon(waypoint) {
@@ -535,7 +535,7 @@ export class MapManager {
         Object.assign(icon.style, {
             width: '10px',
             height: '10px',
-            backgroundColor: isUnlocked ? '#33ccff' : '#888888',
+            backgroundColor: isUnlocked ? '#ff0000' : '#880000',
             border: '2px solid white',
             borderRadius: '50%',
             position: 'absolute',
@@ -543,7 +543,7 @@ export class MapManager {
             zIndex: '6',
             cursor: isUnlocked ? 'pointer' : 'default',
             pointerEvents: isUnlocked ? 'auto' : 'none',
-            boxShadow: isUnlocked ? '0 0 6px #33ccff' : 'none',
+            boxShadow: isUnlocked ? '0 0 6px #ff0000' : 'none',
             opacity: isUnlocked ? '1' : '0.6',
             display: isUnlocked ? 'block' : 'none' // Initially hidden if locked, shown by updateWaypointIcons
         });

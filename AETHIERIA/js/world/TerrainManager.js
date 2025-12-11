@@ -97,20 +97,35 @@ export class TerrainManager {
      * Get Biome based on Height and Moisture
      * @returns {string} Biome Type
      */
+    /**
+     * Get Biome based on Radial Sector
+     */
     getBiome(x, z, height, moisture) {
-        // 1. Altitude Overrides
-        if (height > 45) return 'SNOW';
-        if (height > 35) return 'MOUNTAIN'; // Transition to snow
+        // 1. Altitude Overrides (Global Peaks)
+        if (height > 55) return 'SNOW'; // Higher peaks
 
-        // 2. City Pocket (Rare noise check)
-        // High frequency noise mask for cities
-        const cityNoise = Utils.Noise.perlin2(x * 0.01, z * 0.01);
-        if (cityNoise > 0.7 && moisture > -0.2 && moisture < 0.2) return 'CITY';
+        // 2. Radial Sectors (8 Zones)
+        const angle = Math.atan2(z, x); // -PI to PI
+        // Normalize to 0-360 deg approx
+        const deg = (angle * 180 / Math.PI + 360) % 360;
 
-        // 3. Moisture based
-        if (moisture < -0.3) return 'DESERT';
-        if (moisture > 0.4) return 'FOREST';
+        // 8 Sectors of 45 degrees
+        // Sector 0 (East): 337.5 to 22.5
+        // Sector 1 (NE): 22.5 to 67.5
+        // ...
 
+        const sector = Math.round(deg / 45) % 8;
+
+        switch (sector) {
+            case 0: return 'FOREST';        // East
+            case 1: return 'MOUNTAIN';      // North-East
+            case 2: return 'SNOW';          // North
+            case 3: return 'HIGHLANDS';     // North-West (New)
+            case 4: return 'PLAINS';        // West
+            case 5: return 'BADLANDS';      // South-West (New)
+            case 6: return 'DESERT';        // South
+            case 7: return 'SWAMP';         // South-East (New)
+        }
         return 'PLAINS';
     }
 
@@ -120,48 +135,58 @@ export class TerrainManager {
     getGlobalHeight(x, z) {
         if (!Utils.Noise || !Utils.Noise.perlin2) return 0;
 
-        const moisture = this.getMoisture(x, z);
+        // Get Base Biome from Coordinates (Reuse logic loosely or call getBiome with dummy height)
+        // We need the biome to determine height parameters *before* we calculate height.
+        // Circular dependency? No, getBiome uses height for SNOW override only.
+        // Let's copy the sector logic for parameters.
 
-        // Determine "Base Biome" for topography settings (ignoring height for now)
+        const angle = Math.atan2(z, x);
+        const deg = (angle * 180 / Math.PI + 360) % 360;
+        const sector = Math.round(deg / 45) % 8;
+
         let biomeType = 'PLAINS';
-        if (moisture < -0.3) biomeType = 'DESERT';
-        else if (moisture > 0.4) biomeType = 'FOREST';
-
-        // City check for topography (needs to be flat)
-        const cityNoise = Utils.Noise.perlin2(x * 0.01, z * 0.01);
-        if (cityNoise > 0.7 && moisture > -0.2 && moisture < 0.2) biomeType = 'CITY';
-
+        switch (sector) {
+            case 0: biomeType = 'FOREST'; break;
+            case 1: biomeType = 'MOUNTAIN'; break;
+            case 2: biomeType = 'SNOW'; break;
+            case 3: biomeType = 'HIGHLANDS'; break;
+            case 4: biomeType = 'PLAINS'; break;
+            case 5: biomeType = 'BADLANDS'; break;
+            case 6: biomeType = 'DESERT'; break;
+            case 7: biomeType = 'SWAMP'; break;
+        }
 
         // Topography Settings
         let amplitude = 10;
         let frequency = 0.01;
         let octaves = 3;
-        let baseHeight = 0;
+        let baseHeight = 5;
 
         switch (biomeType) {
             case 'DESERT':
-                amplitude = 15; // Higher Dunes
-                frequency = 0.005;
-                octaves = 4; // More detail
-                baseHeight = 5;
+                amplitude = 15; frequency = 0.005; octaves = 4; baseHeight = 5;
                 break;
             case 'FOREST':
-                amplitude = 25; // Hilly
-                frequency = 0.01;
-                octaves = 5;
-                baseHeight = 10;
+                amplitude = 20; frequency = 0.01; octaves = 4; baseHeight = 8;
                 break;
             case 'PLAINS':
-                amplitude = 12; // Rolling hills
-                frequency = 0.008;
-                octaves = 4;
-                baseHeight = 5;
+                amplitude = 8; frequency = 0.005; octaves = 3; baseHeight = 5;
                 break;
-            case 'CITY':
-                amplitude = 2; // Flat foundation
-                frequency = 0.005;
-                octaves = 1;
-                baseHeight = 8;
+            case 'SNOW': // Ice plains essentially, mountains handled by global noise add
+                amplitude = 15; frequency = 0.01; octaves = 4; baseHeight = 10;
+                break;
+            case 'MOUNTAIN':
+                amplitude = 80; frequency = 0.008; octaves = 5; baseHeight = 20;
+                break;
+            case 'HIGHLANDS':
+                amplitude = 40; frequency = 0.006; octaves = 4; baseHeight = 30; // High plateau
+                break;
+            case 'BADLANDS':
+                amplitude = 30; frequency = 0.01; octaves = 5; baseHeight = 15; // Mesa Terraces
+                // Mesas often have flat tops, we might need custom noise, but FBM is okay for now.
+                break;
+            case 'SWAMP':
+                amplitude = 3; frequency = 0.02; octaves = 2; baseHeight = 1; // Very flat, low
                 break;
         }
 
@@ -176,24 +201,25 @@ export class TerrainManager {
             freq *= 2.0;
         }
 
-        // Mountain Pass (Global)
-        // Add large mountains regardless of biome if noise is high enough?
-        // Or blend in mountains based on a separate "Mountain Map"?
-        // Let's use a global "Mountain Noise"
-        const mountainNoise = Utils.Noise.perlin2(x * 0.003, z * 0.003);
-        if (mountainNoise > 0.5) {
-            // Blend into mountains
-            const t = (mountainNoise - 0.5) / 0.5; // 0 to 1
-            const mountainH = Utils.Noise.perlin2(x * 0.01, z * 0.01) * 60 + 20;
-            y = THREE.MathUtils.lerp(y, mountainH, t);
+        // Global Mountain Pass (Add extra height in Mountain/Snow zones strongly)
+        if (biomeType === 'MOUNTAIN' || biomeType === 'SNOW') {
+            const mNoise = Utils.Noise.perlin2(x * 0.005, z * 0.005);
+            if (mNoise > 0) y += mNoise * 50;
+        }
+
+        // Mesa Terracing Effect for Badlands
+        if (biomeType === 'BADLANDS') {
+            // Quantize height levels
+            y = Math.floor(y / 8) * 8;
         }
 
         y += baseHeight;
 
-        // Flatten Valleys / Water
+        // Flatten Valleys / Water (Swamp should be near water level)
         if (y < 2) y = THREE.MathUtils.lerp(y, 1, 0.5);
+        if (biomeType === 'SWAMP' && y < 3) y = 1.5; // Force water level
 
-        return Math.max(0.5, y); // Minimum height
+        return Math.max(0.5, y);
     }
 
     getBiomeColor(x, z, height, moisture) {
@@ -219,20 +245,23 @@ export class TerrainManager {
                 break;
             case 'SNOW':
                 color.setHex(0xffffff); // White
-                color.b -= noise * 0.1; // Blueish tint
+                color.b -= noise * 0.1;
                 break;
             case 'MOUNTAIN':
-                color.setHex(0x666666); // Grey
-                color.r += noise;
-                color.g += noise;
-                color.b += noise;
+                color.setHex(0x555555); // Dark Grey
+                color.r += noise; color.g += noise; color.b += noise;
                 break;
-            case 'CITY':
-                color.setHex(0x888888); // Concrete
-                // Grid pattern hint?
-                if (Math.abs(x % 10) < 1 || Math.abs(z % 10) < 1) {
-                    color.setHex(0x555555); // Road
-                }
+            case 'HIGHLANDS':
+                color.setHex(0x8da336); // Olive Green
+                color.r += noise;
+                break;
+            case 'BADLANDS':
+                color.setHex(0xd2691e); // Chocolate/Terracotta
+                color.r += noise * 0.5;
+                break;
+            case 'SWAMP':
+                color.setHex(0x2f4f4f); // Dark Slate Gray (Muddy Green)
+                color.g += noise * 0.5;
                 break;
             default:
                 color.setHex(0xff00ff); // Error

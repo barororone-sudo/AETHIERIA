@@ -25,16 +25,18 @@ export class LevelManager {
     }
 
     update(dt) {
+        // Update Switches
+        this.switches.forEach(s => s.update(dt));
+
+        // OPTIMIZATION: Throttle Camp Checks (Avoid checking every frame)
+        this._campCheckTimer = (this._campCheckTimer || 0) - dt;
+        if (this._campCheckTimer > 0) return;
+        this._campCheckTimer = 2.0; // Check every 2 seconds
+
         // Monster Lock Logic
         this.activeCamps.forEach(camp => {
             if (!camp.cleared && camp.chest && camp.chest.locked) {
                 // Check if all enemies dead
-                const alive = camp.enemies.some(e => e.hp > 0);
-                // Note: Enemy removal from world.enemies array might happen, but e.hp > 0 is safer if object persists
-                // Actually, if they are removed from scene, we need a better check.
-                // Assuming World removes them or sets a 'dead' flag. 
-                // Let's assume we filter this.world.enemies
-
                 // Better: Count how many are still in world.enemies
                 const stillActive = camp.enemies.filter(e => this.world.enemies.includes(e));
 
@@ -45,9 +47,6 @@ export class LevelManager {
                 }
             }
         });
-
-        // Update Switches
-        this.switches.forEach(s => s.update(dt));
     }
 
     populateCamps() {
@@ -114,10 +113,11 @@ export class LevelManager {
         ];
 
         // Return false if any sample is underwater or too steep
-        if (centerH < 1.5) return false; // Underwater
+        if (centerH < 1.8) return false; // Underwater (Water level ~1.5 - 2.0)
 
         for (const h of samples) {
-            if (Math.abs(h - centerH) > 1.5) return false;
+            // Relaxed tolerance for hillier terrain
+            if (Math.abs(h - centerH) > 8.0) return false;
         }
 
         return true;

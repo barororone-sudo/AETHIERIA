@@ -1166,11 +1166,13 @@ export class Player {
             case 'SPRINT':
                 // 🛑 INSTANT STOP when grounded with no input
                 if (grounded && speed < 0.1) {
-                    this.body.velocity.x *= 0.1; // Quick deceleration
-                    this.body.velocity.z *= 0.1;
+                    this.body.velocity.x = 0;
+                    this.body.velocity.z = 0;
                 }
 
-                if (!grounded) {
+                if (this.input.keys.forward && !this.exhausted && this.checkWall()) {
+                    this.state = 'CLIMB';
+                } else if (!grounded) {
                     this.state = 'AIR';
                 } else if (this.input.keys.jump && !this.exhausted) {
                     if (this.combat && this.combat.lockedTarget && speed > 0.1) {
@@ -1210,16 +1212,11 @@ export class Player {
                 if (!this.input.keys.jump) this.hasReleasedJump = true;
                 const taps = this.input.jumpTapCount;
 
-                console.log('🌬️ AIR state - taps:', taps, 'canGlide:', this.canGlide, 'hasReleased:', this.hasReleasedJump);
-
                 if (taps === 2 && this.canGlide && !this.exhausted) {
-                    console.log('✅ Activating GLIDE (double-tap)');
                     this.enterGlide();
                 } else if (this.input.keys.jump && this.canGlide && !this.exhausted && this.hasReleasedJump) {
-                    console.log('✅ Activating GLIDE (hold after release)');
                     this.enterGlide();
                 } else if (taps === 3 && this.canSurf && !this.exhausted) {
-                    console.log('✅ Activating SURF (triple-tap)');
                     this.state = 'SURF';
                     this.enterSurf();
                     this.input.jumpTapCount = 0;
@@ -1286,6 +1283,9 @@ export class Player {
                         this.body.velocity.y = 6;
                         this.body.velocity.addScaledVector(this.getForwardVector(), -4);
                     }
+                } else if (!this.checkWall()) {
+                    // Check wall again to ensure we don't float
+                    this.state = 'AIR';
                 }
                 break;
 
@@ -1299,8 +1299,12 @@ export class Player {
                 // Exit SURF when:
                 // 1. Jump released (to jump out)
                 // 2. Stopped moving (velocity too low)
+                // 3. Wall hit
 
-                if (!this.input.keys.jump) {
+                if (this.checkWall()) {
+                    this.state = grounded ? 'IDLE' : 'CLIMB';
+                    this.exitSurf();
+                } else if (!this.input.keys.jump) {
                     this.hasReleasedJump = true;
                 } else if (this.input.keys.jump && this.hasReleasedJump) {
                     // Jump pressed after release → exit SURF
@@ -1451,7 +1455,7 @@ export class Player {
             case 'IDLE':
                 // SPEEDS TUNED: SPRINT=12, RUN=7, WALK=4
                 let targetSpeed = this.state === 'SPRINT' ? 12 : (this.state === 'RUN' ? 7 : 4);
-                const accel = (this.state === 'IDLE') ? 25.0 : 10.0;
+                const accel = (this.state === 'IDLE') ? 50.0 : 15.0; // INCREASED ACCEL/DECEL (was 25/10)
                 this.currentSpeed = THREE.MathUtils.lerp(this.currentSpeed, targetSpeed * inputLen, dt * accel);
 
                 if (inputLen > 0.1) {
@@ -2005,7 +2009,24 @@ export class Player {
         return false;
     }
 
-    checkWall() { return false; } // Simplified
+    checkWall() {
+        if (!this.world || !this.mesh) return false;
+
+        // Raycast forward from chest height
+        const rayOrigin = this.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+        const forward = this.getForwardVector();
+
+        const raycaster = new THREE.Raycaster(rayOrigin, forward, 0, 1.5); // 1.5 distance
+
+        if (this.world.terrainManager) {
+            const hits = raycaster.intersectObjects(this.world.terrainManager.group.children, true);
+            if (hits.length > 0) return true;
+        }
+
+        // Also check static world objects if needed (like buildings)
+        // But for now, terrain is the main climber surface
+        return false;
+    }
 
     getInputVector() {
         const v = new THREE.Vector3();

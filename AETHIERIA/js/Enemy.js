@@ -186,6 +186,20 @@ export class Enemy {
         if (this.state === 'DUMMY') return; // Debug Dummy
         if (!this.world.game.player) return;
 
+        // --- OPTIMIZATION: Distance Culling ---
+        // Skip logic if too far from player (150m)
+        const player = this.world.game.player;
+        const distToPlayer = this.body.position.distanceTo(player.body.position);
+
+        if (distToPlayer > 150) {
+            // Sleep physics if needed? 
+            // For now, just skip AI Logic.
+            // But we must support 'RETURN' if they are chasing and player runs away?
+            // Actually, if dist > 150, they should probably just reset/teleport home or freeze.
+            // Let's freeze logic but ensure they aren't stuck in attack animation.
+            return;
+        }
+
         // Sync Physics
         this.mesh.position.copy(this.body.position);
         this.mesh.position.y += this.VISUAL_OFFSET_Y;
@@ -195,8 +209,8 @@ export class Enemy {
         this.timers.state -= dt;
         this.timers.attack -= dt;
 
-        const player = this.world.game.player;
-        const distToPlayer = this.body.position.distanceTo(player.body.position);
+        // const player = this.world.game.player; // Defined above
+        // const distToPlayer = this.body.position.distanceTo(player.body.position); // Defined above
 
         switch (this.state) {
             case 'IDLE':

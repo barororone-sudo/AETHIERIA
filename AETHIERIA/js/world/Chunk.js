@@ -102,7 +102,7 @@ export class Chunk {
         // For simplicity: One InstancedMesh per object type PER CHUNK.
 
         const assets = this.tm.assets;
-        const count = 50; // Objects per chunk
+        const count = 20; // REDUCED COUNT (was 50) for Performance
 
         // Prepare Arrays
         const treeMatrices = [];
@@ -120,12 +120,12 @@ export class Chunk {
             const h = this.tm.getGlobalHeight(wx, wz);
             if (h < 2.5) continue; // No underwater
 
-            const m = this.tm.getMoisture(wx, wz);
-            const biome = this.tm.getBiome(wx, wz, h, m);
-
             const dummy = new THREE.Object3D();
             dummy.position.set(wx, h, wz);
             dummy.rotation.y = Math.random() * Math.PI * 2;
+
+            // Updated Biome Logic Check (Calling new getBiome)
+            const biome = this.tm.getBiome(wx, wz, h, 0);
 
             if (biome === 'FOREST') {
                 // Tree
@@ -133,9 +133,9 @@ export class Chunk {
                 dummy.scale.setScalar(scale);
                 dummy.updateMatrix();
                 treeMatrices.push(dummy.matrix.clone());
-            } else if (biome === 'DESERT') {
+            } else if (biome === 'DESERT' || biome === 'BADLANDS') {
                 // Cactus or Rock
-                if (Math.random() > 0.3) {
+                if (biome === 'DESERT' && Math.random() > 0.5) {
                     dummy.scale.set(1, 0.8 + Math.random(), 1);
                     dummy.updateMatrix();
                     cactusMatrices.push(dummy.matrix.clone());
@@ -170,10 +170,18 @@ export class Chunk {
                     dummy.updateMatrix();
                     snowTreeMatrices.push(dummy.matrix.clone());
                 }
-            } else if (biome === 'PLAINS') {
+            } else if (biome === 'PLAINS' || biome === 'HIGHLANDS') {
                 // Sparse Trees
                 if (Math.random() < 0.1) {
                     dummy.scale.setScalar(0.8);
+                    dummy.updateMatrix();
+                    treeMatrices.push(dummy.matrix.clone());
+                }
+            } else if (biome === 'SWAMP') {
+                // Trees + Rock
+                if (Math.random() < 0.3) {
+                    dummy.scale.setScalar(0.6 + Math.random() * 0.3);
+                    dummy.rotation.z = Math.random() * 0.2; // Crooked trees
                     dummy.updateMatrix();
                     treeMatrices.push(dummy.matrix.clone());
                 }

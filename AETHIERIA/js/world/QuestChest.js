@@ -1,6 +1,5 @@
-// QuestChest.js
-// Access THREE from window when needed
-
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
 
 /**
  * Quest Chest - Special chest for quest items
@@ -19,12 +18,12 @@ export class QuestChest {
 
     init() {
         // Access global THREE
-        if (!window.THREE) {
-            console.error('THREE is not defined!');
-            return;
-        }
-        const THREE = window.THREE;
-        const CANNON = window.CANNON;
+        // if (!window.THREE) {
+        //     console.error('THREE is not defined!');
+        //     return;
+        // }
+        // const THREE = window.THREE;
+        // const CANNON = window.CANNON;
 
         // Create golden chest mesh
         const geometry = new THREE.BoxGeometry(1.5, 1.2, 1);
@@ -100,6 +99,7 @@ export class QuestChest {
 
     update(dt) {
         if (this.isOpen) return;
+        if (!this.mesh) return;
 
         // Floating animation
         this.mesh.position.y = this.position.y + 0.6 + Math.sin(Date.now() * 0.001) * 0.1;
