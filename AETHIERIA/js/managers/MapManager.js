@@ -10,9 +10,9 @@ export class MapManager {
         this.fogCtx = null;
         this.iconLayer = null;
 
-        this.mapSize = 6000; // Increased map size (was 4000)
-        this.worldSize = 6000; // Increased world coverage (was 4000)
-        this.scale = this.mapSize / this.worldSize; // 1.0
+        this.mapSize = 2048; // Match texture size
+        this.worldSize = 5000; // Updated to match Biome Extents (-2500 to 2500)
+        this.scale = this.mapSize / this.worldSize;
 
         this.icons = new Map(); // Map of object ID -> DOM Element
         this.isBigMap = false;
@@ -96,14 +96,16 @@ export class MapManager {
         this.fogCanvas.width = this.mapSize;
         this.fogCanvas.height = this.mapSize;
         Object.assign(this.fogCanvas.style, layerStyle);
-        this.fogCanvas.style.zIndex = '5'; // Fog ABOVE Terrain(1), BELOW Icons(10)
+        this.fogCanvas.style.zIndex = '5';
+        this.fogCanvas.style.opacity = '1.0'; // Fog of War enabled (Black)
         this.content.appendChild(this.fogCanvas);
 
-        // 5. Interactions
-        this.setupInteractions();
+        // 4. Setup Fog Context
+        this.fogCtx = this.fogCanvas.getContext('2d', { willReadFrequently: true });
+        this.fogCtx.fillStyle = '#000000';
+        this.fogCtx.fillRect(0, 0, this.mapSize, this.mapSize);
 
-        // 6. Process Pending / Existing Towers
-
+        // 5. Icons Layer
         // Icons Layer (Where all markers live)
         this.iconLayer = document.createElement('div');
         this.iconLayer.id = 'map-layer-icons';
@@ -112,44 +114,29 @@ export class MapManager {
         // CRITICAL: Content is parent. Icons follow content's transform automatically.
         this.content.appendChild(this.iconLayer);
 
-        // Process pending waypoint icons
-        if (this.game._pendingWaypointIcons) {
-            this.game._pendingWaypointIcons.forEach(waypoint => {
-                this.addWaypointIcon(waypoint);
-            });
-            this.game._pendingWaypointIcons = [];
-        }
+        // 6. Interactions
+        this.setupInteractions();
 
-        // Process pending tower icons
-        if (this.pendingIcons) {
-            this.pendingIcons.forEach(pending => {
-                if (pending.type === 'tower') {
-                    this.addTowerIcon(pending.tower, pending.index);
-                }
-            });
-            this.pendingIcons = [];
-        }
-
-        // 4. Setup Fog Context
-        this.fogCtx = this.fogCanvas.getContext('2d', { willReadFrequently: true });
-        this.fogCtx.fillStyle = '#000000';
-        this.fogCtx.fillRect(0, 0, this.mapSize, this.mapSize);
-
-        // 5. Interactions
-        // 6. Process Pending / Existing Towers
-        if (this.pendingIcons) {
-            this.pendingIcons.forEach(item => {
-                if (item.type === 'tower') this.addTowerIcon(item.tower, item.index);
-            });
-            this.pendingIcons = [];
-        }
-        // Load Existing Towers from World
+        // Load Existing Towers from World (Sync)
         if (this.game.world && this.game.world.towers) {
             this.game.world.towers.forEach((tower, index) => {
                 if (!tower.icon) this.addTowerIcon(tower, index);
             });
         }
+
+        // Process Deferred Icons (Safety Net)
+        if (this.pendingIcons && this.pendingIcons.length > 0) {
+            console.log(`[MapManager] Processing ${this.pendingIcons.length} pending icons...`);
+            this.pendingIcons.forEach(p => {
+                if (p.type === 'tower') this.addTowerIcon(p.tower, p.index);
+                // Add handles for other types if needed
+                if (p.type === 'waypoint') this.addWaypointIcon(p.waypoint);
+                if (p.type === 'camp') this.addCampIcon(p.camp);
+            });
+            this.pendingIcons = [];
+        }
     }
+
 
     setupInteractions() {
         this.container.addEventListener('mousedown', (e) => this.onMouseDown(e));
@@ -159,11 +146,10 @@ export class MapManager {
         this.container.addEventListener('contextmenu', (e) => e.preventDefault()); // Disable context menu
     }
 
-    // --- ZOOM MATH (CRITIQUE) ---
+    // --- ZOOM MATH ---
     onWheel(e) {
         if (!this.isBigMap) return;
         e.preventDefault();
-        // console.log("Map Wheel Event:", e.deltaY); // DEBUG INPUT
 
         // Get Mouse Position relative to Container (Viewport)
         const rect = this.container.getBoundingClientRect();
@@ -178,7 +164,6 @@ export class MapManager {
         newScale = Math.max(0.5, Math.min(newScale, 4.0)); // Clamp
 
         // Math: Preserve the point under mouse
-        // NewTx = MouseX - ( (MouseX - OldTx) / OldScale ) * NewScale
         const oldTx = this.viewState.x;
         const oldTy = this.viewState.y;
 
@@ -225,22 +210,28 @@ export class MapManager {
     update(dt) {
         if (!this.game.player || !this.container || !this.content) return;
 
+        // FAILSAFE: Check for missing tower icons once a second
+        this._iconCheckTimer = (this._iconCheckTimer || 0) + dt;
+        if (this._iconCheckTimer > 1.0) {
+            this._iconCheckTimer = 0;
+            if (this.game.world && this.game.world.towers && this.game.world.towers.length > 0) {
+                this.game.world.towers.forEach((t, i) => {
+                    if (!t.icon || !t.icon.parentElement) {
+                        this.addTowerIcon(t, i);
+                    }
+                });
+            }
+        }
+
         // 0. Update Scale Var for Icons (InvScale)
         if (this.iconLayer) {
             this.iconLayer.style.setProperty('--map-scale', this.isBigMap ? this.viewState.scale : 1);
         }
 
         // 1. Update Icon Positions (Pure Map Coords)
-        // Update Enemy Icons
         this.updateEnemyIcons();
-
-        // Update Camp Icons (show when nearby)
         this.updateCampIcons();
-
-        // Update Waypoint Icons (update unlock status)
         this.updateWaypointIcons();
-
-        // Update Player Icon
         this.updatePlayerIcon();
 
         // Quest Marker
@@ -271,8 +262,6 @@ export class MapManager {
             // Inverse Scale
             const scale = this.isBigMap ? this.viewState.scale : 1;
             const invScale = 1 / Math.max(0.1, scale);
-
-            // Pulsation Effect
             const pulse = 1.0 + Math.sin(Date.now() * 0.005) * 0.2;
 
             icon.style.transform = `translate(-50%, -50%) scale(${invScale * pulse})`;
@@ -295,7 +284,6 @@ export class MapManager {
 
         // 3. Apply Transform
         if (this.isBigMap) {
-            // Big Map: Use Manual ViewState (Free Cam)
             this.content.style.transform = `translate3d(${this.viewState.x}px, ${this.viewState.y}px, 0) scale(${this.viewState.scale})`;
         } else {
             // Minimap: Center on Player automatically
@@ -305,7 +293,6 @@ export class MapManager {
             const p = this.game.player.mesh.position;
             const mapPos = this.worldToMap(p.x, p.z);
 
-            // Center: ScreenCenter - MapPos
             const tx = (cw / 2) - mapPos.x;
             const ty = (ch / 2) - mapPos.y;
 
@@ -313,10 +300,15 @@ export class MapManager {
         }
     }
 
-    // --- ICONS (STRICT POSITIONING) ---
     updatePlayerIcon() {
         if (!this.game.player) return;
         let icon = this.icons.get('player');
+
+        // FORCE REVEAL around player disabled (Fog of War Active)
+        // if (this.game.player.mesh) {
+        //     this.revealZone(this.game.player.mesh.position.x, this.game.player.mesh.position.z, 200);
+        // }
+
         if (!icon) {
             icon = document.createElement('div');
             icon.className = 'map-icon-player';
@@ -327,7 +319,7 @@ export class MapManager {
                 borderBottom: '10px solid #00ff00',
                 position: 'absolute',
                 transform: 'translate(-50%, -50%)',
-                zIndex: '100',
+                zIndex: '100', // Player above everything
                 filter: 'drop-shadow(0 0 2px black)',
                 pointerEvents: 'none'
             });
@@ -338,7 +330,7 @@ export class MapManager {
         const p = this.game.player.mesh.position;
         const pos = this.worldToMap(p.x, p.z);
 
-        // PURE MAP COORDS (0 to 2000)
+        // PURE MAP COORDS
         icon.style.left = `${pos.x}px`;
         icon.style.top = `${pos.y}px`;
 
@@ -445,15 +437,27 @@ export class MapManager {
 
             const isUnlocked = this.game.waypointManager && this.game.waypointManager.isUnlocked(waypoint.id);
             const isRevealed = this.isFogRevealed(waypoint.position.x, waypoint.position.z);
+
+            // LOGIC: Show if unlocked OR if in revealed area
             const shouldShow = isUnlocked || isRevealed;
 
             if (shouldShow) {
                 waypoint.mapIcon.style.display = 'block';
-                waypoint.mapIcon.style.backgroundColor = isUnlocked ? '#33ccff' : '#888888';
-                waypoint.mapIcon.style.boxShadow = isUnlocked ? '0 0 6px #33ccff' : 'none';
-                waypoint.mapIcon.style.opacity = isUnlocked ? '1' : '0.6';
+                // COLOR: Unlocked = Blue, Locked = Red
+                const color = isUnlocked ? '#33ccff' : '#ff4444';
+                waypoint.mapIcon.style.backgroundColor = color;
+
+                // Shadow for glow
+                waypoint.mapIcon.style.boxShadow = isUnlocked ? '0 0 6px #33ccff' : '0 0 4px #ff0000';
+                waypoint.mapIcon.style.opacity = '1';
+
+                // Interaction
                 waypoint.mapIcon.style.cursor = isUnlocked ? 'pointer' : 'default';
                 waypoint.mapIcon.style.pointerEvents = isUnlocked ? 'auto' : 'none';
+
+                // Stack Order: Unlocked on top
+                waypoint.mapIcon.style.zIndex = isUnlocked ? '1002' : '1001';
+
             } else {
                 waypoint.mapIcon.style.display = 'none';
             }
@@ -461,30 +465,36 @@ export class MapManager {
     }
 
     addTowerIcon(tower, index) {
-        console.log('[MapManager] addTowerIcon called for:', tower.id, 'iconLayer ready:', !!this.iconLayer);
-
         if (!this.iconLayer) {
-            console.warn('[MapManager] Icon layer not ready, deferring tower icon:', tower.id);
-            if (!this.pendingIcons) this.pendingIcons = [];
-            this.pendingIcons.push({ type: 'tower', tower, index });
+            this.pendingIcons.push({ type: 'tower', tower: tower, index: index });
             return;
         }
 
         const icon = document.createElement('div');
-        icon.className = 'map-icon-tower';
+        icon.className = 'map-icon map-icon-tower';
         icon.dataset.towerId = tower.id;
+
+        // VISUALS: Red Square (Locked) -> Blue Square (Unlocked)
+        const isUnlocked = tower.isUnlocked;
+        const color = isUnlocked ? '#33ccff' : '#ff0000';
+
         Object.assign(icon.style, {
-            width: '12px', height: '12px',
-            backgroundColor: 'red',
-            border: '2px solid white',
+            width: '20px', height: '20px', // Large Square for Visibility
+            backgroundColor: color,
+            border: '2px solid #ffffff',
             borderRadius: '2px',
             position: 'absolute',
             transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))',
-            zIndex: '8',
-            pointerEvents: 'none',
-            cursor: 'default',
+            zIndex: '2000', // Very High priority
+            pointerEvents: 'auto',
+            cursor: 'pointer',
             display: 'block' // Always visible
         });
+
+        if (isUnlocked) {
+            icon.style.boxShadow = '0 0 15px #00ccff';
+        }
+
         this.iconLayer.appendChild(icon);
         tower.icon = icon;
 
@@ -492,63 +502,101 @@ export class MapManager {
         icon.style.left = `${pos.x}px`;
         icon.style.top = `${pos.y}px`;
 
-        console.log('[MapManager] Tower icon created:', tower.id, 'at map pos:', pos);
-
-        // Add click handler for fast travel (will be enabled when unlocked)
+        // Click handler
         icon.onclick = (e) => {
             if (tower.isUnlocked && this.game.waypointManager) {
                 e.stopPropagation();
                 this.game.waypointManager.teleport(tower.id);
                 this.toggleMap(false);
+            } else {
+                if (this.game.ui) this.game.ui.showToast("Tour Verrouillée", "error");
             }
         };
     }
 
     unlockTower(tower) {
-        // console.log("Unlocking Tower Icon...", tower);
         if (tower.icon) {
-            tower.icon.style.backgroundColor = '#00ccff';
-            tower.icon.style.boxShadow = '0 0 10px #00ccff';
-            tower.icon.style.zIndex = '20';
+            tower.icon.style.backgroundColor = '#33ccff';
+            tower.icon.style.boxShadow = '0 0 15px #33ccff';
+            tower.icon.style.zIndex = '2010';
             tower.icon.style.pointerEvents = 'auto';
             tower.icon.style.cursor = 'pointer';
-        } else {
-            console.warn("Tower has no icon to unlock!", tower);
         }
-        // Force immediate large reveal
-        this.revealZone(tower.position.x, tower.position.z, 1200);
+
+        // GENSHIN LOGIC: Reveal the entire Biome Sector
+        this.revealBiomeAt(tower.position.x, tower.position.z);
+    }
+
+    revealBiomeAt(x, z) {
+        // Map Biome Logic (same as generateMapTexture)
+        // Col Limits: -1200, -400, 400, 1200
+        // Row Split: z=0
+
+        let minX, maxX, minZ, maxZ;
+
+        // Determine Column
+        if (x < -1200) { minX = -2500; maxX = -1200; }
+        else if (x < -400) { minX = -1200; maxX = -400; }
+        else if (x < 400) { minX = -400; maxX = 400; }
+        else if (x < 1200) { minX = 400; maxX = 1200; }
+        else { minX = 1200; maxX = 2500; }
+
+        // Determine Row
+        if (z < 0) { minZ = -2500; maxZ = 0; }
+        else { minZ = 0; maxZ = 2500; }
+
+        // Padding to ensure overlap
+        const padding = 20;
+
+        // Convert to Map Coords
+        const p1 = this.worldToMap(minX - padding, minZ - padding);
+        const p2 = this.worldToMap(maxX + padding, maxZ + padding);
+
+        const w = p2.x - p1.x;
+        const h = p2.y - p1.y;
+
+        // Clear Rect on Fog
+        if (this.fogCtx) {
+            this.fogCtx.save();
+            this.fogCtx.globalCompositeOperation = 'destination-out';
+            this.fogCtx.fillStyle = 'rgba(0,0,0,1)';
+            this.fogCtx.fillRect(p1.x, p1.y, w, h);
+            this.fogCtx.restore();
+        }
+
+        console.log(`[MapManager] Revealing Biome Sector for (${x},${z}) -> Rect [${minX}, ${minZ}] to [${maxX}, ${maxZ}]`);
     }
 
     addWaypointIcon(waypoint) {
         if (!this.iconLayer) {
-            console.warn("[MapManager] Icon layer not ready, cannot add waypoint icon.");
+            this.pendingIcons.push({ type: 'waypoint', waypoint: waypoint });
             return;
         }
+
+        // console.log('[MapManager] addWaypointIcon:', waypoint.id);
 
         const icon = document.createElement('div');
         icon.className = 'map-icon-waypoint';
         icon.dataset.waypointId = waypoint.id;
 
-        // Check unlock status
         const isUnlocked = this.game.waypointManager && this.game.waypointManager.isUnlocked(waypoint.id);
 
         Object.assign(icon.style, {
-            width: '10px',
-            height: '10px',
-            backgroundColor: isUnlocked ? '#ff0000' : '#880000',
-            border: '2px solid white',
-            borderRadius: '50%',
+            width: '8px',
+            height: '8px',
+            backgroundColor: isUnlocked ? '#33ccff' : '#ff4444', // Blue/Red
+            border: '1px solid white',
+            borderRadius: '50%', // Circle
             position: 'absolute',
             transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))',
-            zIndex: '6',
+            zIndex: '1000',
             cursor: isUnlocked ? 'pointer' : 'default',
             pointerEvents: isUnlocked ? 'auto' : 'none',
-            boxShadow: isUnlocked ? '0 0 6px #ff0000' : 'none',
-            opacity: isUnlocked ? '1' : '0.6',
-            display: isUnlocked ? 'block' : 'none' // Initially hidden if locked, shown by updateWaypointIcons
+            boxShadow: isUnlocked ? '0 0 6px #33ccff' : 'none',
+            display: 'none' // Hidden by default, managed by updateWaypointIcons
         });
 
-        // Click handler (will be activated by updateWaypointIcons)
+        // Click handler
         icon.onclick = (e) => {
             if (isUnlocked && this.game.waypointManager) {
                 e.stopPropagation();
@@ -611,41 +659,103 @@ export class MapManager {
         const canvas = document.createElement('canvas');
         canvas.width = res; canvas.height = res;
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#112233'; // Default Ocean
+
+        // Fill background
+        ctx.fillStyle = '#112233';
         ctx.fillRect(0, 0, res, res);
 
-        if (!this.game.world.terrainManager) return canvas.toDataURL();
-
-        const tm = this.game.world.terrainManager;
         const imgData = ctx.getImageData(0, 0, res, res);
         const data = imgData.data;
+
+        const tm = this.game.world ? this.game.world.terrainManager : null;
+
+        // FAILSAFE: If no terrain manager, use fallback
+        if (!tm) {
+            console.warn('[MapManager] TerrainManager not ready. Using simplified biome map.');
+        }
 
         for (let y = 0; y < res; y++) {
             for (let x = 0; x < res; x++) {
                 const wx = (x / res) * this.worldSize - this.worldSize / 2;
                 const wz = (y / res) * this.worldSize - this.worldSize / 2;
-                const h = tm.getHeightAt(wx, wz);
-                const biome = tm.getBiomeAt(wx, wz);
 
-                let r = 0, g = 0, b = 0;
-                if (h < 1.8) { r = 60; g = 120; b = 200; }
-                else if (h < 3.0) { r = 210; g = 190; b = 130; }
-                else {
-                    switch (biome) {
-                        case 'SNOW': r = 240; g = 240; b = 250; break;
-                        case 'MOUNTAIN': r = 100; g = 100; b = 100; break;
-                        case 'DESERT': r = 200; g = 170; b = 100; break;
-                        case 'FOREST': r = 30; g = 100; b = 30; break;
-                        default: r = 80; g = 160; b = 80;
-                    }
-                    const shade = 1.0 - (h / 100) * 0.2;
-                    r *= shade; g *= shade; b *= shade;
+                let r = 50, g = 50, b = 50; // Default
+
+                // 1. Get Real Terrain Height if available
+                let h = 0;
+                if (tm) {
+                    h = tm.getGlobalHeight(wx, wz);
                 }
+
+                // 2. Determine Biome (Grid Logic)
+                let col = 2; // Middle
+                if (wx < -1200) col = 0;
+                else if (wx < -400) col = 1;
+                else if (wx < 400) col = 2;
+                else if (wx < 1200) col = 3;
+                else col = 4;
+
+                const isNorth = (wz < 0);
+
+                // Base Biome Color
+                if (isNorth) {
+                    switch (col) {
+                        case 0: r = 200; g = 240; b = 255; break; // ICE
+                        case 1: r = 240; g = 240; b = 250; break; // SNOW
+                        case 2: r = 180; g = 220; b = 240; break; // AIR
+                        case 3: r = 140; g = 100; b = 180; break; // LIGHTNING
+                        case 4: r = 220; g = 100; b = 220; break; // CRYSTAL
+                    }
+                } else {
+                    switch (col) {
+                        case 0: r = 34; g = 139; b = 34; break; // FOREST
+                        case 1: r = 0; g = 100; b = 0; break;   // JUNGLE
+                        case 2: r = 218; g = 165; b = 32; break;// GOLD
+                        case 3: r = 255; g = 69; b = 0; break;  // FIRE
+                        case 4: r = 80; g = 0; b = 0; break;    // LAVA
+                    }
+                }
+
+                // 3. Apply Topography (Water & Shading)
+                if (h < 1.8) {
+                    // Water Override
+                    r = 60; g = 120; b = 200;
+                } else if (h < 2.5) {
+                    // Beach Override (except for ICE/LAVA maybe? keep simple)
+                    r = 210; g = 190; b = 130;
+                } else {
+                    // Land Shading
+                    const bright = 1.0 + (h - 10) * 0.01;
+                    r = Math.min(255, r * bright);
+                    g = Math.min(255, g * bright);
+                    b = Math.min(255, b * bright);
+                }
+
                 const idx = (y * res + x) * 4;
                 data[idx] = r; data[idx + 1] = g; data[idx + 2] = b; data[idx + 3] = 255;
             }
         }
+
         ctx.putImageData(imgData, 0, 0);
+
+        // Draw Grid Lines for clarity
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        // Horizon line
+        const midY = res / 2;
+        ctx.moveTo(0, midY); ctx.lineTo(res, midY);
+        // Verified Vertical lines (approx boundaries)
+        // -1200, -400, 400, 1200 mapped to 0-2048
+        // world scale: 5000. 0 -> 1024. 1 unit = 2048/5000 = 0.4096 px
+        const s = 2048 / 5000;
+        const boundaries = [-1200, -400, 400, 1200];
+        boundaries.forEach(bx => {
+            const px = (bx + 2500) * s;
+            ctx.moveTo(px, 0); ctx.lineTo(px, res);
+        });
+        ctx.stroke();
+
         return canvas.toDataURL();
     }
 

@@ -468,7 +468,7 @@ export class Player {
             fixedRotation: true
         });
 
-        this.body.position.set(0, 50, 0); // Spawn High
+        this.body.position.set(-1000, 50, 0); // Spawn FAR WEST (Left)
         this.body.ccdSpeedThreshold = 1;
         this.body.ccdIterations = 10;
 
@@ -1415,12 +1415,12 @@ export class Player {
     }
 
     enterGlide() {
-        console.log('🪂 enterGlide() called - setting state to GLIDE');
+        // console.log('🪂 enterGlide() called - setting state to GLIDE');
         this.state = 'GLIDE';
         this.input.jumpTapCount = 0;
         if (this.body.velocity.y < -1) this.body.velocity.y = -1;
         this.body.angularVelocity.set(0, 0, 0);
-        console.log('🪂 GLIDE state set, velocity.y:', this.body.velocity.y);
+        // console.log('🪂 GLIDE state set, velocity.y:', this.body.velocity.y);
     }
 
     enterSurf() {
@@ -2125,7 +2125,19 @@ export class Player {
         if (this.input.keys.backward) v.z += 1;
         if (this.input.keys.left) v.x -= 1;
         if (this.input.keys.right) v.x += 1;
+
+        // NAN PROTECTION: Ensure theta is valid
+        if (isNaN(this.cameraState.theta)) {
+            console.warn("NaN Camera Theta detected! Resetting.");
+            this.cameraState.theta = 0;
+        }
+
         if (this.cameraState) v.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.cameraState.theta);
+
+        // Final NAN check
+        if (isNaN(v.x) || isNaN(v.y) || isNaN(v.z)) {
+            return new THREE.Vector3();
+        }
         return v;
     }
 

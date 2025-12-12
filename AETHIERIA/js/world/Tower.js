@@ -63,9 +63,32 @@ export class Tower {
         if (this.game.waypointManager) {
             this.game.waypointManager.register(this.id, this.position, 'tower', this);
         }
+
+        // 6. BEAM VISUAL (Faisceau Lumineux)
+        // Tall, thin cylinder, transparent, additive blending
+        const beamGeo = new THREE.CylinderGeometry(2.5, 2.5, 800, 16, 1, true); // OpenEnded
+        beamGeo.translate(0, 400, 0); // Base at 0, goes up 800
+        this.beamMat = new THREE.MeshBasicMaterial({
+            color: 0xff0000, // Default RED
+            transparent: true,
+            opacity: 0.6,
+            blending: THREE.AdditiveBlending,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        this.beamMesh = new THREE.Mesh(beamGeo, this.beamMat);
+        this.beamMesh.position.y = 10; // Start from top of tower
+        this.mesh.add(this.beamMesh);
     }
 
     update(dt) {
+        // Pulse Beam
+        if (this.beamMat) {
+            const t = Date.now() * 0.002;
+            const base = this.isUnlocked ? 0.5 : 0.3;
+            this.beamMat.opacity = base + Math.sin(t) * 0.1;
+        }
+
         if (this.isUnlocked) return;
 
         if (!this.game.player || !this.game.player.mesh) return;
@@ -186,9 +209,11 @@ export class Tower {
             this.game.ui.mapManager.toggleMap(true);
             this.game.ui.mapManager.show(); // Ensure visible
 
+            this.game.ui.mapManager.show(); // Ensure visible
+
             // Trigger Animation (1.5s duration)
-            // Animate to FULL radius (1200) - Increased for 4000 world size
-            this.game.ui.mapManager.animateReveal(this.position.x, this.position.z, 1200, 1.5, () => {
+            // Animate to ZONE radius (400) - Reduced for progression
+            this.game.ui.mapManager.animateReveal(this.position.x, this.position.z, 400, 1.5, () => {
                 this.game.ui.mapManager.unlockTower(this);
             });
         }
@@ -197,6 +222,12 @@ export class Tower {
         this.mesh.material.color.setHex(0x33ccff);
         this.mesh.material.emissive.setHex(0x004466);
         this.light.color.setHex(0x33ccff);
+
+        // BEAM TURNS BLUE
+        if (this.beamMat) {
+            this.beamMat.color.setHex(0x33ccff);
+            this.beamMat.opacity = 0.5; // Make it a bit brighter when unlocked
+        }
 
         // Show Text "ZONE DÉVOILÉE"
         const text = document.createElement('div');

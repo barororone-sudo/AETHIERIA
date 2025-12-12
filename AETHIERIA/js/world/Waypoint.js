@@ -2,10 +2,10 @@
 import * as THREE from 'three';
 
 export class Waypoint {
-    constructor(world, x, z, id) {
+    constructor(world, x, z, id, y = null) {
         this.world = world;
         this.game = world.game;
-        this.position = new THREE.Vector3(x, 0, z);
+        this.position = new THREE.Vector3(x, y !== null ? y : 0, z);
         this.id = id || `waypoint_${Math.floor(x)}_${Math.floor(z)}`;
         this.isUnlocked = false;
         this.interactionRadius = 5; // Increased to match towers
@@ -15,12 +15,12 @@ export class Waypoint {
         this.particles = null;
         this.mapIcon = null;
 
-        this.init();
+        this.init(y);
     }
 
-    init() {
-        // 1. Snap to Ground
-        if (this.world.terrainManager) {
+    init(yOverride) {
+        // 1. Snap to Ground (if no override provided)
+        if (yOverride === null && this.world.terrainManager) {
             this.position.y = this.world.terrainManager.getGlobalHeight(this.position.x, this.position.z);
         }
 

@@ -93,7 +93,8 @@ export class World {
 
         // Use World Builder
         // Moved to init()
-        // this.levelManager.generate();
+        // Use World Builder
+        this.levelManager.generate();
 
         // --- NPCS ---
         this.npcs = [];
@@ -107,16 +108,15 @@ export class World {
 
         // TOWERS
         this.towers = [];
-        // Moved to init()
-        // this.spawnTowers();
+        // Force Spawn in Constructor to ensure they exist
+        this.spawnTowers();
 
         // FOREST (Act 2)
-        // Moved to init()
-        // this.generateForest();
+        this.generateForest();
 
         // WAYPOINTS (Fast Travel)
-        // Moved to init()
-        // this.spawnWaypoints();
+        this.waypoints = [];
+        this.spawnWaypoints();
 
         // LOOT
         this.loot = [];
@@ -131,26 +131,42 @@ export class World {
 
     async init() {
         console.log('[World] Starting Async Initialization...');
+        if (this.game.ui) this.game.ui.showToast("[DEBUG] World Init Start...", "info");
 
-        // 1. Generate Camps
-        this.levelManager.generate();
-        await new Promise(r => setTimeout(r, 10)); // Yield
+        try {
+            // 1. Generate Camps - MOVED TO CONSTRUCTOR
+            // console.log("Step 1: Level Generation (Skipped, in constructor)");
+            // if (this.levelManager) {
+            //    this.levelManager.generate();
+            // } else {
+            //    console.error("LevelManager missing!");
+            // }
+            await new Promise(r => setTimeout(r, 10)); // Yield
 
-        // 2. Spawn Towers
-        this.spawnTowers();
-        await new Promise(r => setTimeout(r, 10)); // Yield
+            // 2. Spawn Towers - MOVED TO CONSTRUCTOR
+            // console.log("Step 2: Towers (Skipped, in constructor)");
+            // if (this.game.ui) this.game.ui.showToast("[DEBUG] Spawning Towers (Constructor)...", "info");
+            // this.spawnTowers();
+            await new Promise(r => setTimeout(r, 10)); // Yield
 
-        // 2b. Spawn Random Loot Chests
-        this.spawnRandomChests();
-        await new Promise(r => setTimeout(r, 10));
+            // 2b. Spawn Random Loot Chests
+            this.spawnRandomChests();
+            await new Promise(r => setTimeout(r, 10));
 
-        // 3. Generate Forest
-        this.generateForest();
-        await new Promise(r => setTimeout(r, 10)); // Yield
+            // 3. Generate Forest
+            // Already called in constructor
 
-        // 4. Spawn Waypoints (Heavy loop)
-        this.spawnWaypoints();
-        await new Promise(r => setTimeout(r, 10)); // Yield
+            // 4. Spawn Waypoints
+            // Already called in constructor
+
+            await new Promise(r => setTimeout(r, 10)); // Yield
+
+            if (this.game.ui) this.game.ui.showToast("[DEBUG] World Init DONE", "success");
+
+        } catch (e) {
+            console.error("[World] CRITICAL INIT ERROR:", e);
+            if (this.game.ui) this.game.ui.showToast(`[CRITICAL] World Init Failed: ${e.message}`, "error");
+        }
 
         // Log summary of fast travel points
         if (this.game.waypointManager) {
@@ -165,37 +181,108 @@ export class World {
 
 
 
+    /**
+     * Raycasts vertically to find the ground height at (x, z).
+     * Safety wrapper: If terrain isn't ready or returns 0 (suspicious), return safety height.
+     * @param {number} x
+     * @param {number} z
+     * @returns {number} Height
+     */
+    getSafeHeight(x, z) {
+        if (this.terrainManager) {
+            const h = this.terrainManager.getGlobalHeight(x, z);
+            if (h > 0.1) return h; // Return valid height
+        }
+        console.warn(`[World] Terrain not ready at (${x}, ${z}). Spawning at safety height Y=100.`);
+        return 100; // Safety Height
+    }
+
     spawnTowers() {
-        // Cardinal Towers for Fast Travel Network (Closer to spawn)
-        const cardinalPositions = [
-            { x: 0, z: 200, id: 'tower_north' },
-            { x: 200, z: 0, id: 'tower_east' },
-            { x: 0, z: -200, id: 'tower_south' },
-            { x: -200, z: 0, id: 'tower_west' }
+        console.log('[World] Spawning Towers (Natural "Genshin" Distribution)...');
+        // Goal: ~80 Towers (10 per zone). Prioritize HIGH GROUND.
+
+        const ZONES = 8;
+        const TOWERS_PER_ZONE = 10; // Reduced to 1 per biome logic below, but kept var
+
+        this.towers = [];
+
+        // 🌟 FORCE STARTER TOWER (User Request) 🌟
+        // Player spawns at -1000, 50, 0. Put tower nearby at -900, 0.
+        const startX = -900;
+        const startZ = 0;
+        const startY = this.terrainManager.getGlobalHeight(startX, startZ);
+        const starterTower = new Tower(this, startX, startZ, 'tower_starter_01', startY + 0.5);
+        this.towers.push(starterTower);
+        console.log(`[World] 🗼 Spawned STARTER TOWER at (${startX}, ${startY}, ${startZ})`);
+
+        if (this.game.ui && this.game.ui.mapManager) {
+            this.game.ui.mapManager.addTowerIcon(starterTower, 0);
+        }
+
+        console.log('[World] Spawning 10 Biome Towers...');
+        let count = 1;
+
+        // BIOME DEFINITIONS (Matches getBiome logic)
+        // Center Points for each biome (approx)
+        const biomes = [
+            // ROW 0 (North Z < 0) [y=-1000]
+            { name: 'ICE', x: -1600, z: -1000 },
+            { name: 'SNOW', x: -800, z: -1000 },
+            { name: 'AIR', x: 0, z: -1000 },
+            { name: 'LIGHTNING', x: 800, z: -1000 },
+            { name: 'CRYSTAL', x: 1600, z: -1000 },
+
+            // ROW 1 (South Z > 0) [y=1000]
+            { name: 'FOREST', x: -1600, z: 1000 },
+            { name: 'JUNGLE', x: -800, z: 1000 },
+            { name: 'GOLD', x: 0, z: 1000 },
+            { name: 'FIRE', x: 800, z: 1000 },
+            { name: 'LAVA', x: 1600, z: 1000 }
         ];
 
-        // Diagonal Towers for extended coverage
-        const diagonalPositions = [
-            { x: 300, z: 300, id: 'tower_northeast' },
-            { x: 300, z: -300, id: 'tower_southeast' },
-            { x: -300, z: -300, id: 'tower_southwest' },
-            { x: -300, z: 300, id: 'tower_northwest' }
-        ];
+        for (const biome of biomes) {
+            let placed = false;
+            let attempts = 0;
+            // Find flat spot near center
+            while (!placed && attempts < 100) {
+                attempts++;
+                // Randomize slightly around center (+- 400)
+                const tx = biome.x + (Math.random() - 0.5) * 800;
+                const tz = biome.z + (Math.random() - 0.5) * 800;
 
-        const allTowers = [...cardinalPositions, ...diagonalPositions];
+                const ty = this.terrainManager.getGlobalHeight(tx, tz);
+                if (ty < 2.2) continue; // Avoid water (< 1.8)
 
-        allTowers.forEach(pos => {
-            let y = this.terrainManager ? this.terrainManager.getGlobalHeight(pos.x, pos.z) : 0;
-            y += 1.0; // Safety offset to prevent burial
-            const t = new Tower(this, pos.x, pos.z, pos.id, y);
+                // Check Flatness
+                const h1 = this.terrainManager.getGlobalHeight(tx + 5, tz);
+                const h2 = this.terrainManager.getGlobalHeight(tx - 5, tz);
+                const h3 = this.terrainManager.getGlobalHeight(tx, tz + 5);
+                const h4 = this.terrainManager.getGlobalHeight(tx, tz - 5);
 
-            // Force Map Icon Registration
-            if (this.game.ui && this.game.ui.mapManager) {
-                this.game.ui.mapManager.addTowerIcon(t, t.id);
+                const maxDiff = Math.max(Math.abs(ty - h1), Math.abs(ty - h2), Math.abs(ty - h3), Math.abs(ty - h4));
+
+                if (maxDiff < 8.0) { // Reasonably Flat (Relaxed to 8.0)
+                    // SPAWN IT
+                    const towerId = `tower_${biome.name}`;
+                    const t = new Tower(this, tx, tz, towerId, ty + 0.5);
+                    this.towers.push(t);
+
+                    console.log(`[World] Spawned Tower ${biome.name} at (${tx.toFixed(0)}, ${ty.toFixed(0)}, ${tz.toFixed(0)})`);
+
+                    if (this.game.ui && this.game.ui.mapManager) {
+                        this.game.ui.mapManager.addTowerIcon(t, count);
+                    }
+                    placed = true;
+                    count++;
+                }
             }
-        });
+            if (!placed) console.warn(`[World] Failed to place tower for ${biome.name}`);
+        }
 
-        console.log(`[World] Spawned ${allTowers.length} towers.`);
+        console.log(`[World] Spawned ${this.towers.length} towers naturally.`);
+        if (this.game.ui) {
+            this.game.ui.showToast(`[DEBUG] Spawned ${this.towers.length} Towers`, 'info');
+        }
     }
 
     spawnRandomChests() {
@@ -207,13 +294,10 @@ export class World {
             const x = (Math.random() - 0.5) * 2 * range;
             const z = (Math.random() - 0.5) * 2 * range;
 
-            let y = 0;
-            if (this.terrainManager) {
-                y = this.terrainManager.getGlobalHeight(x, z);
-            }
+            let y = this.getSafeHeight(x, z);
 
             // Don't spawn underwater
-            if (y < 2.5) continue;
+            if (y < 2.5 && y < 50) continue;
 
             // Calculate Difficulty / Tier
             // Further away = Harder
@@ -251,83 +335,86 @@ export class World {
     }
 
     spawnWaypoints() {
-        // Structured Equidistant Distribution (10 per zone)
-        // 3 Rings: Inner (3), Middle (3), Outer (4)
-        const zones = 8;
-        const waterLevel = 2.0;
+        if (!this.game.waypointManager) return;
 
-        const distributions = [
-            { dist: 600, count: 3 },
-            { dist: 1100, count: 3 },
-            { dist: 1600, count: 4 }
+        console.log('[World] Spawning 100 Biome Waypoints (Distributed)...');
+
+        // BIOME GRID CONFIG
+        const biomes = [
+            // ROW 0 (North Z < 0) [z range: -2000 to -100]
+            { name: 'ICE', minX: -2000, maxX: -1200, minZ: -1900, maxZ: -200 },
+            { name: 'SNOW', minX: -1200, maxX: -400, minZ: -1900, maxZ: -200 },
+            { name: 'AIR', minX: -400, maxX: 400, minZ: -1900, maxZ: -200 },
+            { name: 'LIGHTNING', minX: 400, maxX: 1200, minZ: -1900, maxZ: -200 },
+            { name: 'CRYSTAL', minX: 1200, maxX: 2000, minZ: -1900, maxZ: -200 },
+
+            // ROW 1 (South Z > 0) [z range: 200 to 1900]
+            { name: 'FOREST', minX: -2000, maxX: -1200, minZ: 200, maxZ: 1900 },
+            { name: 'JUNGLE', minX: -1200, maxX: -400, minZ: 200, maxZ: 1900 },
+            { name: 'GOLD', minX: -400, maxX: 400, minZ: 200, maxZ: 1900 },
+            { name: 'FIRE', minX: 400, maxX: 1200, minZ: 200, maxZ: 1900 },
+            { name: 'LAVA', minX: 1200, maxX: 2000, minZ: 200, maxZ: 1900 }
         ];
 
-        this.waypoints = [];
-        const foundBiomes = new Set();
+        let total = 0;
+        const MIN_DIST = 250; // Increased spacing
 
-        console.log(`[World] Spawning waypoints with Structured Ring Distribution...`);
+        biomes.forEach(biome => {
+            let placedInBiome = 0;
+            let attempts = 0;
 
-        for (let z = 0; z < zones; z++) {
-            const angleStart = (z / zones) * Math.PI * 2;
-            const angleSlice = (Math.PI * 2) / zones; // 45 degrees
+            while (placedInBiome < 10 && attempts < 500) {
+                attempts++;
 
-            distributions.forEach((ring, rIndex) => {
-                // Distribute 'ring.count' points evenly across this angle slice
-                // Add phase shift for each ring to stagger them (Zig-Zag pattern)
-                const stagger = (rIndex % 2 === 0) ? 0 : (angleSlice / (ring.count * 2));
+                // Random Pos within Biome Bounds
+                const tx = biome.minX + Math.random() * (biome.maxX - biome.minX);
+                const tz = biome.minZ + Math.random() * (biome.maxZ - biome.minZ);
 
-                for (let i = 0; i < ring.count; i++) {
-                    // 0.5 offset to center them in the partitions
-                    const pct = (i + 0.5) / ring.count;
-                    const angle = angleStart + (pct * angleSlice) + (Math.random() * 0.1 - 0.05); // Slight jitter
-                    const dist = ring.dist + (Math.random() * 100 - 50);
+                // 1. Terrain Height Check
+                const ty = this.terrainManager.getGlobalHeight(tx, tz);
+                if (ty < 2.2) continue; // Avoid water
 
-                    let x = Math.cos(angle) * dist;
-                    let z = Math.sin(angle) * dist;
-                    let y = 0;
-                    let biome = 'PLAINS';
-
-                    if (this.terrainManager) {
-                        y = this.terrainManager.getGlobalHeight(x, z);
-                        biome = this.terrainManager.getBiomeAt(x, z);
-                    }
-
-                    // Water Check
-                    if (y < waterLevel) {
-                        // Search outwards for land
-                        let foundLand = false;
-                        for (let attempt = 0; attempt < 10; attempt++) {
-                            const searchDist = 50 + attempt * 20;
-                            // Try 4 directions
-                            const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-                            for (const d of dirs) {
-                                const tx = x + d[0] * searchDist;
-                                const tz = z + d[1] * searchDist;
-                                const ty = this.terrainManager ? this.terrainManager.getGlobalHeight(tx, tz) : 0;
-                                if (ty >= waterLevel) {
-                                    x = tx; z = tz; y = ty;
-                                    foundLand = true;
-                                    break;
-                                }
-                            }
-                            if (foundLand) break;
-                        }
-                        if (!foundLand) continue; // Skip if deep ocean
-                    }
-
-                    y += 0.5; // Offset from ground
-
-                    if (Math.abs(x) > 200 || Math.abs(z) > 200) { // Safety check away from spawn
-                        const wpId = `waypoint_${z}_${rIndex}_${i}`;
-                        const waypoint = new Waypoint(this, x, z, wpId);
-                        this.waypoints.push(waypoint);
-                        foundBiomes.add(biome);
+                // 2. Distance Check (Distribution)
+                let tooClose = false;
+                // Check vs Existing Waypoints
+                for (const wp of this.waypoints) {
+                    const dx = wp.position.x - tx;
+                    const dz = wp.position.z - tz;
+                    if (dx * dx + dz * dz < MIN_DIST * MIN_DIST) {
+                        tooClose = true;
+                        break;
                     }
                 }
-            });
-        }
 
-        console.log(`[World] Spawned ${this.waypoints.length} waypoints across ${foundBiomes.size} biomes.`);
+                // Also check vs Towers
+                if (!tooClose && this.towers) {
+                    for (const t of this.towers) {
+                        const dx = t.position.x - tx;
+                        const dz = t.position.z - tz;
+                        if (dx * dx + dz * dz < 150 * 150) { // Keep away from towers slightly
+                            tooClose = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (tooClose) continue;
+
+                // VALID - Create Waypoint
+                const wp = new Waypoint(this, tx, ty, tz, `wp_${biome.name}_${placedInBiome}`);
+                this.game.waypointManager.register(wp.id, wp.position, 'waypoint', wp);
+
+                // Add Icon
+                if (this.game.ui && this.game.ui.mapManager) {
+                    this.game.ui.mapManager.addWaypointIcon(wp);
+                }
+
+                placedInBiome++;
+                total++;
+            }
+        });
+
+        console.log(`[World] Total Waypoints Spawned: ${total}`);
     }
 
     /**
@@ -371,8 +458,8 @@ export class World {
     populateStartingZone() {
         console.log('[World] Populating starting zone...');
 
-        // Spawn Ancient Communicator at BEACON POSITION (10, 0, -15)
-        const itemPos = { x: 10, y: 1, z: -15 };
+        // Spawn Ancient Communicator at BEACON POSITION (-990, 1, -15) (West Edge)
+        const itemPos = { x: -990, y: 1, z: -15 };
 
         // Create small cube - MeshBasicMaterial (always visible)
         const geometry = new THREE.BoxGeometry(1, 1, 1);
@@ -395,8 +482,8 @@ export class World {
         // Store reference
         this.questItems.push({ mesh: questItemMesh, light: light, time: 0 });
 
-        console.log(`[World] ✅ Quest item at BEACON position (${itemPos.x}, ${itemPos.y}, ${itemPos.z})`);
-        console.log(`[World] Quest items count: ${this.questItems.length}`);
+        console.log(`[World] ✅ Quest item at BEACON position(${itemPos.x}, ${itemPos.y}, ${itemPos.z})`);
+        console.log(`[World] Quest items count: ${this.questItems.length} `);
     }
 
     /**
@@ -463,12 +550,12 @@ export class World {
     createSky() {
         const vertexShader = `
         varying vec3 vWorldPosition;
-        void main() {
+void main() {
             vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-            vWorldPosition = worldPosition.xyz;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `;
+    vWorldPosition = worldPosition.xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
         const fragmentShader = `
         varying vec3 vWorldPosition;
         uniform vec3 topColor;
@@ -479,32 +566,32 @@ export class World {
 
         // Simple Star Noise
         float rand(vec2 co){
-            return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
-        }
+    return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
+}
 
-        void main() {
+void main() {
             float h = normalize(vWorldPosition + vec3(0, offset, 0)).y;
             float mixVal = max(pow(max(h, 0.0), exponent), 0.0);
             vec3 sky = mix(bottomColor, topColor, mixVal);
-            
+
             // Stars (only visible when dark)
             float brightness = length(topColor);
-            if (brightness < 0.5) {
+    if (brightness < 0.5) {
                 float starThreshold = 0.995;
                 float r = rand(gl_FragCoord.xy * 0.001); // Screen space noise for twinkling? No, world space better
                 // Let's use direction for fixed stars
                 vec3 dir = normalize(vWorldPosition);
                 float s = rand(dir.xz * 100.0 + dir.y * 100.0);
-                
-                if (s > starThreshold) {
-                    float twinkle = sin(time * 2.0 + s * 100.0) * 0.5 + 0.5;
-                    sky += vec3(twinkle) * (1.0 - brightness * 2.0); // Fade out as it gets brighter
-                }
-            }
 
-            gl_FragColor = vec4(sky, 1.0);
+        if (s > starThreshold) {
+                    float twinkle = sin(time * 2.0 + s * 100.0) * 0.5 + 0.5;
+            sky += vec3(twinkle) * (1.0 - brightness * 2.0); // Fade out as it gets brighter
         }
-    `;
+    }
+
+    gl_FragColor = vec4(sky, 1.0);
+}
+`;
         const uniforms = {
             topColor: { value: new THREE.Color(0x0077ff) },
             bottomColor: { value: new THREE.Color(0xffffff) },
@@ -555,22 +642,22 @@ export class World {
         uniform float time;
         varying vec2 vUv;
         varying float vWave;
-        
-        void main() {
-            vUv = uv;
+
+void main() {
+    vUv = uv;
             vec3 pos = position;
-            
+
             // Gerstner-like Waves
             float wave1 = sin(pos.x * 0.05 + time * 1.0) * 0.5;
             float wave2 = cos(pos.y * 0.05 + time * 0.8) * 0.5; // y is z here before rotation? No, plane is XY.
-            // Actually plane is XY, rotated -90 X later. So pos.y is "North".
-            
-            pos.z += wave1 + wave2; // Z is height in PlaneGeometry
-            vWave = pos.z;
-            
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-        }
-    `;
+    // Actually plane is XY, rotated -90 X later. So pos.y is "North".
+
+    pos.z += wave1 + wave2; // Z is height in PlaneGeometry
+    vWave = pos.z;
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+}
+`;
 
         const fragmentShader = `
         uniform float time;
@@ -578,18 +665,18 @@ export class World {
         uniform vec3 colorShallow;
         varying vec2 vUv;
         varying float vWave;
-        
-        void main() {
+
+void main() {
             // Mix colors based on wave height
             vec3 color = mix(colorDeep, colorShallow, vWave * 0.5 + 0.5);
-            
+
             // Foam lines
             float foam = step(0.8, sin(vUv.x * 100.0 + time) * sin(vUv.y * 100.0 + time));
-            color += vec3(foam * 0.1);
+    color += vec3(foam * 0.1);
 
-            gl_FragColor = vec4(color, 0.8);
-        }
-    `;
+    gl_FragColor = vec4(color, 0.8);
+}
+`;
 
         const material = new THREE.ShaderMaterial({
             vertexShader,
@@ -682,63 +769,63 @@ export class World {
             uniform float time;
             varying vec2 vUv;
             varying float vHeight;
-            
+
             // Simple Noise
-            float rand(vec2 n) { 
-                return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);
-            }
+            float rand(vec2 n) {
+    return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);
+}
 
             float noise(vec2 p){
                 vec2 ip = floor(p);
                 vec2 u = fract(p);
-                u = u*u*(3.0-2.0*u);
+    u = u * u * (3.0 - 2.0 * u);
                 float res = mix(
-                    mix(rand(ip), rand(ip+vec2(1.0,0.0)), u.x),
-                    mix(rand(ip+vec2(0.0,1.0)), rand(ip+vec2(1.0,1.0)), u.x), u.y);
-                return res*res;
-            }
+        mix(rand(ip), rand(ip + vec2(1.0, 0.0)), u.x),
+        mix(rand(ip + vec2(0.0, 1.0)), rand(ip + vec2(1.0, 1.0)), u.x), u.y);
+    return res * res;
+}
 
-            void main() {
-                vUv = uv;
-                vHeight = position.y;
+void main() {
+    vUv = uv;
+    vHeight = position.y;
                 vec3 pos = position;
-                
+
                 // Wind Effect
                 vec4 worldPosition = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-                
+
                 // Large scale wind waves
                 float windWave = sin(time * 0.5 + worldPosition.x * 0.05 + worldPosition.z * 0.05);
-                
+
                 // Small detailed noise
                 float n = noise(worldPosition.xz * 0.2 + time * 1.0);
-                
+
                 // Combine
                 float wind = (windWave * 0.5 + n * 0.5) * 0.5;
-                
+
                 // Apply wind only to top of grass, non-linearly
                 float bend = pow(uv.y, 2.0);
-                pos.x += wind * bend * 2.0;
-                pos.z += wind * bend * 0.5;
-                
-                // Droop effect when wind blows hard
-                pos.y -= abs(wind) * bend * 0.3;
+    pos.x += wind * bend * 2.0;
+    pos.z += wind * bend * 0.5;
+
+    // Droop effect when wind blows hard
+    pos.y -= abs(wind) * bend * 0.3;
                 
                 vec4 finalPos = instanceMatrix * vec4(pos, 1.0);
-                gl_Position = projectionMatrix * viewMatrix * finalPos;
-            }
-        `,
+    gl_Position = projectionMatrix * viewMatrix * finalPos;
+}
+`,
             fragmentShader: `
             varying vec2 vUv;
             varying float vHeight;
             uniform vec3 colorTop;
             uniform vec3 colorBottom;
-            
-            void main() {
+
+void main() {
                 vec3 color = mix(colorBottom, colorTop, vUv.y);
-                color *= smoothstep(0.0, 0.4, vUv.y + 0.2);
-                gl_FragColor = vec4(color, 1.0);
-            }
-        `,
+    color *= smoothstep(0.0, 0.4, vUv.y + 0.2);
+    gl_FragColor = vec4(color, 1.0);
+}
+`,
             uniforms: {
                 time: { value: 0 },
                 colorTop: { value: new THREE.Color(0x8bc34a) },
@@ -946,7 +1033,7 @@ export class World {
                 });
             }
         }
-        // console.log(`Generated Fog Grid: ${this.fogGrid.length} points`);
+        // console.log(`Generated Fog Grid: ${ this.fogGrid.length } points`);
     }
 
     getClosestInteractable(position, range) {
@@ -1120,9 +1207,8 @@ export class World {
                 enemy.update(dt, playerBody ? playerBody.position : null);
                 updatedCount++;
             });
-        }
+        } // Close if(enemies)
 
-        // Update Waypoints
         if (this.waypoints) {
             this.waypoints.forEach(waypoint => {
                 if (waypoint && waypoint.update) waypoint.update(dt);
@@ -1150,7 +1236,7 @@ export class World {
                 item.light.position.copy(item.mesh.position);
             });
         }
-    }
+    } // End of update()
 
     createUpdraft(position) {
         const geometry = new THREE.CylinderGeometry(1, 1, 5, 8);
@@ -1200,7 +1286,7 @@ export class World {
      * @param {Chest} chest 
      */
     registerCamp(enemies, chest) {
-        const campId = `camp_${this.camps.length + 1}`;
+        const campId = `camp_${this.camps.length + 1} `;
         this.camps.push({
             id: campId,
             enemies: enemies,

@@ -127,4 +127,25 @@ export class Input {
     isFullscreen() {
         return !!document.fullscreenElement;
     }
+    /**
+     * Set key state programmatically (for Touch Controls)
+     * @param {string} keyName 
+     * @param {boolean} isDown 
+     */
+    setByKey(keyName, isDown) {
+        if (this.keys.hasOwnProperty(keyName)) {
+            this.keys[keyName] = isDown;
+
+            // Handle Jump tap logic for programmatic input
+            if (keyName === 'jump' && isDown) {
+                const now = Date.now();
+                if (now - this.lastJumpTime < 300) {
+                    this.jumpTapCount++;
+                } else {
+                    this.jumpTapCount = 1;
+                }
+                this.lastJumpTime = now;
+            }
+        }
+    }
 }

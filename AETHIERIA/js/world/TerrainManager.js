@@ -46,11 +46,10 @@ export class TerrainManager {
             }),
 
             // OPTIMIZATION: Shared Material for Terrain Chunks
-            groundMaterial: new THREE.MeshStandardMaterial({
+            // OPTIMIZATION: Shared Material for Terrain Chunks
+            groundMaterial: new THREE.MeshBasicMaterial({
                 vertexColors: true,
-                roughness: 0.9,
-                metalness: 0.1,
-                flatShading: true
+                side: THREE.FrontSide
             })
         };
     }
@@ -95,37 +94,66 @@ export class TerrainManager {
     }
 
     /**
-     * Get Biome based on Height and Moisture
+     * Get Biome based on X, Z coordinates (10 Zones Grid)
+     * Map Width: ~4000 (-2000 to 2000)
+     * Map Depth: ~4000 (-2000 to 2000)
+     * Columns: 5 (800 units wide)
+     * Rows: 2 (2000 units deep)
      * @returns {string} Biome Type
      */
+    getBiome(x, z) {
+        // Grid 5x2
+        // Col Index: 0..4 (West to East)
+        const col = Math.floor((x + 2000) / 800);
+        // Row Index: 0 (North/Z<0) or 1 (South/Z>0)
+        const row = z < 0 ? 0 : 1;
+
+        // Clamp
+        const c = Math.max(0, Math.min(4, col));
+
+        // BIOME MAP
+        // North (Row 0): ICE | SNOW | AIR | LIGHTNING | CRYSTAL
+        // South (Row 1): FOREST | JUNGLE | GOLD | FIRE | LAVA
+
+        if (row === 0) {
+            if (c === 0) return 'ICE';
+            if (c === 1) return 'SNOW';
+            if (c === 2) return 'AIR';
+            if (c === 3) return 'LIGHTNING';
+            return 'CRYSTAL';
+        } else {
+            if (c === 0) return 'FOREST'; // Starting Area (approx x=-1000)
+            if (c === 1) return 'JUNGLE';
+            if (c === 2) return 'GOLD';
+            if (c === 3) return 'FIRE';
+            return 'LAVA';
+        }
+    }
+
+    /**
+     * @param {string} biome 
+     * @returns {number} Hex Color
+     */
+    getBiomeColor(biome) {
+        switch (biome) {
+            case 'ICE': return 0xaaddff; // Pale Blue
+            case 'SNOW': return 0xffffff; // White
+            case 'AIR': return 0xdddddd; // Light Grey (Clouds)
+            case 'LIGHTNING': return 0x4b0082; // Indigo/Dark Purple
+            case 'CRYSTAL': return 0xff69b4; // Hot Pink
+            case 'FOREST': return 0x228b22; // Forest Green
+            case 'JUNGLE': return 0x006400; // Dark Green
+            case 'GOLD': return 0xffd700; // Gold
+            case 'FIRE': return 0xff4500; // Orange Red
+            case 'LAVA': return 0x1a0500; // Very Dark Red/Black
+            default: return 0x555555; // Grey Fallback
+        }
+    }
     /**
      * Get Biome based on Radial Sector
+     * DEPRECATED: Removing to favor the 2x5 Grid System matching World.js
      */
-    getBiome(x, z, height, moisture) {
-        // 1. Altitude Overrides (Global Peaks)
-        if (height > 55) return 'SNOW'; // Higher peaks
-
-        // 2. Radial Sectors (10 Zones for Expansion)
-        const angle = Math.atan2(z, x); // -PI to PI
-        const deg = (angle * 180 / Math.PI + 360) % 360;
-
-        // 10 Sectors of 36 degrees
-        const sector = Math.round(deg / 36) % 10;
-
-        switch (sector) {
-            case 0: return 'FOREST';
-            case 1: return 'MOUNTAIN';
-            case 2: return 'SNOW';
-            case 3: return 'HIGHLANDS';
-            case 4: return 'PLAINS';
-            case 5: return 'BADLANDS';
-            case 6: return 'DESERT';
-            case 7: return 'SWAMP';
-            case 8: return 'VOLCANO'; // New
-            case 9: return 'JUNGLE';  // New
-        }
-        return 'PLAINS';
-    }
+    // getBiome(x, z, height, moisture) { ... } REMOVED
 
     /**
      * FBM (Fractal Brownian Motion) Height Calculation
@@ -133,23 +161,8 @@ export class TerrainManager {
     getGlobalHeight(x, z) {
         if (!Utils.Noise || !Utils.Noise.perlin2) return 0;
 
-        const angle = Math.atan2(z, x);
-        const deg = (angle * 180 / Math.PI + 360) % 360;
-        const sector = Math.round(deg / 36) % 10; // Updated to 10
-
-        let biomeType = 'PLAINS';
-        switch (sector) {
-            case 0: biomeType = 'FOREST'; break;
-            case 1: biomeType = 'MOUNTAIN'; break;
-            case 2: biomeType = 'SNOW'; break;
-            case 3: biomeType = 'HIGHLANDS'; break;
-            case 4: biomeType = 'PLAINS'; break;
-            case 5: biomeType = 'BADLANDS'; break;
-            case 6: biomeType = 'DESERT'; break;
-            case 7: biomeType = 'SWAMP'; break;
-            case 8: biomeType = 'VOLCANO'; break;
-            case 9: biomeType = 'JUNGLE'; break;
-        }
+        // Use the Grid Biome Logic
+        const biomeType = this.getBiome(x, z);
 
         // Topography Settings
         let amplitude = 10;
@@ -157,29 +170,29 @@ export class TerrainManager {
         let octaves = 3;
         let baseHeight = 5;
 
+        // Customize per Biome
         switch (biomeType) {
-            case 'DESERT':
-                amplitude = 15; frequency = 0.005; octaves = 4; baseHeight = 5; break;
-            case 'FOREST':
-                amplitude = 20; frequency = 0.01; octaves = 4; baseHeight = 8; break;
-            case 'PLAINS':
-                amplitude = 8; frequency = 0.005; octaves = 3; baseHeight = 5; break;
-            case 'SNOW':
-                amplitude = 15; frequency = 0.01; octaves = 4; baseHeight = 10; break;
-            case 'MOUNTAIN':
-                amplitude = 80; frequency = 0.008; octaves = 5; baseHeight = 20; break;
-            case 'HIGHLANDS':
-                amplitude = 40; frequency = 0.006; octaves = 4; baseHeight = 30; break;
-            case 'BADLANDS':
-                amplitude = 30; frequency = 0.01; octaves = 5; baseHeight = 15; break;
-            case 'SWAMP':
-                amplitude = 3; frequency = 0.02; octaves = 2; baseHeight = 1; break;
-            case 'VOLCANO':
-                amplitude = 60; frequency = 0.01; octaves = 5; baseHeight = 25; // High & jagged
-                break;
-            case 'JUNGLE':
-                amplitude = 25; frequency = 0.015; octaves = 4; baseHeight = 10; // Dense variation
-                break;
+            case 'ICE': // Flat Sheet
+                amplitude = 5; frequency = 0.005; octaves = 2; baseHeight = 2; break;
+            case 'SNOW': // Rolling Hills
+                amplitude = 20; frequency = 0.008; octaves = 3; baseHeight = 10; break;
+            case 'AIR': // High Peaks / Sky Islands feel
+                amplitude = 80; frequency = 0.005; octaves = 5; baseHeight = 40; break;
+            case 'LIGHTNING': // Jagged
+                amplitude = 40; frequency = 0.015; octaves = 4; baseHeight = 15; break;
+            case 'CRYSTAL': // Spiky
+                amplitude = 30; frequency = 0.02; octaves = 5; baseHeight = 10; break;
+
+            case 'FOREST': // Standard
+                amplitude = 15; frequency = 0.01; octaves = 3; baseHeight = 8; break;
+            case 'JUNGLE': // Dense/Rough
+                amplitude = 30; frequency = 0.015; octaves = 4; baseHeight = 10; break;
+            case 'GOLD': // Golden Plains / Dunes
+                amplitude = 10; frequency = 0.005; octaves = 2; baseHeight = 15; break;
+            case 'FIRE': // Chaotic
+                amplitude = 50; frequency = 0.01; octaves = 5; baseHeight = 20; break;
+            case 'LAVA': // Volcanic Crater / Low
+                amplitude = 25; frequency = 0.01; octaves = 4; baseHeight = 5; break;
         }
 
         // Apply FBM

@@ -23,31 +23,44 @@ export class Chunk {
     }
 
     createVisual() {
-        const segments = this.resolution - 1;
-        const geometry = new THREE.PlaneGeometry(this.size, this.size, segments, segments);
+        // Create Geometry
+        const geometry = new THREE.PlaneGeometry(this.size, this.size, this.resolution - 1, this.resolution - 1);
         geometry.rotateX(-Math.PI / 2);
-        geometry.translate(this.worldX + this.size / 2, 0, this.worldZ + this.size / 2);
+        geometry.translate(this.worldX + this.size / 2, 0, this.worldZ + this.size / 2); // Apply chunk offset
 
-        const posAttr = geometry.attributes.position;
+        const positions = geometry.attributes.position;
         const colors = [];
+        const color = new THREE.Color();
 
-        for (let i = 0; i < posAttr.count; i++) {
-            const x = posAttr.getX(i);
-            const z = posAttr.getZ(i);
+        for (let i = 0; i < positions.count; i++) {
+            const x = positions.getX(i);
+            const z = positions.getZ(i);
 
-            const h = this.tm.getGlobalHeight(x, z);
-            posAttr.setY(i, h);
+            // World Coords (already translated by geometry.translate)
+            const wx = x;
+            const wz = z;
 
-            const m = this.tm.getMoisture(x, z);
-            const c = this.tm.getBiomeColor(x, z, h, m);
-            colors.push(c.r, c.g, c.b);
+            // Get Height
+            const y = this.tm.getGlobalHeight(wx, wz);
+            positions.setY(i, y);
+
+            // Get Biome and Color
+            // Note: getBiome and getBiomeColor now expect world coordinates directly
+            const biome = this.tm.getBiome(wx, wz); // Pass height for biome calculation
+            const hex = this.tm.getBiomeColor(biome);
+
+            // Add slight random noise to terrain color for texture
+            const noise = (Math.random() * 0.1) - 0.05;
+            color.setHex(hex);
+            color.r += noise;
+            color.g += noise;
+            color.b += noise;
+
+            colors.push(color.r, color.g, color.b);
         }
 
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.computeVertexNormals();
-
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-        geometry.computeVertexNormals();
 
         // OPTIMIZATION: Use Shared Material
         this.mesh = new THREE.Mesh(geometry, this.tm.assets.groundMaterial);

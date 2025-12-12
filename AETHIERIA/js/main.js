@@ -264,9 +264,11 @@ export class Game {
                     // Create new wireframe mesh
                     let geo;
                     if (shape.type === CANNON.Shape.types.BOX) {
+                        // @ts-ignore
                         const he = shape.halfExtents;
                         geo = new THREE.BoxGeometry(he.x * 2, he.y * 2, he.z * 2);
                     } else if (shape.type === CANNON.Shape.types.SPHERE) {
+                        // @ts-ignore
                         geo = new THREE.SphereGeometry(shape.radius, 8, 8);
                     } else {
                         // Default box for others
@@ -401,4 +403,17 @@ window.addEventListener('DOMContentLoaded', () => {
     window.game = new Game();
     // @ts-ignore
     window.game.init();
+
+    // --- AUDIO AUTOPLAY FIX ---
+    const resumeAudio = () => {
+        // @ts-ignore
+        if (window.Howler && window.Howler.ctx && window.Howler.ctx.state !== 'running') {
+            // @ts-ignore
+            window.Howler.ctx.resume().then(() => {
+                console.log('AudioContext Resumed Successfully');
+            });
+        }
+    };
+    window.addEventListener('click', resumeAudio, { once: true });
+    window.addEventListener('keydown', resumeAudio, { once: true });
 });

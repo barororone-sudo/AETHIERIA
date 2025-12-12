@@ -24,22 +24,99 @@ export class LevelManager {
         this.spawnLegendaryChest();
     }
 
+    populateCamps() {
+        console.log("Populating World with Monster Camps (10 per Biome - Distributed)...");
+
+        // Exact same grid as Waypoints for consistency
+        const biomes = [
+            { name: 'ICE', minX: -2000, maxX: -1200, minZ: -1900, maxZ: -200 },
+            { name: 'SNOW', minX: -1200, maxX: -400, minZ: -1900, maxZ: -200 },
+            { name: 'AIR', minX: -400, maxX: 400, minZ: -1900, maxZ: -200 },
+            { name: 'LIGHTNING', minX: 400, maxX: 1200, minZ: -1900, maxZ: -200 },
+            { name: 'CRYSTAL', minX: 1200, maxX: 2000, minZ: -1900, maxZ: -200 },
+            { name: 'FOREST', minX: -2000, maxX: -1200, minZ: 200, maxZ: 1900 },
+            { name: 'JUNGLE', minX: -1200, maxX: -400, minZ: 200, maxZ: 1900 },
+            { name: 'GOLD', minX: -400, maxX: 400, minZ: 200, maxZ: 1900 },
+            { name: 'FIRE', minX: 400, maxX: 1200, minZ: 200, maxZ: 1900 },
+            { name: 'LAVA', minX: 1200, maxX: 2000, minZ: 200, maxZ: 1900 }
+        ];
+
+        let totalCamps = 0;
+        const MIN_DIST = 200; // 200m separation
+
+        biomes.forEach(biome => {
+            let placed = 0;
+            let attempts = 0;
+
+            while (placed < 10 && attempts < 500) {
+                attempts++;
+
+                const x = biome.minX + Math.random() * (biome.maxX - biome.minX);
+                const z = biome.minZ + Math.random() * (biome.maxZ - biome.minZ);
+
+                // 1. Check Terrain
+                const y = this.terrain ? this.terrain.getGlobalHeight(x, z) : 0;
+                if (y < 2.2) continue; // Water
+
+                // 2. Check Flatness (Critical for camps)
+                let isFlat = true;
+                if (this.terrain) {
+                    const h1 = this.terrain.getGlobalHeight(x + 5, z);
+                    const h2 = this.terrain.getGlobalHeight(x, z + 5);
+                    if (Math.abs(y - h1) > 4.0 || Math.abs(y - h2) > 4.0) isFlat = false;
+                }
+                if (!isFlat) continue;
+
+                // 3. Proximity Check
+                let tooClose = false;
+                for (const camp of this.activeCamps) {
+                    const dx = camp.x - x;
+                    const dz = camp.z - z;
+                    if ((dx * dx + dz * dz) < MIN_DIST * MIN_DIST) {
+                        tooClose = true;
+                        break;
+                    }
+                }
+
+                // Check against Towers (avoid stacking)
+                if (!tooClose && this.world.towers) {
+                    for (const t of this.world.towers) {
+                        const dx = t.position.x - x;
+                        const dz = t.position.z - z;
+                        if (dx * dx + dz * dz < 100 * 100) {
+                            tooClose = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (tooClose) continue;
+
+                // VALID
+                this.spawnCamp(x, z, biome.name);
+                placed++;
+                totalCamps++;
+            }
+        });
+
+        console.log(`[LevelManager] Successfully placed ${totalCamps} camps.`);
+    }
+
     update(dt) {
         // Update Switches
         this.switches.forEach(s => s.update(dt));
 
-        // OPTIMIZATION: Throttle Camp Checks (Avoid checking every frame)
+        this.checkMobSpawning(dt);
+
+        // OPTIMIZATION: Throttle Camp Checks
         this._campCheckTimer = (this._campCheckTimer || 0) - dt;
         if (this._campCheckTimer > 0) return;
         this._campCheckTimer = 2.0; // Check every 2 seconds
 
         // Monster Lock Logic
         this.activeCamps.forEach(camp => {
-            if (!camp.cleared && camp.chest && camp.chest.locked) {
-                // Check if all enemies dead
-                // Better: Count how many are still in world.enemies
-                const stillActive = camp.enemies.filter(e => this.world.enemies.includes(e));
-
+            if (!camp.cleared && camp.chest && camp.chest.locked && camp.enemiesSpawned) {
+                const stillActive = camp.enemies.filter(e => this.world.enemies.includes(e) && !e.isDead);
                 if (stillActive.length === 0) {
                     camp.cleared = true;
                     camp.chest.unlock();
@@ -49,129 +126,103 @@ export class LevelManager {
         });
     }
 
-    populateCamps() {
-        const worldSize = 4000;
-        const totalCamps = 60;
-        const zones = 8;
-        const campsPerZone = Math.ceil(totalCamps / zones);
-        const minCampDistance = 150;
-        const minStartDist = 250; // Keep clear of start area
+    checkMobSpawning(dt) {
+        if (!this.game.player || !this.game.player.mesh) return;
+        const playerPos = this.game.player.mesh.position;
+        const SPAWN_DIST = 30; // Close range for testing (normally 60-80)
+        const DESPAWN_DIST = 150;
 
-        console.log(`[LevelManager] Spawning ${totalCamps} camps across ${zones} zones...`);
+        this.activeCamps.forEach(camp => {
+            const dx = camp.x - playerPos.x;
+            const dz = camp.z - playerPos.z;
+            const distSq = dx * dx + dz * dz;
 
-        let spawnedCount = 0;
-
-        for (let z = 0; z < zones; z++) {
-            // Calculate sector angles
-            const angleStart = (z / zones) * Math.PI * 2;
-            const angleEnd = ((z + 1) / zones) * Math.PI * 2;
-
-            for (let i = 0; i < campsPerZone; i++) {
-                if (spawnedCount >= totalCamps) break;
-
-                let attempts = 0;
-                let placed = false;
-
-                while (attempts < 30 && !placed) {
-                    // Random angle within sector
-                    const angle = angleStart + Math.random() * (angleEnd - angleStart);
-                    // Random distance (weighted slightly outwards for better spread)
-                    const dist = minStartDist + Math.pow(Math.random(), 0.8) * (worldSize * 0.4 - minStartDist);
-
-                    const x = Math.cos(angle) * dist;
-                    const z = Math.sin(angle) * dist;
-
-                    // Distance check
-                    const tooClose = this.activeCamps.some(camp => {
-                        const dx = camp.x - x;
-                        const dz = camp.z - z;
-                        return (dx * dx + dz * dz) < (minCampDistance * minCampDistance);
-                    });
-
-                    if (!tooClose && this.isAreaFlat(x, z, 5)) {
-                        this.spawnCamp(x, z);
-                        placed = true;
-                        spawnedCount++;
-                    }
-                    attempts++;
-                }
+            // SPAWN LOGIC
+            if (distSq < SPAWN_DIST * SPAWN_DIST && !camp.enemiesSpawned && !camp.cleared) {
+                this.spawnCampEnemies(camp);
             }
-        }
-
-        console.log(`[LevelManager] Spawned ${spawnedCount} camps.`);
+            // DESPAWN LOGIC (Optimization)
+            else if (distSq > DESPAWN_DIST * DESPAWN_DIST && camp.enemiesSpawned) {
+                this.despawnCampEnemies(camp);
+            }
+        });
     }
 
-    isAreaFlat(x, z, radius) {
-        if (!this.terrain) return true; // Assume flat if no terrain
+    spawnCampEnemies(camp) {
+        // console.log(`Spawning enemies for camp at ${camp.x}, ${camp.z}`);
+        camp.enemies = []; // Reset array
+        camp.enemiesSpawned = true;
 
-        const centerH = this.terrain.getGlobalHeight(x, z);
-        const samples = [
-            this.terrain.getGlobalHeight(x + radius, z),
-            this.terrain.getGlobalHeight(x - radius, z),
-            this.terrain.getGlobalHeight(x, z + radius),
-            this.terrain.getGlobalHeight(x, z - radius)
-        ];
+        // Biome-specific enemy selection logic could go here if needed per-enemy
+        // For now relying on camp.enemyType set during spawnCamp
 
-        // Return false if any sample is underwater or too steep
-        if (centerH < 1.8) return false; // Underwater (Water level ~1.5 - 2.0)
-
-        for (const h of samples) {
-            // Relaxed tolerance for hillier terrain
-            if (Math.abs(h - centerH) > 8.0) return false;
-        }
-
-        return true;
+        // Register
+        // (Handled by specific enemy spawning logic usually, but ensure consistency)
     }
 
-    spawnCamp(x, z) {
+    despawnCampEnemies(camp) {
+        if (!camp.enemies) return;
+        camp.enemies.forEach(e => {
+            if (this.world.enemies) {
+                const idx = this.world.enemies.indexOf(e);
+                if (idx > -1) this.world.enemies.splice(idx, 1);
+            }
+            if (e.mesh) this.scene.remove(e.mesh);
+            if (e.body) this.world.physicsWorld.removeBody(e.body);
+        });
+        camp.enemies = [];
+        camp.enemiesSpawned = false;
+    }
+
+    spawnCamp(x, z, biome = 'FOREST') {
         const y = this.terrain ? this.terrain.getGlobalHeight(x, z) : 0;
+
+        // Define Enemy Type based on Biome
+        let enemyType = 'goblin_warrior'; // Default
+        if (biome === 'ICE' || biome === 'SNOW') enemyType = 'slime_blue';
+        else if (biome === 'FIRE' || biome === 'LAVA') enemyType = 'slime_red';
+        else if (biome === 'FOREST') enemyType = 'goblin_warrior';
+        else if (biome === 'JUNGLE') enemyType = 'goblin_shaman';
+        else if (biome === 'GOLD') enemyType = 'goblin_thief';
+        else if (biome === 'LIGHTNING') enemyType = 'orc_warrior';
+        else if (biome === 'CRYSTAL') enemyType = 'construct_sentinel';
+        else if (biome === 'AIR') enemyType = 'goblin_archer';
+
+        const camp = {
+            x: x,
+            y: y,
+            z: z,
+            biome: biome,
+            enemyType: enemyType,
+            cleared: false,
+            enemiesSpawned: false,
+            enemies: [],
+            mapIcon: null
+        };
+
         const dist = Math.sqrt(x * x + z * z);
 
-        // Campfire (Keep existing visual code)
-        // ... (lines 81-96 kept implicitly or assume exist, I will rewrite spawnCamp body)
+        // Campfire Visuals
         const fireGeo = new THREE.CylinderGeometry(0.2, 0.5, 0.2, 8);
         const fireMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
         const fireBase = new THREE.Mesh(fireGeo, fireMat);
-        fireBase.position.set(x, y + 0.1, z);
-        this.scene.add(fireBase);
-        const fireLight = new THREE.PointLight(0xffaa00, 1, 10);
-        fireLight.position.set(0, 0.5, 0);
-        fireBase.add(fireLight);
-        const core = new THREE.Mesh(new THREE.DodecahedronGeometry(0.2), new THREE.MeshBasicMaterial({ color: 0xff4400 }));
-        core.position.y = 0.3;
-        fireBase.add(core);
+        fireBase.position.set(x, y, z);
+        this.world.scene.add(fireBase);
+        camp.mesh = fireBase; // Track mesh
 
-        // CHEST: Exquisite (Tier 2/3)
-        const chestTier = dist > 200 ? 3 : 2;
+        // Chest
+        const chestTier = dist > 1000 ? 3 : 2;
         const chestPos = new THREE.Vector3(x + 2, y, z);
-        const chest = new Chest(this.game, this.world, chestPos, chestTier, true); // Locked by default (Monster Lock)
-
-        // ENEMIES
-        const campEnemies = [];
-        let minionsPool = ['goblin_scout', 'slime_green'];
-        let count = 3;
-
-        if (dist > 200) minionsPool = ['orc_warrior', 'goblin_archer'];
-
-        const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-        for (let i = 0; i < count; i++) {
-            const angle = (i / count) * Math.PI * 2;
-            const ex = x + Math.cos(angle) * 3;
-            const ez = z + Math.sin(angle) * 3;
-            const ey = this.terrain ? this.terrain.getGlobalHeight(ex, ez) : 0;
-
-            const enemy = new Enemy(this.world, new CANNON.Vec3(ex, ey + 1, ez), pick(minionsPool));
-            campEnemies.push(enemy);
-            this.generatedObjects.push(enemy);
-
-            // CRITICAL FIX: Register with World for updates
-            if (this.world.enemies) this.world.enemies.push(enemy);
-        }
-
-        this.activeCamps.push({ x, z, chest: chest, enemies: campEnemies, cleared: false });
-        // Register Chest
+        const chest = new Chest(this.game, this.world, chestPos, chestTier, true); // belongsToCamp=true
         if (this.world.chests) this.world.chests.push(chest);
+        camp.chest = chest;
+
+        this.activeCamps.push(camp);
+
+        // Map Icon
+        if (this.game.ui && this.game.ui.mapManager) {
+            this.game.ui.mapManager.addCampIcon(camp);
+        }
     }
 
     /**

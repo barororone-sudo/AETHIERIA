@@ -237,16 +237,19 @@ export class Chest {
 
         // 3. Loot Logic
         if (this.game.lootManager) {
+            console.log('[Chest] Requesting loot for Tier:', this.tier);
             const drops = this.game.lootManager.getChestLoot(this.tier);
-            this.game.lootManager.dropLoot(this.mesh.position, drops);
+            console.log('[Chest] Loot drops received:', drops);
 
-            // Story Event
-            if (this.game.story) {
-                this.game.story.triggerEvent('OPEN_CHEST', { tier: this.tier });
-            }
-
-            // "Tadaa" Item Floating (Just visual for the primary item)
             if (drops.length > 0) {
+                this.game.lootManager.dropLoot(this.mesh.position, drops);
+
+                // Story Event
+                if (this.game.story) {
+                    this.game.story.triggerEvent('OPEN_CHEST', { tier: this.tier });
+                }
+
+                // "Tadaa" Item Floating (Just visual for the primary item)
                 // Find best item to show
                 const best = drops.find(d => d.itemId.includes('sword') || d.itemId.includes('crystal')) || drops[0];
                 this.showTadaItem(best.itemId);

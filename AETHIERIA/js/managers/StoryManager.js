@@ -152,10 +152,10 @@ export class StoryManager {
         // --- RADICAL FIX: TELEPORT PLAYER ---
         if (this.game.player && this.game.player.body) {
             // Teleport player in air to avoid under-map issues
-            this.game.player.body.position.set(0, 20, 0);
+            this.game.player.body.position.set(-900, 50, 0); // Near Starter Tower
             this.game.player.body.velocity.set(0, 0, 0);
             this.game.player.mesh.position.copy(this.game.player.body.position);
-            console.log("PLAYER FORCE TELEPORT TO (0, 20, 0)");
+            console.log("PLAYER FORCE TELEPORT TO (-900, 50, 0)");
         }
 
         this.game.ui.hideCinematicOverlay();
