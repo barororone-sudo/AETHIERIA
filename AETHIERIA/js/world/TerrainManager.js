@@ -6,7 +6,7 @@ export class TerrainManager {
     constructor(world) {
         this.world = world;
         this.chunkSize = 64;
-        this.chunkResolution = 65; // High Res (1 vertex per meter) to prevent physics holes
+        this.chunkResolution = 33; // Optimized Res (1 vertex per 2 meters)
         this.renderDistance = 2; // Radius
         this.unloadDistance = 3;
 
@@ -47,9 +47,12 @@ export class TerrainManager {
 
             // OPTIMIZATION: Shared Material for Terrain Chunks
             // OPTIMIZATION: Shared Material for Terrain Chunks
-            groundMaterial: new THREE.MeshBasicMaterial({
+            groundMaterial: new THREE.MeshStandardMaterial({
                 vertexColors: true,
-                side: THREE.FrontSide
+                roughness: 0.8,
+                metalness: 0.1,
+                side: THREE.FrontSide,
+                wireframe: false
             })
         };
     }
@@ -130,6 +133,10 @@ export class TerrainManager {
         }
     }
 
+    /**
+     * @param {string} biome 
+     * @returns {number} Hex Color
+     */
     /**
      * @param {string} biome 
      * @returns {number} Hex Color
@@ -228,36 +235,7 @@ export class TerrainManager {
         return Math.max(0.5, y);
     }
 
-    getBiomeColor(x, z, height, moisture) {
-        const biome = this.getBiome(x, z, height, moisture);
-        const color = new THREE.Color();
 
-        // Jitter
-        const noise = Utils.Noise.perlin2(x * 0.2, z * 0.2) * 0.1;
-
-        switch (biome) {
-            case 'DESERT': color.setHex(0xe6c288); color.r += noise * 0.5; break;
-            case 'FOREST': color.setHex(0x2d4a2d); color.g += noise; break;
-            case 'PLAINS': color.setHex(0x55aa55); color.g += noise; color.r += noise * 0.5; break;
-            case 'SNOW': color.setHex(0xffffff); color.b -= noise * 0.1; break;
-            case 'MOUNTAIN': color.setHex(0x555555); color.r += noise; break;
-            case 'HIGHLANDS': color.setHex(0x8da336); color.r += noise; break;
-            case 'BADLANDS': color.setHex(0xd2691e); color.r += noise * 0.5; break;
-            case 'SWAMP': color.setHex(0x2f4f4f); color.g += noise * 0.5; break;
-            case 'VOLCANO':
-                color.setHex(0x221111); // Dark Obsidian/Ash
-                color.r += noise * 0.5; // Reddish tint
-                if (height > 60) color.setHex(0xffaa00); // Lava caps?
-                break;
-            case 'JUNGLE':
-                color.setHex(0x006600); // Vibrant Deep Green
-                color.g += noise;
-                break;
-            default: color.setHex(0xff00ff);
-        }
-
-        return color;
-    }
 
     update(playerPos) {
         if (!playerPos) return;

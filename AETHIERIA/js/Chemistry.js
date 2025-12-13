@@ -12,29 +12,55 @@ export const Elements = {
 };
 
 export class Chemistry {
-    static getReaction(element1, element2) {
-        if (!element1 || !element2) return null;
-        const e1 = element1.toLowerCase();
-        const e2 = element2.toLowerCase();
+    static getReaction(triggerElement, auraElement) {
+        if (!triggerElement || !auraElement) return null;
+        if (triggerElement === Elements.NONE || auraElement === Elements.NONE) return null;
 
-        // FREEZE (Hydro + Cryo)
-        if ((e1 === Elements.HYDRO && e2 === Elements.CRYO) || (e1 === Elements.CRYO && e2 === Elements.HYDRO)) {
-            return { type: 'FREEZE', duration: 3.0 };
-        }
+        const e1 = triggerElement; // The incoming element (Trigger)
+        const e2 = auraElement;    // The existing element (Aura)
 
-        // OVERLOAD (Pyro + Electro)
-        if ((e1 === Elements.PYRO && e2 === Elements.ELECTRO) || (e1 === Elements.ELECTRO && e2 === Elements.PYRO)) {
-            return { type: 'OVERLOAD', damage: 50, force: 10 };
-        }
+        // --- AMP REACTIONS (Multipliers) ---
 
-        // MELT (Pyro + Cryo)
+        // MELT (Pyro <-> Cryo)
         if ((e1 === Elements.PYRO && e2 === Elements.CRYO) || (e1 === Elements.CRYO && e2 === Elements.PYRO)) {
-            return { type: 'MELT', multiplier: 2.0 };
+            // Pyro on Cryo = 2.0x, Cryo on Pyro = 1.5x (Simplified to 2.0 for user request)
+            return { type: 'MELT', multiplier: 2.0, color: '#ffaa00' };
         }
 
-        // VAPORIZE (Pyro + Hydro)
-        if ((e1 === Elements.PYRO && e2 === Elements.HYDRO) || (e1 === Elements.HYDRO && e2 === Elements.PYRO)) {
-            return { type: 'VAPORIZE', multiplier: 1.5 };
+        // VAPORIZE (Pyro <-> Hydro)
+        if ((e1 === Elements.HYDRO && e2 === Elements.PYRO) || (e1 === Elements.PYRO && e2 === Elements.HYDRO)) {
+            // Hydro on Pyro = 2.0x, Pyro on Hydro = 1.5x (User asked for 1.5 generic)
+            return { type: 'VAPORIZE', multiplier: 1.5, color: '#ff8800' };
+        }
+
+        // --- TRANSFORM REACTIONS (Effects) ---
+
+        // OVERLOAD (Pyro <-> Electro) -> Explosion
+        if ((e1 === Elements.PYRO && e2 === Elements.ELECTRO) || (e1 === Elements.ELECTRO && e2 === Elements.PYRO)) {
+            return { type: 'OVERLOAD', damage: 200, isAoE: true, color: '#ff00ff' };
+        }
+
+        // SUPERCONDUCT (Cryo <-> Electro) -> AoE Cryo Dmg
+        if ((e1 === Elements.CRYO && e2 === Elements.ELECTRO) || (e1 === Elements.ELECTRO && e2 === Elements.CRYO)) {
+            return { type: 'SUPERCONDUCT', damage: 100, isAoE: true, color: '#ccaaff' };
+        }
+
+        // ELECTRO-CHARGED (Hydro <-> Electro) -> DoT
+        if ((e1 === Elements.HYDRO && e2 === Elements.ELECTRO) || (e1 === Elements.ELECTRO && e2 === Elements.HYDRO)) {
+            return { type: 'ELECTRO-CHARGED', duration: 3.0, damage: 50, color: '#cc00ff' };
+        }
+
+        // FROZEN (Hydro <-> Cryo) -> CC
+        if ((e1 === Elements.HYDRO && e2 === Elements.CRYO) || (e1 === Elements.CRYO && e2 === Elements.HYDRO)) {
+            return { type: 'FROZEN', duration: 3.0, color: '#aaddff' };
+        }
+
+        // SWIRL (Anemo + Pyro/Hydro/Cryo/Electro)
+        if (e1 === Elements.ANEMO || e2 === Elements.ANEMO) {
+            const other = (e1 === Elements.ANEMO) ? e2 : e1;
+            if ([Elements.PYRO, Elements.HYDRO, Elements.CRYO, Elements.ELECTRO].includes(other)) {
+                return { type: 'SWIRL', element: other, isAoE: true, force: 10, color: '#00ffaa' };
+            }
         }
 
         return null;

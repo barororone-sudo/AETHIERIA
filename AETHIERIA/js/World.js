@@ -79,6 +79,7 @@ export class World {
 
         // --- GAMEPLAY OBJECTS ---
         this.interactables = [];
+        this.towers = []; // Early Init for LevelManager
         this.chests = []; // Store Chest instances
         this.generateFogGrid();
         // this.createWall(this.defaultMaterial); // Removed for procedural generation focus
@@ -107,9 +108,9 @@ export class World {
         this.updrafts = [];
 
         // TOWERS
-        this.towers = [];
-        // Force Spawn in Constructor to ensure they exist
-        this.spawnTowers();
+        // Moved to top for initialization order
+        // Handled by LevelManager (Biome Towers)
+        // this.spawnTowers();
 
         // FOREST (Act 2)
         this.generateForest();
@@ -198,91 +199,8 @@ export class World {
     }
 
     spawnTowers() {
-        console.log('[World] Spawning Towers (Natural "Genshin" Distribution)...');
-        // Goal: ~80 Towers (10 per zone). Prioritize HIGH GROUND.
-
-        const ZONES = 8;
-        const TOWERS_PER_ZONE = 10; // Reduced to 1 per biome logic below, but kept var
-
-        this.towers = [];
-
-        // 🌟 FORCE STARTER TOWER (User Request) 🌟
-        // Player spawns at -1000, 50, 0. Put tower nearby at -900, 0.
-        const startX = -900;
-        const startZ = 0;
-        const startY = this.terrainManager.getGlobalHeight(startX, startZ);
-        const starterTower = new Tower(this, startX, startZ, 'tower_starter_01', startY + 0.5);
-        this.towers.push(starterTower);
-        console.log(`[World] 🗼 Spawned STARTER TOWER at (${startX}, ${startY}, ${startZ})`);
-
-        if (this.game.ui && this.game.ui.mapManager) {
-            this.game.ui.mapManager.addTowerIcon(starterTower, 0);
-        }
-
-        console.log('[World] Spawning 10 Biome Towers...');
-        let count = 1;
-
-        // BIOME DEFINITIONS (Matches getBiome logic)
-        // Center Points for each biome (approx)
-        const biomes = [
-            // ROW 0 (North Z < 0) [y=-1000]
-            { name: 'ICE', x: -1600, z: -1000 },
-            { name: 'SNOW', x: -800, z: -1000 },
-            { name: 'AIR', x: 0, z: -1000 },
-            { name: 'LIGHTNING', x: 800, z: -1000 },
-            { name: 'CRYSTAL', x: 1600, z: -1000 },
-
-            // ROW 1 (South Z > 0) [y=1000]
-            { name: 'FOREST', x: -1600, z: 1000 },
-            { name: 'JUNGLE', x: -800, z: 1000 },
-            { name: 'GOLD', x: 0, z: 1000 },
-            { name: 'FIRE', x: 800, z: 1000 },
-            { name: 'LAVA', x: 1600, z: 1000 }
-        ];
-
-        for (const biome of biomes) {
-            let placed = false;
-            let attempts = 0;
-            // Find flat spot near center
-            while (!placed && attempts < 100) {
-                attempts++;
-                // Randomize slightly around center (+- 400)
-                const tx = biome.x + (Math.random() - 0.5) * 800;
-                const tz = biome.z + (Math.random() - 0.5) * 800;
-
-                const ty = this.terrainManager.getGlobalHeight(tx, tz);
-                if (ty < 2.2) continue; // Avoid water (< 1.8)
-
-                // Check Flatness
-                const h1 = this.terrainManager.getGlobalHeight(tx + 5, tz);
-                const h2 = this.terrainManager.getGlobalHeight(tx - 5, tz);
-                const h3 = this.terrainManager.getGlobalHeight(tx, tz + 5);
-                const h4 = this.terrainManager.getGlobalHeight(tx, tz - 5);
-
-                const maxDiff = Math.max(Math.abs(ty - h1), Math.abs(ty - h2), Math.abs(ty - h3), Math.abs(ty - h4));
-
-                if (maxDiff < 8.0) { // Reasonably Flat (Relaxed to 8.0)
-                    // SPAWN IT
-                    const towerId = `tower_${biome.name}`;
-                    const t = new Tower(this, tx, tz, towerId, ty + 0.5);
-                    this.towers.push(t);
-
-                    console.log(`[World] Spawned Tower ${biome.name} at (${tx.toFixed(0)}, ${ty.toFixed(0)}, ${tz.toFixed(0)})`);
-
-                    if (this.game.ui && this.game.ui.mapManager) {
-                        this.game.ui.mapManager.addTowerIcon(t, count);
-                    }
-                    placed = true;
-                    count++;
-                }
-            }
-            if (!placed) console.warn(`[World] Failed to place tower for ${biome.name}`);
-        }
-
-        console.log(`[World] Spawned ${this.towers.length} towers naturally.`);
-        if (this.game.ui) {
-            this.game.ui.showToast(`[DEBUG] Spawned ${this.towers.length} Towers`, 'info');
-        }
+        // DEPRECATED: Handled by LevelManager.spawnBiomeTowers()
+        console.warn("[World] spawnTowers() is deprecated. Using LevelManager.");
     }
 
     spawnRandomChests() {
@@ -501,48 +419,35 @@ export class World {
     }
 
     setupLights() {
-        // EMERGENCY LIGHT
-        const emergencyLight = new THREE.AmbientLight(0xffffff, 1.0);
-        this.scene.add(emergencyLight);
+        // 1️⃣ AMBIENT LIGHT (Global Illumination)
+        // User Request: Intensity 1.5 to ensure terrain is visible
+        this.ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+        this.scene.add(this.ambientLight);
 
-        this.ambientLight = new THREE.AmbientLight(0xffffff, 0.8); // RADICAL FIX: High ambient light
-
-        // SUN - Genshin Impact Quality Shadows
+        // 2️⃣ DIRECTIONAL LIGHT (Sun)
         this.sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
-        this.sunLight.position.set(10, 20, 10);
+        this.sunLight.position.set(50, 100, 50); // High angle
         this.sunLight.castShadow = true;
 
-        // 🌟 High-Resolution Shadow Map (Optimized to Medium 1024)
-        this.sunLight.shadow.mapSize.width = 1024;
-        this.sunLight.shadow.mapSize.height = 1024;
+        // Shadow Settings
+        this.sunLight.shadow.mapSize.width = 2048; // Higher res for debug
+        this.sunLight.shadow.mapSize.height = 2048;
+        this.sunLight.shadow.bias = -0.0005;
+        this.sunLight.shadow.normalBias = 0.05;
 
-        // 🎨 Shadow Quality Settings
-        this.sunLight.shadow.bias = -0.0003; // Removes shadow acne
-        this.sunLight.shadow.normalBias = 0.02; // Better for toon characters
-        this.sunLight.shadow.radius = 2; // Soft shadow edges
-
-        // 📷 Shadow Camera Bounds (Larger coverage)
+        // Shadow Camera
+        const d = 100;
+        this.sunLight.shadow.camera.left = -d;
+        this.sunLight.shadow.camera.right = d;
+        this.sunLight.shadow.camera.top = d;
+        this.sunLight.shadow.camera.bottom = -d;
         this.sunLight.shadow.camera.near = 0.5;
         this.sunLight.shadow.camera.far = 500;
-        this.sunLight.shadow.camera.left = -150;
-        this.sunLight.shadow.camera.right = 150;
-        this.sunLight.shadow.camera.top = 150;
-        this.sunLight.shadow.camera.bottom = -150;
 
-        this.scene.add(this.sunLight);
-        this.scene.add(this.sunLight.target); // Important for following player
+        this.scene.add(this.sunLight.target);
 
-        // MOON - Softer Shadows
-        this.moonLight = new THREE.DirectionalLight(0x4444ff, 0.3);
-        this.moonLight.position.set(-10, -20, -10);
-        this.moonLight.castShadow = true;
-
-        // Moon shadow settings (lower quality for performance)
-        this.moonLight.shadow.mapSize.width = 512;
-        this.moonLight.shadow.mapSize.height = 512;
-        this.moonLight.shadow.bias = -0.0003;
-        this.moonLight.shadow.normalBias = 0.02;
-
+        // 3️⃣ MOON LIGHT (Restored)
+        this.moonLight = new THREE.DirectionalLight(0x6666ff, 0.0); // Starts off (Day)
         this.scene.add(this.moonLight);
         this.scene.add(this.moonLight.target);
     }
@@ -940,18 +845,11 @@ void main() {
         const tower = new Tower(this, x, z, id, y);
         this.towers.push(tower);
         this.interactables.push(tower);
-        const material = new THREE.MeshBasicMaterial({ color: 0xFFD700 });
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.copy(position);
-        mesh.position.y += 0.5;
 
-        this.scene.add(mesh);
-
-        this.loot.push({
-            mesh: mesh,
-            active: true,
-            velocity: new THREE.Vector3(0, 5, 0)
-        });
+        // Add Map Icon
+        if (this.game.ui && this.game.ui.mapManager) {
+            this.game.ui.mapManager.addTowerIcon(tower);
+        }
     }
 
     updateLoot(dt, playerBody) {

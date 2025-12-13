@@ -1223,12 +1223,90 @@ export class Player {
             this.weaponTrail.update(weaponPos);
         }
 
+        if (this.game.ui && this.game.ui.updateStamina) {
+            this.game.ui.updateStamina(this.stamina, this.maxStamina);
+        }
+
         if (this.state === 'AIR' && this.combat && this.combat.isAiming) {
             this.stamina -= dt * 10;
             if (this.stamina <= 0) {
                 this.stamina = 0;
                 this.combat.isAiming = false;
             }
+        }
+
+        // Stamina System
+        this.updateStamina(dt);
+    }
+
+    /**
+     * Raycast for Wall Detection
+     */
+    checkWall() {
+        if (!this.mesh) return false;
+
+        // Re-use internal raycaster or create distinct one
+        const ray = new THREE.Raycaster();
+        const origin = this.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0)); // Chest height
+        const dir = this.getForwardVector();
+        ray.set(origin, dir);
+        ray.far = 1.0; // Close range
+
+        // Filter climbable objects (Terrain, Buildings)
+        // Assuming game.world.physicsMeshes or scene.children
+        const hits = ray.intersectObjects(this.world.scene.children, true);
+
+        if (hits.length > 0) {
+            // Optional: Check tag/name if we want non-climbable walls
+            return true;
+        }
+        return false;
+    }
+
+    updateStamina(dt) {
+        let draining = false;
+
+        // Drain Logic
+        if (this.state === 'CLIMB') {
+            this.stamina -= this.staminaDrainRates.CLIMB * dt;
+            draining = true;
+        } else if (this.state === 'SPRINT' && this.currentSpeed > 1) {
+            this.stamina -= this.staminaDrainRates.SPRINT * dt;
+            draining = true;
+        } else if (this.state === 'GLIDE') {
+            this.stamina -= this.staminaDrainRates.GLIDE * dt;
+            draining = true;
+        } else if (this.state === 'SURF') {
+            this.stamina -= this.staminaDrainRates.SURF * dt;
+            draining = true;
+        } else if (this.state === 'SWIM' && this.currentSpeed > 1) {
+            this.stamina -= this.staminaDrainRates.SWIM * dt;
+            draining = true;
+        }
+
+        // Exhaustion Logic
+        if (this.stamina <= 0) {
+            this.stamina = 0;
+            if (!this.exhausted) {
+                this.exhausted = true;
+                console.log('😫 EXHAUSTED!');
+                // Force exit states
+                if (this.state === 'SPRINT') this.state = 'RUN';
+                if (this.state === 'CLIMB') this.state = 'AIR'; // Fall
+                if (this.state === 'GLIDE') this.state = 'AIR';
+            }
+        }
+
+        // Regen Logic
+        if (!draining) {
+            if (this.exhausted) {
+                // Slower regen when exhausted
+                this.stamina += (this.staminaRegenRate * 0.5) * dt;
+                if (this.stamina >= 30) this.exhausted = false; // Recover at 30%
+            } else {
+                this.stamina += this.staminaRegenRate * dt;
+            }
+            if (this.stamina > this.maxStamina) this.stamina = this.maxStamina;
         }
     }
 
@@ -1256,8 +1334,10 @@ export class Player {
                     this.body.angularVelocity.set(0, 0, 0);
                 }
 
-                if (this.input.keys.forward && !this.exhausted && this.checkWall()) {
+                // CLIMB TRIGGER: Forward + Jump + Wall (and not exhausted)
+                if (this.input.keys.jump && this.input.keys.forward && !this.exhausted && this.checkWall()) {
                     this.state = 'CLIMB';
+                    this.body.velocity.set(0, 0, 0);
                 } else if (!grounded) {
                     this.state = 'AIR';
                 } else if (this.input.keys.jump && !this.exhausted) {
@@ -1312,11 +1392,10 @@ export class Player {
                     if (Date.now() - this.lastJumpTime > 400) {
                         this.state = 'DIVE';
                     }
-                } else if (this.input.keys.forward && !this.exhausted && this.checkWall()) {
-                    // PREVENT RAPID RE-ENTRY IF JUMPING OFF WALL
-                    if (this.hasReleasedJump) {
-                        this.state = 'CLIMB';
-                    }
+                } else if (this.input.keys.forward && this.input.keys.jump && !this.exhausted && this.checkWall()) {
+                    // AIR -> CLIMB transition (Catch wall)
+                    this.state = 'CLIMB';
+                    this.body.velocity.set(0, 0, 0);
                 }
 
                 if (grounded && this.body.velocity.y <= 0) this.state = 'IDLE';
@@ -1345,8 +1424,11 @@ export class Player {
                 // 2. Jump key RELEASED (not held)
                 // 3. Exhausted
                 // 4. Crouch pressed (dive)
+                // 5. Wall Climb
 
-                if (grounded) {
+                if (this.checkWall() && this.input.keys.forward && !this.exhausted) {
+                    this.state = 'CLIMB';
+                } else if (grounded) {
                     console.log('🪂 GLIDE → IDLE (grounded)');
                     this.state = 'IDLE';
                     this.lastJumpTime = Date.now();
@@ -1366,17 +1448,31 @@ export class Player {
                 break;
 
             case 'CLIMB':
-                if (this.exhausted || this.input.keys.jump) {
+                // CLIMB EXIT: Exhausted OR Jump (Wall Jump) OR No Wall
+                if (this.exhausted) {
+                    this.state = 'AIR'; // FALL
+                } else if (this.input.keys.jump && this.hasReleasedJump) {
+                    // Wall Jump Logic? Or just let go? Let's just Jump Up/Back
+                    // Simple: Jump Off
                     this.state = 'AIR';
-                    if (this.input.keys.jump) {
-                        this.body.velocity.y = 6;
-                        this.body.velocity.addScaledVector(this.getForwardVector(), -4);
-                        this.hasReleasedJump = false; // Mark jump as held
-                    }
-                } else if (!this.checkWall()) {
-                    // Check wall again to ensure we don't float
+                    this.body.velocity.y = 8;
+                    const back = this.getForwardVector().negate();
+                    this.body.velocity.addScaledVector(back, 5); // Push back
+                    this.hasReleasedJump = false;
+                }
+
+                // Allow dropping down
+                if (this.input.keys.crouch) {
                     this.state = 'AIR';
                 }
+
+                if (!this.checkWall()) {
+                    // Ledge climb up logic could go here, for now just drop or air
+                    this.state = 'AIR';
+                }
+
+                // Reset release flag if jump released while climbing
+                if (!this.input.keys.jump) this.hasReleasedJump = true;
                 break;
 
             case 'SWIM':
@@ -1498,10 +1594,10 @@ export class Player {
                 break;
 
             case 'GLIDE':
-                console.log('🪂 GLIDE physics active, velocity.y before:', this.body.velocity.y);
+                // console.log('🪂 GLIDE physics active, velocity.y before:', this.body.velocity.y);
                 if (this.body.velocity.y > -2.0) this.body.velocity.y -= 5.0 * dt;
                 else this.body.velocity.y = -2.0;
-                console.log('🪂 GLIDE physics active, velocity.y after:', this.body.velocity.y);
+                // console.log('🪂 GLIDE physics active, velocity.y after:', this.body.velocity.y);
 
                 if (inputLen > 0) {
                     this.body.velocity.x = input.x * 15;
@@ -1524,9 +1620,26 @@ export class Player {
                 break;
 
             case 'CLIMB':
-                this.body.velocity.set(0, 0, 0);
-                if (this.input.keys.forward) this.body.velocity.y = 3;
-                if (this.input.keys.backward) this.body.velocity.y = -3;
+                // DISABLE GRAVITY: Velocity Y is manually controlled
+                this.body.velocity.set(0, 0, 0); // Reset forces
+
+                const climbSpeed = 3.0;
+                if (this.input.keys.forward) this.body.velocity.y = climbSpeed;
+                if (this.input.keys.backward) this.body.velocity.y = -climbSpeed;
+
+                // Horizontal Climb (Strafe) 
+                // This is tricky because "Left" depends on wall normal. 
+                // For now, simple approximation using camera or input vector relative to wall?
+                // Let's just use input.x (Left/Right inputs) transformed by player rotation
+                if (this.input.keys.left) {
+                    // Need to move perpendicular to forward vector
+                    const right = this.getForwardVector().clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
+                    this.body.velocity.addScaledVector(right, -climbSpeed);
+                }
+                if (this.input.keys.right) {
+                    const right = this.getForwardVector().clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
+                    this.body.velocity.addScaledVector(right, climbSpeed);
+                }
                 break;
 
             case 'SWIM':

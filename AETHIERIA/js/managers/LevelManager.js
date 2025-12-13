@@ -19,9 +19,40 @@ export class LevelManager {
     generate() {
         console.log("Generating World Population...");
         this.spawnTutorialChest(); // NOUVEAU: Coffre de tutoriel au spawn
+        this.spawnBiomeTowers();   // New Deterministic Towers
         this.populateCamps();
         this.spawnHiddenChests();
         this.spawnLegendaryChest();
+    }
+
+    spawnBiomeTowers() {
+        console.log("Spawning 10 Biome Towers (Genshin Style)...");
+        // Clear existing if any (handled by World usually, but we ensure cleanliness)
+        if (this.world.towers) this.world.towers = [];
+
+        const biomes = [
+            { name: 'ICE', x: -1600, z: -1050 },      // North-West Center
+            { name: 'SNOW', x: -800, z: -1050 },      // North-West-Central
+            { name: 'AIR', x: 0, z: -1050 },          // North-Center
+            { name: 'LIGHTNING', x: 800, z: -1050 },  // North-East-Central
+            { name: 'CRYSTAL', x: 1600, z: -1050 },   // North-East
+            { name: 'FOREST', x: -1600, z: 1050 },    // South-West
+            { name: 'JUNGLE', x: -800, z: 1050 },     // South-West-Central
+            { name: 'GOLD', x: 0, z: 1050 },          // South-Center
+            { name: 'FIRE', x: 800, z: 1050 },        // South-East-Central
+            { name: 'LAVA', x: 1600, z: 1050 }        // South-East
+        ];
+
+        biomes.forEach(b => {
+            const h = this.terrain ? this.terrain.getGlobalHeight(b.x, b.z) : 0;
+            // Use World's spawnTower helper if available, or create manually
+            // We'll call world.spawnTower which handles the Tower class instantiation
+            if (this.world.spawnTower) {
+                // ID format: tower_BIOME
+                this.world.spawnTower(b.x, b.z, `tower_${b.name}`);
+            }
+        });
+        console.log("[LevelManager] 10 Biome Towers Created.");
     }
 
     populateCamps() {
@@ -48,7 +79,7 @@ export class LevelManager {
             let placed = 0;
             let attempts = 0;
 
-            while (placed < 10 && attempts < 500) {
+            while (placed < 4 && attempts < 500) {
                 attempts++;
 
                 const x = biome.minX + Math.random() * (biome.maxX - biome.minX);

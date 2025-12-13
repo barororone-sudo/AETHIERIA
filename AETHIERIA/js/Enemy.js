@@ -480,8 +480,17 @@ export class Enemy {
 
         console.log("Enemy Defeated!", this.name);
         this.isDead = true;
+        this.element = 'none'; // Clear Status
+        this.elementTimer = 0;
 
-        // 🏕️ Notify world for camp clearing system
+        // UI
+        if (this.hpBar) {
+            // this.world.scene.remove(this.hpBar.mesh); // If HP bar was separate mesh
+            this.hpBar = null;
+        }
+        this.elementIcon = null;
+
+        // 🏕️ Notify world for camp clearing
         if (this.world && this.world.notifyEnemyDeath) {
             this.world.notifyEnemyDeath(this);
         }
@@ -493,17 +502,78 @@ export class Enemy {
 
         // Notify Story
         if (this.game.story) {
-            this.game.story.notify('KILL_ENEMY', this.config.id || this.name); // Prefer ID
+            this.game.story.notify('KILL_ENEMY', this.config.id || this.name);
         }
 
         this.world.scene.remove(this.mesh);
         this.world.physicsWorld.removeBody(this.body);
 
-        // New Loot Logic
+        // Loot
         if (this.game.lootManager) {
             const drops = this.game.lootManager.rollLoot(this);
             if (drops.length > 0) {
                 this.game.lootManager.spawnLoot(this.mesh.position, drops);
+            }
+        }
+    }
+
+    /**
+     * Apply Elemental Status
+     * @param {string} element 
+     */
+    applyElement(element) {
+        if (!element || element === Elements.NONE) return null;
+
+        // Logic
+        const reaction = Chemistry.applyElement(this, element, this.world);
+
+        if (reaction) {
+            // FLOATING TEXT FOR REACTION
+            if (this.game.ui && this.game.ui.showFloatingText) {
+                const pos = this.mesh.position.clone().add(new THREE.Vector3(0, 2.5, 0));
+                this.game.ui.showFloatingText(pos, reaction.type, reaction.color || '#ffffff', 1.5);
+            }
+            return reaction;
+        } else {
+            // New Aura Applied
+            if (this.game.ui && this.game.ui.showFloatingText) {
+                const pos = this.mesh.position.clone().add(new THREE.Vector3(0, 2, 0));
+                let c = '#ffffff';
+                if (element === Elements.PYRO) c = '#ff4400';
+                if (element === Elements.HYDRO) c = '#0044ff';
+                if (element === Elements.CRYO) c = '#00ffff';
+                if (element === Elements.ELECTRO) c = '#cc00ff';
+
+                this.game.ui.showFloatingText(pos, element, c, 1.0);
+            }
+            return null;
+        }
+    }
+
+    update(dt) {
+        if (this.isDead) return;
+
+        // Element Decay
+        if (this.element && this.element !== Elements.NONE) {
+            this.elementTimer = (this.elementTimer || 0) + dt;
+            if (this.elementTimer > 5.0) { // 5 Seconds Aura
+                this.element = Elements.NONE;
+                this.elementTimer = 0;
+            }
+        }
+
+        // State Machine
+        this.updateState(dt);
+        this.updatePhysics(dt);
+
+        if (this.hpBar) {
+            this.hpBar.update(this.mesh.position, this.hp, this.maxHp);
+        }
+
+        // Return Logic if CHASE too far (simple check)
+        if (this.state === 'CHASE' && this.spawnPoint) {
+            if (this.body.position.distanceTo(this.spawnPoint) > 40) {
+                this.state = 'RETURN';
             }
         }
     }

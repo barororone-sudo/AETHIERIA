@@ -595,12 +595,12 @@ export class UIManager {
     showMinimap() { if (this.mapManager) this.mapManager.show(); }
     toggleMap() { if (this.mapManager) this.mapManager.toggleMap(); }
 
-    showDamage(position, amount, isCritical) {
+    showDamage(position, amount, isCritical, colorOverride = null) {
         const el = document.createElement('div');
         el.innerText = Math.floor(amount);
         Object.assign(el.style, {
             position: 'absolute',
-            color: isCritical ? '#FFD700' : 'white',
+            color: colorOverride || (isCritical ? '#FFD700' : 'white'),
             fontSize: isCritical ? '32px' : '20px',
             fontWeight: 'bold',
             textShadow: '0 0 5px black',
@@ -624,6 +624,45 @@ export class UIManager {
             if (isCritical) el.style.transform = 'scale(1.5)';
         });
         setTimeout(() => el.remove(), 1000);
+    }
+
+    /**
+     * Show floating text in 3D space (for Reactions)
+     */
+    showFloatingText(position, text, color = '#ffffff', scale = 1.0) {
+        const el = document.createElement('div');
+        el.innerText = text;
+        Object.assign(el.style, {
+            position: 'absolute',
+            color: color,
+            fontSize: `${20 * scale}px`,
+            fontWeight: 'bold',
+            fontFamily: 'Cinzel, serif',
+            textShadow: '0 0 5px black',
+            pointerEvents: 'none',
+            transition: 'top 1.5s, opacity 1.5s',
+            zIndex: '1000',
+            whiteSpace: 'nowrap'
+        });
+
+        const vector = position.clone();
+        vector.project(this.game.camera);
+        const x = (vector.x * .5 + .5) * window.innerWidth;
+        const y = (-(vector.y * .5) + .5) * window.innerHeight;
+
+        // Center the text
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+        el.style.transform = 'translate(-50%, -50%)';
+
+        document.body.appendChild(el);
+
+        requestAnimationFrame(() => {
+            el.style.top = `${y - 150}px`; // Float higher than damage
+            el.style.opacity = '0';
+            el.style.transform = 'translate(-50%, -50%) scale(1.2)';
+        });
+        setTimeout(() => el.remove(), 1500);
     }
 
     initQuestUI() {

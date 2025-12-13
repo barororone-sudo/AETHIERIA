@@ -59,7 +59,7 @@ export class Combat {
         const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 
         // Store original emissive values (only for materials that support it)
-        const originalEmissive = materials.map(mat => {
+        const originalEmissive = materials.map((/** @type {any} */ mat) => {
             // Skip materials without emissive support
             if (!mat || mat.emissive === undefined) return null;
 
@@ -70,7 +70,7 @@ export class Combat {
         });
 
         // Flash white (only materials with emissive support)
-        materials.forEach((mat, index) => {
+        materials.forEach((/** @type {any} */ mat, /** @type {number} */ index) => {
             if (mat && mat.emissive !== undefined) {
                 mat.emissive.setHex(0xffffff);
                 mat.emissiveIntensity = 10.0;
@@ -79,7 +79,7 @@ export class Combat {
 
         // Revert after 100ms
         setTimeout(() => {
-            materials.forEach((mat, index) => {
+            materials.forEach((/** @type {any} */ mat, /** @type {number} */ index) => {
                 if (mat && mat.emissive !== undefined && originalEmissive[index]) {
                     mat.emissive.copy(originalEmissive[index].color);
                     mat.emissiveIntensity = originalEmissive[index].intensity;
@@ -463,7 +463,29 @@ export class Combat {
                 const isCrit = Math.random() < 0.1;
                 if (isCrit) damage *= 2.0;
 
-                enemy.takeDamage(Math.floor(damage), Elements.NONE);
+                // 🧪 ELEMENTAL REACTION SYSTEM
+                const attackElement = (this.player.equippedWeapon && this.player.equippedWeapon.element) ? this.player.equippedWeapon.element : Elements.NONE;
+                let reactionInfo = null;
+
+                // Check for Reaction if enemy has logic
+                if (attackElement !== Elements.NONE && enemy.applyElement) {
+                    reactionInfo = enemy.applyElement(attackElement);
+                    if (reactionInfo) {
+                        // Handle Amp Multipliers (Melt/Vaporize)
+                        if (reactionInfo.multiplier) {
+                            damage *= reactionInfo.multiplier;
+                            // console.log(`[Combat] Reaction Multiplier x${reactionInfo.multiplier}`);
+                        }
+                        // Handle Flat Bonus Damage (Overload/Superconduct)
+                        if (reactionInfo.damage) {
+                            // Apply separate instance or add? Let's add for simplicity in main hit
+                            damage += reactionInfo.damage;
+                        }
+                    }
+                }
+
+                // Final Damage Deal
+                enemy.takeDamage(Math.floor(damage), attackElement);
 
                 // 🎯 Record hit for THIS swing
                 this.hitEnemies.add(enemyId);
@@ -475,7 +497,15 @@ export class Combat {
                 const hitPos = playerPos.add(direction.clone().multiplyScalar(1.0));
 
                 if (this.player.game.ui && this.player.game.ui.showDamage) {
-                    this.player.game.ui.showDamage(hitPos, Math.floor(damage), isCrit);
+                    // Determine Color: Reaction > Element > Default (White/Yellow Crit)
+                    let dmgColor = '#ffffff';
+                    if (isCrit) dmgColor = '#ffff00';
+                    if (attackElement === Elements.PYRO) dmgColor = '#ff6600';
+                    if (attackElement === Elements.HYDRO) dmgColor = '#0066ff';
+                    if (reactionInfo && reactionInfo.color) dmgColor = reactionInfo.color;
+
+                    // @ts-ignore
+                    this.player.game.ui.showDamage(hitPos, Math.floor(damage), isCrit, dmgColor);
                 }
 
                 // 💥 ADVANCED PARTICLE EFFECTS
@@ -562,7 +592,7 @@ export class Combat {
         });
         const burst = new THREE.Mesh(geo, mat);
         burst.position.copy(this.player.mesh.position);
-        this.player.world.scene.add(burst);
+        if (this.player.world) this.player.world.scene.add(burst);
 
         // Animate: scale + fade
         let time = 0;
@@ -571,7 +601,7 @@ export class Combat {
             if (time > 0.5) {
                 burst.geometry.dispose();
                 burst.material.dispose();
-                this.player.world.scene.remove(burst);
+                if (this.player.world) this.player.world.scene.remove(burst);
                 return;
             }
 
@@ -593,7 +623,8 @@ export class Combat {
      * Apply AOE damage to nearby enemies
      */
     applySkillDamage() {
-        const enemies = this.player.world.enemies || [];
+        /** @type {any[]} */
+        const enemies = (this.player.world && this.player.world.enemies) ? this.player.world.enemies : [];
         const playerPos = this.player.body.position;
         const skillRadius = 5.0;
         const skillDamage = 200;

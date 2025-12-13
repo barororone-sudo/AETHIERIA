@@ -128,13 +128,16 @@ export class MapManager {
         if (this.pendingIcons && this.pendingIcons.length > 0) {
             console.log(`[MapManager] Processing ${this.pendingIcons.length} pending icons...`);
             this.pendingIcons.forEach(p => {
-                if (p.type === 'tower') this.addTowerIcon(p.tower, p.index);
-                // Add handles for other types if needed
-                if (p.type === 'waypoint') this.addWaypointIcon(p.waypoint);
-                if (p.type === 'camp') this.addCampIcon(p.camp);
+                const d = p.data || p; // Handle both wrapper and direct styles if mixed
+                if (p.type === 'tower') this.addTowerIcon(d.tower, d.index);
+                if (p.type === 'waypoint') this.addWaypointIcon(d.waypoint);
+                if (p.type === 'camp') this.addCampIcon(d.camp);
             });
             this.pendingIcons = [];
         }
+
+        // 7. Final Sync with WaypointManager
+        this.syncMapIcons();
     }
 
 
@@ -209,6 +212,35 @@ export class MapManager {
     // --- CORE UPDATE ---
     update(dt) {
         if (!this.game.player || !this.container || !this.content) return;
+
+        // THROTTLE: Update Map Logic at 20 FPS (0.05s) to save CPU
+        this._mapUpdateTimer = (this._mapUpdateTimer || 0) + dt;
+        if (this._mapUpdateTimer < 0.05) return;
+        this._mapUpdateTimer = 0;
+
+        // DEBUG: Dummy Red Square at (0,0) Map Center
+        if (!this.dummyDebug) {
+            this.dummyDebug = document.createElement('div');
+            Object.assign(this.dummyDebug.style, {
+                width: '20px', height: '20px',
+                backgroundColor: 'red', border: '2px solid white',
+                position: 'absolute', top: '50%', left: '50%',
+                transform: 'translate(-50%, -50%)',
+                zIndex: '10000', pointerEvents: 'none',
+                boxShadow: '0 0 10px red'
+            });
+            this.content.appendChild(this.dummyDebug);
+            console.log("DEBUG: Dummy Red Square Added to Map Content at 50%, 50%");
+        }
+
+        // DEBUG LOGS (User Request)
+        this._debugTimer = (this._debugTimer || 0) + dt;
+        if (this._debugTimer > 2.0) { // Log every 2 seconds
+            this._debugTimer = 0;
+            const p = this.game.player.mesh.position;
+            const mapPos = this.worldToMap(p.x, p.z);
+            console.log(`[Map Debug] World: (${p.x.toFixed(1)}, ${p.z.toFixed(1)}) -> Map CSS: (${mapPos.x.toFixed(1)}px, ${mapPos.y.toFixed(1)}px)`);
+        }
 
         // FAILSAFE: Check for missing tower icons once a second
         this._iconCheckTimer = (this._iconCheckTimer || 0) + dt;
@@ -464,43 +496,78 @@ export class MapManager {
         });
     }
 
+    // --- ICON SYNC ---
+    syncMapIcons() {
+        if (!this.game.waypointManager) return;
+
+        console.log('[MapManager] Syncing Map Icons...');
+        const allPoints = this.game.waypointManager.waypoints; // Map<id, data>
+
+        allPoints.forEach((data, id) => {
+            // Check if icon already exists on the OBJECT (linked via WaypointManager)
+            // or if we track it locally.
+            // Actually, let's rely on the IDs or the object reference.
+
+            if (data.type === 'tower') {
+                if (!data.object.icon) {
+                    this.addTowerIcon(data.object);
+                }
+            } else if (data.type === 'waypoint') {
+                if (!data.object.mapIcon) {
+                    this.addWaypointIcon(data.object);
+                }
+            }
+        });
+    }
+
     addTowerIcon(tower, index) {
         if (!this.iconLayer) {
             this.pendingIcons.push({ type: 'tower', tower: tower, index: index });
             return;
         }
 
+        // Avoid duplicates
+        if (tower.icon) return;
+
         const icon = document.createElement('div');
         icon.className = 'map-icon map-icon-tower';
         icon.dataset.towerId = tower.id;
 
-        // VISUALS: Red Square (Locked) -> Blue Square (Unlocked)
+        // VISUALS: Yellow Square (User Request)
         const isUnlocked = tower.isUnlocked;
-        const color = isUnlocked ? '#33ccff' : '#ff0000';
+        // User asked for "Icone de tour jaune". Locked = Red? Unlocked = Yellow?
+        // Let's go Unlocked = Yellow (#FFD700), Locked = Red (#FF0000).
+        const color = isUnlocked ? '#FFD700' : '#FF0000';
 
         Object.assign(icon.style, {
-            width: '20px', height: '20px', // Large Square for Visibility
+            width: '20px', height: '20px', // Large Square
             backgroundColor: color,
             border: '2px solid #ffffff',
-            borderRadius: '2px',
+            borderRadius: '4px',
             position: 'absolute',
             transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))',
-            zIndex: '2000', // Very High priority
+            zIndex: '2000', // Top Priority
             pointerEvents: 'auto',
             cursor: 'pointer',
-            display: 'block' // Always visible
+            display: 'block'
         });
 
         if (isUnlocked) {
-            icon.style.boxShadow = '0 0 15px #00ccff';
+            icon.style.boxShadow = '0 0 15px #FFD700';
         }
 
         this.iconLayer.appendChild(icon);
         tower.icon = icon;
 
         const pos = this.worldToMap(tower.position.x, tower.position.z);
+        // FIX: Ensure absolute position and z-index are strict
+        icon.style.position = 'absolute';
         icon.style.left = `${pos.x}px`;
         icon.style.top = `${pos.y}px`;
+        icon.style.zIndex = '9999'; // Force Z-Index
+
+        // DEBUG: Log Tower Position
+        // console.log(`[MapManager] Added Tower Icon at Map Pos: ${pos.x}, ${pos.y} (World: ${tower.position.x}, ${tower.position.z})`);
 
         // Click handler
         icon.onclick = (e) => {
@@ -516,9 +583,9 @@ export class MapManager {
 
     unlockTower(tower) {
         if (tower.icon) {
-            tower.icon.style.backgroundColor = '#33ccff';
-            tower.icon.style.boxShadow = '0 0 15px #33ccff';
-            tower.icon.style.zIndex = '2010';
+            tower.icon.style.backgroundColor = '#FFD700'; // Yellow
+            tower.icon.style.boxShadow = '0 0 15px #FFD700';
+            tower.icon.style.zIndex = '9999';
             tower.icon.style.pointerEvents = 'auto';
             tower.icon.style.cursor = 'pointer';
         }
@@ -573,7 +640,7 @@ export class MapManager {
             return;
         }
 
-        // console.log('[MapManager] addWaypointIcon:', waypoint.id);
+        if (waypoint.mapIcon) return; // Avoid duplicates
 
         const icon = document.createElement('div');
         icon.className = 'map-icon-waypoint';
@@ -582,18 +649,20 @@ export class MapManager {
         const isUnlocked = this.game.waypointManager && this.game.waypointManager.isUnlocked(waypoint.id);
 
         Object.assign(icon.style, {
-            width: '8px',
-            height: '8px',
+            width: '10px',
+            height: '10px',
             backgroundColor: isUnlocked ? '#33ccff' : '#ff4444', // Blue/Red
-            border: '1px solid white',
+            border: '2px solid white',
             borderRadius: '50%', // Circle
             position: 'absolute',
             transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))',
-            zIndex: '1000',
+            zIndex: '9999', // Above Waypoints
             cursor: isUnlocked ? 'pointer' : 'default',
             pointerEvents: isUnlocked ? 'auto' : 'none',
             boxShadow: isUnlocked ? '0 0 6px #33ccff' : 'none',
-            display: 'none' // Hidden by default, managed by updateWaypointIcons
+            display: 'block' // Always visible now? Or should hidden waypoints be hidden? 
+            // Usually you see locked waypoints on map.
+            // Previous logic hid them. Let's SHOW them as locked.
         });
 
         // Click handler
@@ -615,7 +684,7 @@ export class MapManager {
 
     addCampIcon(camp) {
         if (!this.iconLayer) {
-            console.warn("[MapManager] Icon layer not ready, cannot add camp icon.");
+            this.pendingIcons.push({ type: 'camp', data: { camp } });
             return;
         }
 

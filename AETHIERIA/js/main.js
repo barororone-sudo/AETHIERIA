@@ -360,10 +360,8 @@ export class Game {
         } catch (e) { }
 
         // Render
-        if (this.composer) {
-            this.composer.render();
-        } else if (this.world) {
-            this.renderer.instance.render(this.world.scene, this.camera);
+        if (this.world) {
+            this.renderer.render(this.world.scene, this.camera);
         }
     }
 
@@ -373,9 +371,8 @@ export class Game {
             this.renderer.instance.dispose();
             this.renderer.instance.forceContextLoss();
         }
-        if (this.composer) {
-            this.composer.dispose();
-        }
+        // Renderer disposes composer internally if we added a dispose method there, 
+        // but for now we rely on Garbage Collection as Renderer manages it.
         if (this.world) {
             this.world.scene.traverse((object) => {
                 // @ts-ignore
