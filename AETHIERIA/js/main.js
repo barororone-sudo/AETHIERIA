@@ -141,8 +141,10 @@ export class Game {
 
             // AUTO-FIX: Force Spawn if missing
             setTimeout(() => {
+                // @ts-ignore
                 if (window.forceSpawn) {
                     console.log("Auto-running forceSpawn...");
+                    // @ts-ignore
                     window.forceSpawn();
                 }
             }, 3000);

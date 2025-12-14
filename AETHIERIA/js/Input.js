@@ -15,6 +15,7 @@ export class Input {
             confirm: false,
             p: false,
             map: false,
+            journal: false,
             lock: false
         };
 
@@ -24,6 +25,8 @@ export class Input {
         this.lastJumpTime = 0;
         this.jumpTapCount = 0;
         this.onToggleMap = null; // Callback for Map Toggle
+
+        this.frozen = false; // Input Lock for Cutscenes
     }
 
     init() {
@@ -93,6 +96,10 @@ export class Input {
                 break;
             case 'KeyP':
                 this.keys.p = isDown;
+                break;
+            case 'KeyJ':
+                this.keys.journal = isDown;
+                if (!isDown && this.onToggleJournal) this.onToggleJournal();
                 break;
             case 'Enter':
                 this.keys.confirm = isDown;

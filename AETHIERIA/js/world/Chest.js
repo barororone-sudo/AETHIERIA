@@ -10,24 +10,44 @@ export class Chest {
      * @param {THREE.Vector3} position
      * @param {number} tier 1=Common, 2=Exquisite, 3=Precious, 4=Legendary
      * @param {boolean} locked
+     * @param {string} id Unique Persistence ID
      */
-    constructor(game, world, position, tier = 1, locked = false) {
+    constructor(game, world, position, tier = 1, locked = false, id = null) {
         this.game = game;
         this.world = world;
         this.position = position;
         this.tier = tier;
         this.locked = locked;
+        this.id = id || `chest_${Math.floor(position.x)}_${Math.floor(position.z)}`; // Fallback ID
+
         this.interactionRadius = 4.0;
         this.isOpen = false;
+
+        // Check Persistence
+        if (this.game.saveManager && this.game.saveManager.checkFlag(this.id)) {
+            this.isOpen = true;
+            this.locked = false; // Cannot be locked if already opened
+        }
 
         this.initVisuals();
         this.initPhysics();
         this.initUI();
+
+        // Register for interaction
+        if (this.world && this.world.interactables) {
+            this.world.interactables.push(this);
+            console.log(`[Chest] Registered chest ${this.id} for interaction`);
+        }
     }
 
     initVisuals() {
-        if (this.world.interactables) {
-            this.world.interactables.push(this);
+        // Initial State (Visuals)
+        if (this.isOpen) {
+            // Already opened (Loaded from save)
+            this.lidGroup.rotation.x = -Math.PI / 1.5;
+            if (this.lockMesh) this.lockMesh.visible = false;
+            if (this.pillar) this.pillar.visible = false;
+            if (this.aura) this.aura.visible = false;
         }
         this.mesh = new THREE.Group();
         this.mesh.position.copy(this.position);
@@ -158,6 +178,7 @@ export class Chest {
     }
 
     interact() {
+        console.log(`[Chest] Interacting with chest ${this.id}`);
         if (this.isOpen) {
             if (this.game.ui && this.game.ui.showToast) {
                 this.game.ui.showToast("Coffre déjà ouvert", 'info');
@@ -218,6 +239,9 @@ export class Chest {
 
     open() {
         this.isOpen = true;
+        if (this.game.saveManager) {
+            this.game.saveManager.setFlag(this.id, true);
+        }
         this.indicator.style.display = 'none';
         if (this.pillar) this.pillar.visible = false;
 
@@ -286,5 +310,26 @@ export class Chest {
             }
         };
         anim();
+    }
+
+    dispose() {
+        if (this.indicator && this.indicator.parentNode) {
+            this.indicator.parentNode.removeChild(this.indicator);
+        }
+        if (this.mesh) {
+            this.world.scene.remove(this.mesh);
+            // Traverse and dispose geometries/materials if needed?
+        }
+        if (this.body) {
+            this.world.physicsWorld.removeBody(this.body);
+        }
+
+        // Remove from interactables
+        if (this.world && this.world.interactables) {
+            const idx = this.world.interactables.indexOf(this);
+            if (idx > -1) {
+                this.world.interactables.splice(idx, 1);
+            }
+        }
     }
 }

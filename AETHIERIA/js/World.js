@@ -161,7 +161,8 @@ export class World {
             await new Promise(r => setTimeout(r, 10)); // Yield
 
             // 2b. Spawn Random Loot Chests
-            this.spawnRandomChests();
+            // 2b. Spawn Biome Loot Chests
+            this.spawnBiomeChests();
             await new Promise(r => setTimeout(r, 10));
 
             // 3. Generate Forest
@@ -213,48 +214,80 @@ export class World {
         console.warn("[World] spawnTowers() is deprecated. Using LevelManager.");
     }
 
-    spawnRandomChests() {
-        console.log('[World] Spawning Random Chests...');
-        const count = 60;
-        const range = 600; // Map radius roughly
+    spawnBiomeChests() {
+        console.log('[World] Spawning Biome-Distributed Chests (15 per Biome)...');
 
-        for (let i = 0; i < count; i++) {
-            const x = (Math.random() - 0.5) * 2 * range;
-            const z = (Math.random() - 0.5) * 2 * range;
+        const biomes = [
+            { name: 'FOREST', angleStart: 0, angleEnd: 360, minR: 50, maxR: 250, count: 10 }, // Central Forest
+            { name: 'JUNGLE', angleStart: -20, angleEnd: 20, minR: 300, maxR: 1800, count: 15 },
+            { name: 'GOLD', angleStart: 20, angleEnd: 60, minR: 300, maxR: 1800, count: 15 },
+            { name: 'LAVA', angleStart: 60, angleEnd: 100, minR: 300, maxR: 1800, count: 15 },
+            { name: 'FIRE', angleStart: 100, angleEnd: 140, minR: 300, maxR: 1800, count: 15 },
+            { name: 'CRYSTAL', angleStart: 140, angleEnd: 180, minR: 300, maxR: 1800, count: 15 },
+            { name: 'LIGHTNING', angleStart: 180, angleEnd: 220, minR: 300, maxR: 1800, count: 15 },
+            { name: 'AIR', angleStart: 220, angleEnd: 260, minR: 300, maxR: 1800, count: 15 },
+            { name: 'ICE', angleStart: 260, angleEnd: 300, minR: 300, maxR: 1800, count: 15 },
+            { name: 'SNOW', angleStart: 300, angleEnd: 340, minR: 300, maxR: 1800, count: 15 }
+        ];
 
-            let y = this.getSafeHeight(x, z) + 1.0; // +1m Safety Offset
+        let totalSpawned = 0;
 
-            // Don't spawn underwater
-            if (y < 2.5 && y < 50) continue;
+        biomes.forEach(biome => {
+            for (let i = 0; i < biome.count; i++) {
+                // Random Polar Coordinates in Sector
+                // Convert angle to Radians
+                // Handle wrap around for angles > 360 or < 0? 
+                // Using simple linear mapping for sectors
 
-            // Calculate Difficulty / Tier
-            // Further away = Harder
-            // Higher up (Mountain) = Harder
-            const dist = Math.sqrt(x * x + z * z);
+                let range = biome.angleEnd - biome.angleStart;
+                let start = biome.angleStart;
 
-            // Formula: Base 1. + Distance Bonus (0-2) + Height Bonus (0-2)
-            let tierScore = 1 + (dist / 400) + (y / 30);
+                // Special case for Forest (Full Circle)
+                if (biome.name === 'FOREST') {
+                    range = 360;
+                    start = 0;
+                }
 
-            let tier = Math.floor(tierScore);
-            // Clamp 1-4
-            if (tier < 1) tier = 1;
-            if (tier > 4) tier = 4;
+                const angleDeg = start + Math.random() * range;
+                const angleRad = angleDeg * (Math.PI / 180);
 
-            // Cap legendaries to rare spots
-            if (tier === 4 && Math.random() > 0.3) tier = 3;
+                const dist = biome.minR + Math.random() * (biome.maxR - biome.minR);
 
-            // Create Chest
-            const chest = new Chest(this.game, this, new THREE.Vector3(x, y, z), tier);
+                const x = Math.cos(angleRad) * dist;
+                const z = Math.sin(angleRad) * dist;
 
-            // 20% Chance to be locked if Tier > 2
-            if (tier >= 2 && Math.random() < 0.2) {
-                chest.locked = true;
-                chest.lockMat.color.setHex(0xFF0000);
+                let y = this.getSafeHeight(x, z);
+
+                // Water Check (Skip underwater mostly, except specialized)
+                if (y < 2.5) continue;
+
+                y += 0.5; // Sit on ground
+
+                // Tier Logic (Distance Based)
+                let tier = 1;
+                if (dist > 600) tier = 2;
+                if (dist > 1200) tier = 3;
+                if (dist > 1600 && Math.random() > 0.5) tier = 4; // Legendary at edges
+
+                // ID for Persistence
+                const chestId = `chest_${biome.name}_${i}`;
+
+                // Create Chest
+                const chest = new Chest(this.game, this, new THREE.Vector3(x, y, z), tier, false, chestId);
+
+                // Lock Logic (Tier 3+ has high chance), unless ALREADY OPEN (handled by Chest constructor)
+                // We check locked state here for NEW chests, but Chest constructor overrides if isOpen is true.
+                if (!chest.isOpen && tier >= 3 && Math.random() < 0.4) {
+                    chest.locked = true;
+                    chest.lockMat.color.setHex(0xFF0000);
+                }
+
+                this.chests.push(chest);
+                totalSpawned++;
             }
+        });
 
-            this.chests.push(chest);
-        }
-        console.log(`[World] Spawned ${this.chests.length} randomized chests.`);
+        console.log(`[World] Spawned ${totalSpawned} chests across ${biomes.length} biomes.`);
     }
 
     generateForest() {

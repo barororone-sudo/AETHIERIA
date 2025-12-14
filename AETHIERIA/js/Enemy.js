@@ -42,11 +42,14 @@ export class Enemy {
         this.element = Elements.NONE;
 
         // State Machine
-        this.state = 'IDLE'; // IDLE, PATROL, ALERT, CHASE, ATTACK, RETURN
+        this.state = 'IDLE'; // IDLE, PATROL, ALERT, CHASE, ATTACK, RETURN, PREP, STUNNED
+        this.isInvulnerable = false; // For Leash/Return
+
         this.timers = {
             state: 0,
             attack: 0,
-            path: 0
+            path: 0,
+            stun: 0 // New Stun Timer
         };
 
         this.spawnPoint = position.clone();
@@ -231,10 +234,16 @@ export class Enemy {
             case 'CHASE':
                 this.updateChase(dt, player, distToPlayer);
                 break;
+            case 'PREP': // ⚠️ Telegraph Phase
+                this.updatePrep(dt, player, distToPlayer);
+                break;
             case 'ATTACK':
                 this.updateAttack(dt, player, distToPlayer);
                 break;
-            case 'RETURN':
+            case 'STUNNED': // 💫 Hit Stun
+                this.updateStunned(dt);
+                break;
+            case 'RETURN': // 🛡️ Leash Return
                 this.updateReturn(dt, player, distToPlayer);
                 break;
         }
@@ -292,10 +301,12 @@ export class Enemy {
     }
 
     updateChase(dt, player, dist) {
-        // Leash Check: Return to spawn if too far
-        if (this.body.position.distanceTo(this.spawnPoint) > 40) {
+        // 🛡️ Leash Check: Return to spawn if too far (>40m)
+        if (this.spawnPoint && this.body.position.distanceTo(this.spawnPoint) > 40) {
             this.state = 'RETURN';
-            this.timers.state = 5.0; // Heal
+            this.timers.state = 2.0;
+            this.isInvulnerable = true; // Enable God Mode
+            this.showEmote('💢'); // Angry/Reset emote
             return;
         }
 
@@ -320,10 +331,13 @@ export class Enemy {
         if (dist > attackRange) {
             this.moveTowards(player.body.position, this.speed);
         } else {
-            // In Range -> ATTACK
+            // In Range -> PREP (Telegraph) instead of direct ATTACK
             if (this.timers.attack <= 0) {
-                this.state = 'ATTACK';
-                this.timers.state = 0.5; // Windup
+                this.state = 'PREP';
+                this.timers.state = 0.5; // 0.5s Telegraph Duration
+
+                // 🔴 Visual Telegraph: Flash Red
+                this.flashColor(0xFF0000, 500);
             } else {
                 // Wait/Strafe
                 this.body.velocity.set(0, 0, 0);
@@ -332,51 +346,36 @@ export class Enemy {
         }
     }
 
-    updateAttack(dt, player, dist) {
-        // 1. Windup (timers.state > 0)
-        // 2. Strike (transition)
-        // 3. Cooldown
-
+    updatePrep(dt, player, dist) {
+        // Stop moving during telegraph
         this.body.velocity.set(0, 0, 0);
         this.lookAt(player.mesh.position);
 
-        const attackRange = this.config.ai?.attackRange || 2.0; // Define attackRange here
+        if (this.timers.state <= 0) {
+            this.state = 'ATTACK';
+            this.timers.state = 0.2; // Quick strike duration
+            this.timers.attack = 2.0; // Cooldown for next time
+        }
+    }
 
+    updateAttack(dt, player, dist) {
+        this.body.velocity.set(0, 0, 0);
+
+        // Execute Attack Logic (Instant or Animated)
+        // For now, instant hit check at start of frame
         if (this.timers.state > 0) {
-            // Telegraph visual
-            if (!this.telegraphMesh) {
-                const geo = new THREE.CircleGeometry(attackRange * 0.8, 32); // Use attackRange
-                const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
-                this.telegraphMesh = new THREE.Mesh(geo, mat);
-                this.telegraphMesh.rotation.x = -Math.PI / 2;
-                this.telegraphMesh.position.y = 0.1;
-                this.mesh.add(this.telegraphMesh); // Attach to enemy or world? 
-                // Enemy moves, telegraph usually follows or stays?
-                // For simplicity, attach to enemy (frontal cone/area).
-                this.telegraphMesh.position.z = attackRange * 0.5; // Use attackRange
-            }
-            // Pulse opacity?
-            this.telegraphMesh.material.opacity = 0.3 + Math.sin(Date.now() * 0.02) * 0.2;
-
+            // Doing attack animation...
         } else {
-            // DO ATTACK
-            if (this.telegraphMesh) {
-                this.telegraphMesh.geometry.dispose();
-                this.telegraphMesh.material.dispose();
-                this.mesh.remove(this.telegraphMesh);
-                this.telegraphMesh = null;
-            }
-
+            // Finish Attack
+            const attackRange = this.config.ai?.attackRange || 2.0;
             console.log(`${this.name} attacks!`);
 
-            // Check Hit (Cone/Area)
-            // Just distance for now
-            if (dist <= attackRange * 1.5) { // Use attackRange
+            // Check Hit
+            if (dist <= attackRange * 1.5) {
                 if (player.takeDamage) player.takeDamage(this.damageVal);
             }
 
-            this.state = 'CHASE'; // Back to Engage
-            this.timers.attack = 2.0; // 2s Cooldown
+            this.state = 'CHASE';
         }
     }
 
@@ -430,6 +429,12 @@ export class Enemy {
     }
 
     takeDamage(amount, element, isWeakPoint) {
+        // 🛡️ Invulnerable Check (Leash)
+        if (this.isInvulnerable) {
+            this.game.ui.showToast("Immunisé !", "info");
+            return;
+        }
+
         // Shield Logic (Orc)
         if (this.config.id === 'orc_warrior' && this.world.game.player) {
             const player = this.world.game.player;
@@ -438,12 +443,25 @@ export class Enemy {
             if (forward.dot(toPlayer) > 0.5) { // Facing player
                 console.log("BLOCKED!");
                 amount *= 0.2; // 80% Reduction
-                // Play clang sound?
             }
         }
 
-        const finalDamage = amount; // Simplified for now
+        const finalDamage = amount;
         this.hp -= finalDamage;
+
+        // 💫 Hit Stun Logic
+        // Interrupt Attack/Prep
+        if (this.state === 'ATTACK' || this.state === 'PREP' || this.state === 'CHASE') {
+            this.state = 'STUNNED';
+            this.timers.stun = 0.5; // Stun duration
+            // Cancel telegraph
+            if (this.telegraphMesh) {
+                this.telegraphMesh.geometry.dispose();
+                this.telegraphMesh.material.dispose();
+                this.mesh.remove(this.telegraphMesh);
+                this.telegraphMesh = null;
+            }
+        }
 
         // --- VFX: Damage Numbers ---
         if (this.game.combatUI && this.mesh) {
@@ -458,25 +476,8 @@ export class Enemy {
             this.game.particles.emit(this.mesh.position, pType, 5);
         }
 
-        // Reaction
-        if (this.state === 'IDLE' || this.state === 'PATROL') {
-            this.state = 'ALERT';
-            this.timers.state = 0.0; // Instant alert
-        }
-
-        // Flash Red visual (Group Compatible)
-        if (this.mesh) {
-            this.mesh.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    const mat = Array.isArray(child.material) ? child.material[0] : child.material;
-                    if (mat && mat.color) {
-                        if (!mat.userData.oldColor) mat.userData.oldColor = mat.color.getHex();
-                        mat.color.setHex(0xffffff);
-                        setTimeout(() => { if (mat.userData.oldColor !== undefined) mat.color.setHex(mat.userData.oldColor); }, 100);
-                    }
-                }
-            });
-        }
+        // Flash Red visual
+        this.flashColor(0xFFFFFF, 100);
 
         if (this.hp <= 0) this.die();
     }
@@ -593,18 +594,47 @@ export class Enemy {
 
     // --- NEW BEHAVIORS ---
 
+    updateStunned(dt) {
+        // Paused state
+        if (this.timers.stun <= 0) {
+            this.state = 'CHASE'; // Recover
+            // Maybe temporary immunity to stun?
+        } else {
+            this.timers.stun -= dt;
+            this.body.velocity.set(0, 0, 0); // Stop moving
+        }
+    }
+
+    flashColor(hex, duration = 100) {
+        if (!this.mesh) return;
+        this.mesh.traverse((child) => {
+            if (child.isMesh && child.material) {
+                const mat = Array.isArray(child.material) ? child.material[0] : child.material;
+                if (mat && mat.color) {
+                    if (mat.userData.oldColor === undefined) mat.userData.oldColor = mat.color.getHex();
+                    mat.color.setHex(hex);
+                    setTimeout(() => {
+                        if (mat.userData.oldColor !== undefined) mat.color.setHex(mat.userData.oldColor);
+                    }, duration);
+                }
+            }
+        });
+    }
+
     updateReturn(dt, player, dist) {
         // Run fast to spawn
         const speed = this.speed * 2.0; // Sprint
         this.moveTowards(this.spawnPoint, speed);
 
-        // Invincible logic should be checked in takeDamage
-        this.hp = Math.min(this.hp + (this.maxHp * 0.1 * dt), this.maxHp); // 10% HP/sec
+        // Rapid Heal
+        this.hp = Math.min(this.hp + (this.maxHp * 0.5 * dt), this.maxHp); // 50% HP/sec
 
         if (this.body.position.distanceTo(this.spawnPoint) < 1.0) {
             this.state = 'IDLE';
             this.hp = this.maxHp;
             this.timers.state = 2.0;
+            this.isInvulnerable = false; // Disable God Mode
+            this.showEmote('✅');
         }
     }
 

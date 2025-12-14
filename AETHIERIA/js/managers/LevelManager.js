@@ -21,6 +21,7 @@ export class LevelManager {
         this.generatedObjects = [];
 
         // EXPOSE FORCE SPAWN GLOBAL
+        // @ts-ignore
         window.forceSpawn = () => {
             console.warn("FORCE SPAWNING WORLD...");
             this.spawnBiomeTowers();
@@ -180,9 +181,16 @@ export class LevelManager {
     }
 
     spawnDecorations() {
-        console.log("Initializing Dynamic Decoration System...");
+        console.log("Initializing Dynamic Decoration System (InstancedMesh)...");
+        // Use the optimized ForestGenerator instead of SceneDecorationManager
         if (!this.decorManager) {
-            this.decorManager = new SceneDecorationManager(this.world);
+            if (this.world.forest) {
+                this.decorManager = this.world.forest;
+            } else {
+                // Should be instantiated by World, but just in case (Circular dep risk if imported?)
+                // Use World reference if possible
+                console.warn("World.forest not found, decorations might fail.");
+            }
         }
         // No pre-population. Dynamic Streaming only.
     }
@@ -216,13 +224,16 @@ export class LevelManager {
         // Cleanup Far Chunks (Simple garbage collection)
         // Ideally this should be more efficient, but Map iteration is okay-ish.
         // Let's do it every 60 frames?
+        // Cleanup Far Chunks (Simple garbage collection)
         if (Math.random() < 0.05) { // Occasional cleanup
-            for (const [key, objects] of this.decorManager.activeChunks) {
-                const [sx, sz] = key.split(',').map(Number);
-                const distSq = (sx - playerPos.x) ** 2 + (sz - playerPos.z) ** 2;
+            if (this.decorManager && this.decorManager.activeChunks) {
+                for (const [key, objects] of this.decorManager.activeChunks) {
+                    const [sx, sz] = key.split(',').map(Number);
+                    const distSq = (sx - playerPos.x) ** 2 + (sz - playerPos.z) ** 2;
 
-                if (distSq > (VIEW_DIST * CHUNK_SIZE + 100) ** 2) {
-                    this.decorManager.unloadChunk(sx, sz);
+                    if (distSq > (VIEW_DIST * CHUNK_SIZE + 100) ** 2) {
+                        this.decorManager.unloadChunk(sx, sz);
+                    }
                 }
             }
         }

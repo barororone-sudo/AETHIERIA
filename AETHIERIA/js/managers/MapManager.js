@@ -639,17 +639,15 @@ export class MapManager {
             }
         } else {
             // RADIAL SECTOR (Wedge)
-            let angle = Math.atan2(z, x); // -PI to PI
-            // Normalize to positive 0-2PI for easier math logic if needed, but atan2 is fine.
+            // Fix: Center the wedge on the Tower's actual angle (No snapping to grid)
+            const centerAngle = Math.atan2(z, x);
 
-            // Snap to nearest 40-degree sector (9 biomes)
+            // 9 Biomes = 40 degrees sector size
             const sectorSize = (Math.PI * 2) / 9;
-            const sectorIndex = Math.round(angle / sectorSize);
-            const centerAngle = sectorIndex * sectorSize;
 
-            // Define Wedge
-            const startAngle = centerAngle - sectorSize / 2 - 0.1; // Overlap
-            const endAngle = centerAngle + sectorSize / 2 + 0.1;
+            // Define Wedge centered on the input position
+            const startAngle = centerAngle - sectorSize / 2 - 0.05; // Reduced overlap 0.1 -> 0.05
+            const endAngle = centerAngle + sectorSize / 2 + 0.05;
             const innerR = 600 * this.scale;
             const outerR = 3000 * this.scale;
 

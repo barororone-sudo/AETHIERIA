@@ -1314,7 +1314,17 @@ export class Player {
      */
     handleState(dt) {
         const grounded = this.checkGround();
-        const input = this.getInputVector();
+        // Cutscene Freeze: Force input to zero
+        let input = new THREE.Vector3(0, 0, 0);
+        if (!this.game.isCutscene && !this.input.frozen) {
+            const rawInput = this.getInputVector();
+            if (isNaN(rawInput.x) || isNaN(rawInput.y) || isNaN(rawInput.z)) {
+                console.warn("[Player] NaN Input Vector detected! Resetting to 0.");
+                input.set(0, 0, 0);
+            } else {
+                input.copy(rawInput);
+            }
+        }
         const speed = input.length();
 
         if (this.mesh && this.mesh.position.y < 1.3 && !grounded && this.state !== 'SWIM') {
@@ -2317,10 +2327,24 @@ export class Player {
      */
     checkSanity(label) {
         if (!this.body) return;
-        if (isNaN(this.body.position.y)) {
-            console.warn("NaN Physics detected", label);
-            this.body.position.set(0, 50, 0);
+
+        // Position Check
+        if (isNaN(this.body.position.y) || isNaN(this.body.position.x) || isNaN(this.body.position.z)) {
+            console.warn(`[Physics] NaN Position detected (${label}) - Resetting`);
+            this.body.position.set(0, 50, 0); // Safety Respawn
             this.body.velocity.set(0, 0, 0);
+        }
+
+        // Velocity Check
+        if (isNaN(this.body.velocity.x) || isNaN(this.body.velocity.y) || isNaN(this.body.velocity.z)) {
+            console.warn(`[Physics] NaN Velocity detected (${label}) - Resetting`);
+            this.body.velocity.set(0, 0, 0);
+        }
+
+        // Camera Lag Check
+        if (this.cameraLagPos && (isNaN(this.cameraLagPos.x) || isNaN(this.cameraLagPos.y) || isNaN(this.cameraLagPos.z))) {
+            console.warn(`[Physics] NaN CameraLag detected (${label}) - Resetting`);
+            this.cameraLagPos.copy(this.body.position).add(new THREE.Vector3(0, 5, 5));
         }
     }
 
@@ -2640,13 +2664,51 @@ export class Player {
         // Update UI
         if (this.game.ui) {
             this.game.ui.updateHealth(0, this.maxHp);
+            this.game.ui.showGameOver();
         }
 
-        // Trigger game over after delay
-        setTimeout(() => {
-            if (this.game && this.game.triggerGameOver) {
-                this.game.triggerGameOver();
+        // Trigger Respawn Sequence
+        setTimeout(async () => {
+            // 1. Determine Respawn Point
+            const saveMgr = this.game.saveManager;
+            const wpMgr = this.game.waypointManager;
+            let targetPos = new THREE.Vector3(20, 60, 0); // Default Spawn
+
+            if (saveMgr && saveMgr.lastVisitedCheckpoint && wpMgr) {
+                const wpId = saveMgr.lastVisitedCheckpoint;
+                const wp = wpMgr.waypoints.get(wpId);
+                if (wp) {
+                    targetPos.set(wp.x, wp.y + 2, wp.z);
+                    console.log(`🔄 Respawning at Checkpoint: ${wpId}`);
+                }
+            } else {
+                console.log(`⚠️ No checkpoint found. Respawning at Default.`);
             }
-        }, 1500); // 1.5s delay for dramatic effect
+
+            // 2. Teleport
+            this.body.position.set(targetPos.x, targetPos.y, targetPos.z);
+            this.body.velocity.set(0, 0, 0);
+
+            // Force Terrain Update so we don't fall through
+            if (this.world.terrainManager) {
+                this.world.terrainManager.update(this.body.position);
+            }
+            // Align mesh
+            this.mesh.position.copy(this.body.position);
+
+            // 3. Restore Stats
+            this.hp = this.maxHp;
+            this.stamina = this.maxStamina;
+            this.state = 'IDLE';
+            this.game.ui.updateHealth(this.hp, this.maxHp);
+            this.game.ui.updateStamina(this.stamina, this.maxStamina);
+
+            // 4. Hide Game Over
+            if (this.game.ui) {
+                this.game.ui.hideGameOver();
+                this.game.ui.showToast("Vous avez été ressuscité !", "info");
+            }
+
+        }, 3000); // 3 Seconds Delay
     }
 }

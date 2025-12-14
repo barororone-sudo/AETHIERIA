@@ -6,6 +6,8 @@ export class SaveManager {
         this.currentSlotId = 1;
         this.baseKey = 'AETHIERIA_SAVE_SLOT_';
         this.startTime = null; // Pour tracking du temps de jeu
+        this.flags = {}; // General persistence flags (Chests, Dialogues, One-time events)
+        this.lastVisitedCheckpoint = null; // 📍 Respawn Point
 
         // Auto-save every 60s
         setInterval(() => {
@@ -20,6 +22,16 @@ export class SaveManager {
                 this.save();
             }
         });
+    }
+
+    checkFlag(id) {
+        if (!this.flags) this.flags = {};
+        return !!this.flags[id];
+    }
+
+    setFlag(id, value) {
+        if (!this.flags) this.flags = {};
+        this.flags[id] = value;
     }
 
     /**
@@ -103,9 +115,11 @@ export class SaveManager {
                 level: player.level,
                 exp: player.exp
             },
+            flags: this.flags,
             worldGen: (this.game.world && this.game.world.levelManager) ? this.game.world.levelManager.getData() : { camps: [] },
             story: this.game.story ? this.game.story.getData() : { state: 'START' },
             quests: this.game.questManager ? this.game.questManager.getData() : { activeQuests: [], completedQuests: [] },
+            lastVisitedCheckpoint: this.lastVisitedCheckpoint,
             world: {
                 time: this.game.world.time,
                 fog: this.game.world.fogGrid ?
@@ -154,6 +168,8 @@ export class SaveManager {
             }
 
             const data = JSON.parse(dataStr);
+            this.flags = data.flags || {};
+            this.lastVisitedCheckpoint = data.lastVisitedCheckpoint || null;
             const player = this.game.player;
 
             // Restore Position

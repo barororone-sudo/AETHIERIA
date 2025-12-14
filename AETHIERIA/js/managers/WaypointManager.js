@@ -26,6 +26,18 @@ export class WaypointManager {
     }
 
     /**
+     * Set the current respawn checkpoint
+     * @param {string} id
+     */
+    setCheckpoint(id) {
+        if (this.game.saveManager) {
+            this.game.saveManager.lastVisitedCheckpoint = id;
+            this.game.saveManager.save();
+            console.log(`📍 Checkpoint Saved: ${id}`);
+        }
+    }
+
+    /**
      * Unlock a waypoint
      * @param {string} id 
      */
@@ -37,6 +49,7 @@ export class WaypointManager {
 
         this.unlockedPoints.add(id);
         console.log(`[WaypointManager] Unlocked: ${id}`);
+        this.setCheckpoint(id);
 
         // Visual/Audio Feedback
         if (this.game.ui) {

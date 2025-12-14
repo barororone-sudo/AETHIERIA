@@ -47,18 +47,29 @@ export class UIManager {
                 position: fixed;
                 top: 0; left: 0;
                 width: 100%; height: 100%;
-                background: rgba(0, 0, 0, 0.85);
-                backdrop-filter: blur(5px);
-                z-index: 5000;
+                background: rgba(0, 0, 0, 0.85); /* Overlay Dim */
+                z-index: 2000;
                 justify-content: center;
                 align-items: center;
+                border: none; /* No border on overlay */
+            }
+            #pause-menu.visible {
+                display: flex;
             }
             .pause-menu-container {
                 display: flex;
+                flex-direction: row; /* Side by side */
                 gap: 50px;
-                width: 80%;
-                max-width: 1000px;
-                height: 70%;
+                width: 80vw;
+                height: 80vh;
+                min-width: 800px;
+                min-height: 600px;
+                background: rgba(20, 20, 25, 0.95);
+                padding: 40px;
+                border-radius: 15px;
+                color: white;
+                border: 3px solid #8b4513; /* The ONE border */
+                box-shadow: 0 0 50px rgba(0,0,0,0.8);
             }
             /* Tabs */
             .inventory-tabs {
@@ -90,16 +101,16 @@ export class UIManager {
             /* Grid */
             #inventory-grid {
                 display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+                grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); /* Bigger slots */
                 gap: 10px;
                 padding: 10px;
                 background: rgba(0,0,0,0.3);
                 border-radius: 5px;
                 overflow-y: auto;
-                max-height: 400px;
+                flex: 1; /* Fill remaining space */
             }
             .inventory-slot {
-                width: 64px; height: 64px;
+                width: 80px; height: 80px;
                 background: rgba(255,255,255,0.05);
                 border: 2px solid #555;
                 display: flex;
@@ -360,7 +371,15 @@ export class UIManager {
             if (e.code === 'KeyM') {
                 this.toggleMap();
             }
+            if (e.code === 'KeyJ') {
+                this.toggleQuestJournal();
+            }
         });
+
+        // Sync with Input Class
+        if (this.game.input) {
+            this.game.input.onToggleJournal = () => this.toggleQuestJournal();
+        }
     }
 
     toggleMenu() {
@@ -516,6 +535,7 @@ export class UIManager {
             }
         }
         if (this.mapManager) this.mapManager.update(dt);
+        this.updateQuestIndicators();
     }
 
     // --- STAMINA ---
@@ -567,16 +587,62 @@ export class UIManager {
     // --- UTILS ---
 
     showToast(msg, type = 'info') {
+        // Find or create toast container
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            Object.assign(container.style, {
+                position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)',
+                display: 'flex', flexDirection: 'column', gap: '10px', zIndex: '10000', pointerEvents: 'none'
+            });
+            document.body.appendChild(container);
+        }
+
         const t = document.createElement('div');
         t.innerText = msg;
+
+        // Style based on type
+        let bg = 'rgba(0, 0, 0, 0.9)';
+        let border = '1px solid #444';
+        let icon = '';
+
+        if (type === 'success') { bg = 'rgba(46, 204, 113, 0.9)'; border = '1px solid #2ecc71'; icon = '✅ '; }
+        else if (type === 'error') { bg = 'rgba(231, 76, 60, 0.9)'; border = '1px solid #c0392b'; icon = '❌ '; }
+        else if (type === 'quest') { bg = 'rgba(212, 175, 55, 0.9)'; border = '1px solid #f1c40f'; icon = '📜 '; }
+
+        t.innerHTML = `<strong>${icon}</strong> ${msg}`;
+
         Object.assign(t.style, {
-            position: 'absolute', top: '15%', left: '50%', transform: 'translateX(-50%)',
-            background: type === 'error' ? 'rgba(200, 0, 0, 0.8)' : 'rgba(0, 0, 0, 0.8)',
-            color: 'white', padding: '10px 20px', borderRadius: '5px',
-            zIndex: '10000', transition: 'opacity 0.5s', pointerEvents: 'none'
+            background: bg, border: border,
+            color: 'white', padding: '15px 30px', borderRadius: '8px',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
+            fontFamily: "'Segoe UI', sans-serif", fontSize: '18px',
+            opacity: '0', transform: 'translateY(-20px)', transition: 'all 0.4s ease'
         });
-        document.body.appendChild(t);
-        setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 500); }, 2000);
+
+        container.appendChild(t);
+
+        // Animate In
+        requestAnimationFrame(() => {
+            t.style.opacity = '1';
+            t.style.transform = 'translateY(0)';
+        });
+
+        // Remove
+        setTimeout(() => {
+            t.style.opacity = '0';
+            t.style.transform = 'translateY(-20px)';
+            setTimeout(() => t.remove(), 400);
+        }, 3000);
+    }
+
+    showQuestUpdate(title, status) {
+        let msg = '';
+        if (status === 'STARTED') msg = `Nouvelle Quête : ${title}`;
+        else if (status === 'UPDATED') msg = `Mise à jour : ${title}`;
+        else if (status === 'COMPLETED') msg = `Quête Terminée : ${title}`;
+        this.showToast(msg, status === 'COMPLETED' ? 'success' : 'quest');
     }
 
     initCrosshair() {
@@ -589,7 +655,253 @@ export class UIManager {
         document.body.appendChild(this.crosshair);
     }
 
-    // --- PRESERVED MAP & BOSS METHODS ---
+    // --- QUEST JOURNAL ---
+
+    initQuestJournal() {
+        const modal = document.createElement('div');
+        modal.id = 'quest-journal';
+        // Base Style
+        Object.assign(modal.style, {
+            display: 'none', position: 'fixed', top: '0', left: '0',
+            width: '100vw', height: '100vh', background: 'rgba(10, 10, 15, 0.95)',
+            zIndex: '6000', color: '#ecf0f1', fontFamily: "'Cinzel', serif"
+        });
+
+        // Layout
+        modal.innerHTML = `
+            <div style="display: flex; width: 80%; height: 80%; margin: 5% auto; background: rgba(0,0,0,0.5); border: 2px solid #555; border-radius: 10px; overflow: hidden; box-shadow: 0 0 50px rgba(0,0,0,0.8);">
+                <!-- Left: Quest List -->
+                <div class="quest-list-panel" style="width: 35%; border-right: 1px solid #555; background: rgba(30,30,40,0.8); padding: 20px; overflow-y: auto;">
+                    <h2 style="color: #ffd700; border-bottom: 2px solid #555; padding-bottom: 10px; margin-top: 0;">Journal de Quêtes</h2>
+                    <h3 style="color: #aaa; margin-top: 20px;">En cours</h3>
+                    <div id="quest-list-active" style="display: flex; flex-direction: column; gap: 5px;"></div>
+                    
+                    <h3 style="color: #aaa; margin-top: 20px;">Terminées</h3>
+                    <div id="quest-list-completed" style="display: flex; flex-direction: column; gap: 5px;"></div>
+                </div>
+
+                <!-- Right: Details -->
+                <div class="quest-details-panel" style="width: 65%; padding: 40px; background: url('assets/textures/paper_texture.jpg') no-repeat center/cover; color: #222; position: relative;">
+                    <!-- Overlay for readability if texture missing -->
+                    <div style="position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(240, 230, 210, 0.9); z-index: 0;"></div>
+                    
+                    <div id="quest-details-content" style="position: relative; z-index: 1;">
+                        <div style="text-align: center; margin-top: 20%; color: #666; font-style: italic;">
+                            Sélectionnez une quête pour voir les détails...
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Close Hint -->
+            <div style="position: absolute; bottom: 30px; width: 100%; text-align: center; color: #888; font-family: sans-serif;">
+                Appuyez sur [J] pour fermer
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+    }
+
+    toggleQuestJournal() {
+        const journal = document.getElementById('quest-journal');
+        if (!journal) {
+            this.initQuestJournal();
+            this.toggleQuestJournal(); // Retry
+            return;
+        }
+
+        const isVisible = journal.style.display !== 'none';
+
+        if (isVisible) {
+            journal.style.display = 'none';
+            document.exitPointerLock(); // Usually we want lock back, but clicking involves mouse.
+            // Game usually handles lock on click.
+        } else {
+            journal.style.display = 'block';
+            this.updateQuestJournal();
+            document.exitPointerLock(); // Unlock for mouse control
+        }
+    }
+
+    updateQuestJournal() {
+        const activeList = document.getElementById('quest-list-active');
+        const completedList = document.getElementById('quest-list-completed');
+        const detailsPanel = document.getElementById('quest-details-content');
+
+        if (!activeList || !completedList) return;
+
+        activeList.innerHTML = '';
+        completedList.innerHTML = '';
+
+        const generateItem = (quest, active) => {
+            const div = document.createElement('div');
+            div.innerText = (active ? '🔹 ' : '✔ ') + quest.title;
+            Object.assign(div.style, {
+                padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '5px',
+                cursor: 'pointer', transition: 'background 0.2s', fontSize: '16px'
+            });
+            div.onmouseover = () => div.style.background = 'rgba(255,255,255,0.1)';
+            div.onmouseout = () => div.style.background = 'rgba(255,255,255,0.05)';
+            div.onclick = () => this.showQuestDetails(quest, active);
+            return div;
+        };
+
+        // Active
+        this.game.questManager.activeQuests.forEach(q => activeList.appendChild(generateItem(q, true)));
+
+        // Completed (IDs only in compeltedQuests, need to fetch data)
+        this.game.questManager.completedQuests.forEach(qid => {
+            // Find data (assuming simple getter integration or just basics)
+            // Ideally QuestManager should provide full objects for history, or we fetch from DB.
+            // Using QuestManager.completedQuests which is array of IDs.
+            // We need to fetch from DataManager or DB.
+            const qData = this.game.data.getQuest(qid);
+            if (qData) completedList.appendChild(generateItem(qData, false));
+        });
+    }
+
+    showQuestDetails(quest, isActive) {
+        const container = document.getElementById('quest-details-content');
+        if (!container) return;
+
+        let stepsHtml = '';
+        if (quest.steps) {
+            stepsHtml = quest.steps.map(s => {
+                const status = s.isCompleted ? '✅' : '⬜';
+                const progress = s.targetCount ? ` (${s.currentCount || 0}/${s.targetCount})` : '';
+                return `<div style="margin-bottom: 8px; font-size: 18px;">${status} ${s.description} <strong>${progress}</strong></div>`;
+            }).join('');
+        }
+
+        let rewardsHtml = '';
+        if (quest.rewards) {
+            if (quest.rewards.exp) rewardsHtml += `<span>✨ ${quest.rewards.exp} XP</span> `;
+            if (quest.rewards.gold) rewardsHtml += `<span>💰 ${quest.rewards.gold} Or</span> `;
+        }
+
+        container.innerHTML = `
+            <h1 style="border-bottom: 2px solid #8b4513; padding-bottom: 10px; color: #5d4037;">${quest.title}</h1>
+            <p style="font-size: 18px; line-height: 1.6; margin-bottom: 30px;">${quest.description || "Aucune description disponible."}</p>
+            
+            <h3 style="color: #8b4513;">Objectifs :</h3>
+            <div style="background: rgba(0,0,0,0.05); padding: 15px; border-radius: 5px; margin-bottom: 30px;">
+                ${stepsHtml}
+            </div>
+
+            <h3 style="color: #8b4513;">Récompenses :</h3>
+            <div style="font-weight: bold; font-size: 20px; color: #2ecc71;">
+                ${rewardsHtml}
+            </div>
+            
+            ${!isActive ? '<div style="margin-top: 30px; text-align: right; color: #27ae60; font-weight: bold; font-size: 24px;">QUEST COMPLETE</div>' : ''}
+        `;
+    }
+
+    // --- INDICATORS ---
+
+    updateQuestIndicators() {
+        // Only track PRIMARY active quest for now (HUD focus)
+        const qm = this.game.questManager;
+        if (!qm) return;
+        const activeQuest = qm.getActiveQuest();
+        if (!activeQuest) {
+            this.hideIndicator();
+            return;
+        }
+
+        const currentStep = activeQuest.steps.find(s => !s.isCompleted);
+        if (!currentStep || !currentStep.targetPos) {
+            this.hideIndicator();
+            return;
+        }
+
+        // Lazy Init Indicator
+        if (!this.questIndicator) {
+            this.questIndicator = document.createElement('div');
+            this.questIndicator.className = 'quest-indicator';
+            this.questIndicator.style.position = 'absolute';
+            this.questIndicator.style.width = '40px';
+            this.questIndicator.style.height = '40px';
+            this.questIndicator.style.backgroundImage = 'none'; // 'url("assets/ui/arrow_gold.png")'; 
+            // Fallback CSS Arrow if image missing
+            this.questIndicator.innerHTML = '<div style="width:0; height:0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 20px solid #f1c40f; filter: drop-shadow(0 0 2px black);"></div>';
+            this.questIndicator.style.display = 'none';
+            this.questIndicator.style.zIndex = '900';
+            this.questIndicator.style.pointerEvents = 'none';
+            this.questIndicator.style.display = 'flex';
+            this.questIndicator.style.justifyContent = 'center';
+            this.questIndicator.style.alignItems = 'center';
+            document.body.appendChild(this.questIndicator);
+        }
+
+        const target = new THREE.Vector3(currentStep.targetPos.x, currentStep.targetPos.y, currentStep.targetPos.z);
+        const screenPos = target.clone().project(this.game.camera);
+
+        const isOffScreen = screenPos.x < -0.9 || screenPos.x > 0.9 || screenPos.y < -0.9 || screenPos.y > 0.9 || screenPos.z > 1; // Margin 0.9
+
+        if (isOffScreen) {
+            this.questIndicator.style.display = 'flex';
+
+            // Calculate Edge Position
+            // If z > 1, it's behind. Invert x/y to point correctly?
+            let x = screenPos.x;
+            let y = screenPos.y;
+
+            if (screenPos.z > 1) {
+                x = -x;
+                y = -y; // Invert logic for behind
+                // But we want it on opposite edge?
+                // Actually if behind, we usually just lock to bottom or top depending on pitch.
+                // Simple version: Treat as far off on inverted vector
+            }
+
+            // Clamp to edge
+            // Slope m = y/x
+            // Intersect with x=1, x=-1, y=1, y=-1
+            // We want the point on the box [-0.95, 0.95]
+
+            const limit = 0.95;
+
+            // Normalize to Max Component
+            const max = Math.max(Math.abs(x), Math.abs(y));
+            x /= max;
+            y /= max;
+
+            x *= limit;
+            y *= limit;
+
+            // Convert to Screen Coords (0..window)
+            // screenPos is -1..1
+            const screenX = (x * 0.5 + 0.5) * window.innerWidth;
+            const screenY = (-(y * 0.5) + 0.5) * window.innerHeight;
+
+            this.questIndicator.style.left = `${screenX - 20}px`;
+            this.questIndicator.style.top = `${screenY - 20}px`;
+
+            // Rotation
+            const angle = Math.atan2(-x, -y); // Point towards center? No, point OUTWARDS or towards target?
+            // Usually arrow points TO target.
+            // If clamped to Right edge, arrow points Right.
+            // Vector from Center (0,0) to Clamped (x,y) is direction TO target roughly.
+            // Standard atan2(y, x). Y is inverted in CSS logic (Top=0).
+            // Let's rely on angle from center.
+            const rot = Math.atan2(-y, x) * 180 / Math.PI; // -y because CSS Y is down
+            // 0 deg is Right.
+            // Arrow points specific way. My arrow is Up-pointing triangle.
+            // If active is Right (x=1, y=0), angle is 0. Arrow should point Right (90deg).
+            // So +90 offset.
+
+            const btn = this.questIndicator.children[0];
+            if (btn) btn.style.transform = `rotate(${90 - rot}deg)`;
+
+        } else {
+            this.questIndicator.style.display = 'none'; // In view, beacon handles it
+        }
+    }
+
+    hideIndicator() {
+        if (this.questIndicator) this.questIndicator.style.display = 'none';
+    }
 
     initMinimap() { if (this.mapManager) this.mapManager.init(); }
     showMinimap() { if (this.mapManager) this.mapManager.show(); }
@@ -988,6 +1300,52 @@ export class UIManager {
             this.showToast("Sauvegarde téléchargée !");
         } else {
             this.showToast("Aucune sauvegarde trouvée", 'error');
+        }
+    }
+
+    // --- GAME OVER SCREEN ---
+
+    showGameOver() {
+        if (!this.gameOverScreen) {
+            this.gameOverScreen = document.createElement('div');
+            Object.assign(this.gameOverScreen.style, {
+                position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+                background: 'black', display: 'flex', flexDirection: 'column',
+                justifyContent: 'center', alignItems: 'center', zIndex: '9999',
+                opacity: '0', transition: 'opacity 1s ease-in'
+            });
+
+            const title = document.createElement('h1');
+            title.innerText = 'GAME OVER';
+            Object.assign(title.style, {
+                color: 'red', fontFamily: 'Cinzel, serif', fontSize: '100px', margin: '0',
+                textShadow: '0 0 20px darkred'
+            });
+            this.gameOverScreen.appendChild(title);
+
+            const sub = document.createElement('p');
+            sub.innerText = 'Le destin attendra...';
+            Object.assign(sub.style, {
+                color: 'grey', fontFamily: 'Cinzel, serif', fontSize: '24px', margin: '20px 0'
+            });
+            this.gameOverScreen.appendChild(sub);
+
+            document.body.appendChild(this.gameOverScreen);
+        }
+
+        // Trigger Fade In
+        this.gameOverScreen.style.display = 'flex';
+        // Force reflow
+        this.gameOverScreen.offsetHeight;
+        this.gameOverScreen.style.opacity = '1';
+    }
+
+    hideGameOver() {
+        if (this.gameOverScreen) {
+            this.gameOverScreen.style.opacity = '0';
+            setTimeout(() => {
+                this.gameOverScreen.style.display = 'none';
+            }, 1000);
         }
     }
 }

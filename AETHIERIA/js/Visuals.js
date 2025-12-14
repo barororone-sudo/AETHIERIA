@@ -19,6 +19,15 @@ export class Visuals {
         this.initTrail();
     }
 
+    /**
+     * @param {string} itemId
+     */
+    equipWeapon(itemId) {
+        // Placeholder for weapon visual updates
+        console.log(`[Visuals] Equipped weapon: ${itemId}`);
+        // Could update trail color here if needed
+    }
+
     initTrail() {
         // Ribbon Geometry
         // We will update geometry every frame
