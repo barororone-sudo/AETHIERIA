@@ -38,12 +38,19 @@ export class Waypoint {
         this.mesh.position.y += 2; // Center at +2m height (taller)
         this.mesh.castShadow = true;
         this.mesh.receiveShadow = true;
-        this.world.scene.add(this.mesh);
+        this.mesh.castShadow = true;
+        this.mesh.receiveShadow = true;
 
-        // 3. Brighter Light (More visible)
-        this.light = new THREE.PointLight(0xff0000, 5, 20); // Increased intensity and range
-        this.light.position.set(0, 3, 0);
-        this.mesh.add(this.light);
+        if (this.world && this.world.scene) {
+            this.world.scene.add(this.mesh);
+        } else {
+            console.error("[Waypoint] CRITICAL: Scene not found via this.world", this.world);
+        }
+
+        // 3. Brighter Light (REMOVED: Too costly for 100 waypoints)
+        // this.light = new THREE.PointLight(0xff0000, 5, 20);
+        // this.light.position.set(0, 3, 0);
+        // this.mesh.add(this.light);
 
         // 4. Larger Floating Rune Symbol
         const runeGeometry = new THREE.TorusGeometry(0.5, 0.08, 8, 16); // Larger rune
@@ -151,8 +158,11 @@ export class Waypoint {
         // Visual Change
         this.mesh.material.emissive.setHex(0x0033ff);
         this.mesh.material.emissiveIntensity = 1.0; // Brighter when unlocked
-        this.light.color.setHex(0x33ccff);
-        this.light.intensity = 6; // Brighter light
+
+        if (this.light) {
+            this.light.color.setHex(0x33ccff);
+            this.light.intensity = 6; // Brighter light
+        }
 
         // NOTE: Only towers reveal the map, waypoints are just teleport points
 

@@ -39,6 +39,14 @@ export class StoryManager {
         this.game.player.isInTutorial = true;
         this.game.player.inputLocked = true;
 
+        // FORCE SPAWN POSITION (Fix for "Not spawning at Tower" bug)
+        if (this.game.player.body) {
+            console.log("FORCE TELEPORT: Moving Player to Start Tower (20, 50, 0)");
+            this.game.player.body.position.set(20, 50, 0); // Directly next to Forest Tower (0,0)
+            this.game.player.body.velocity.set(0, 0, 0);
+            this.game.player.body.angularVelocity.set(0, 0, 0);
+        }
+
         // New intro sequence - The Shattered Aether
         this.playCinematicSequence([
             { text: "Il y a longtemps...", duration: 3000 },
@@ -132,17 +140,54 @@ export class StoryManager {
 
     playCinematicSequence(sequence, onComplete) {
         let index = 0;
+        this.cinematicCompleteCallback = onComplete;
+
+        // Show "Skip" Hint
+        if (this.game.ui) this.game.ui.showToast("Appuyez sur ESPACE pour passer", "info");
+
+        // Input Listener for Skip
+        this.skipHandler = (e) => {
+            if (['Space', 'Escape', 'Enter'].includes(e.code) && this.state === 'CINEMATIC') {
+                this.skipCinematic();
+            }
+        };
+        window.addEventListener('keydown', this.skipHandler);
+
         const playNext = () => {
             if (index >= sequence.length) {
-                if (onComplete) onComplete();
+                this.cleanupCinematic();
+                if (this.cinematicCompleteCallback) this.cinematicCompleteCallback();
                 return;
             }
             const item = sequence[index];
             this.game.ui.showCinematicText(item.text, item.duration);
             index++;
-            setTimeout(playNext, item.duration + 1000); // +1s for fade/black gap
+            // Store timer to allow cancelling
+            this.currentCinematicTimer = setTimeout(playNext, item.duration + 1000);
         };
         playNext();
+    }
+
+    skipCinematic() {
+        console.log("Skipping Cinematic...");
+        if (this.currentCinematicTimer) clearTimeout(this.currentCinematicTimer);
+        this.cleanupCinematic();
+
+        // Force Hide UI logic handled in startTutorial, but let's be safe
+        if (this.game.ui) this.game.ui.hideCinematicOverlay();
+
+        // Trigger completion immediately
+        if (this.cinematicCompleteCallback) {
+            this.cinematicCompleteCallback();
+            this.cinematicCompleteCallback = null; // Run once
+        }
+    }
+
+    cleanupCinematic() {
+        if (this.skipHandler) {
+            window.removeEventListener('keydown', this.skipHandler);
+            this.skipHandler = null;
+        }
     }
 
     startTutorial() {
@@ -152,10 +197,10 @@ export class StoryManager {
         // --- RADICAL FIX: TELEPORT PLAYER ---
         if (this.game.player && this.game.player.body) {
             // Teleport player in air to avoid under-map issues
-            this.game.player.body.position.set(-900, 50, 0); // Near Starter Tower
+            this.game.player.body.position.set(20, 50, 0); // Near Forest Tower (0,0)
             this.game.player.body.velocity.set(0, 0, 0);
             this.game.player.mesh.position.copy(this.game.player.body.position);
-            console.log("PLAYER FORCE TELEPORT TO (-900, 50, 0)");
+            console.log("PLAYER FORCE TELEPORT TO (20, 50, 0)");
         }
 
         this.game.ui.hideCinematicOverlay();

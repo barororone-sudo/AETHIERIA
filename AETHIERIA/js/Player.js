@@ -10,7 +10,6 @@ import { InventoryManager } from './managers/InventoryManager.js';
 import { SwordTrail } from './VFX.js';
 import { ToonMaterial } from './materials/ToonMaterial.js';
 import { generateCharacter } from './character.js';
-import { LevelManager } from './managers/LevelManager.js';
 import { WeaponGenerator } from './generators/WeaponGenerator.js';
 import { Animator } from './components/Animator.js';
 import { Visuals } from './Visuals.js';
@@ -140,7 +139,7 @@ export class Player {
 
         // Combat System
         /** @type {Combat} */ this.combat = new Combat(this);
-        /** @type {LevelManager} */ this.levelManager = new LevelManager(game);
+        // this.levelManager removed (Duplicate/Incorrect)
         this.swordTrail = null;
 
         // Animation System (for remote models)
@@ -468,7 +467,7 @@ export class Player {
             fixedRotation: true
         });
 
-        this.body.position.set(-1000, 50, 0); // Spawn FAR WEST (Left)
+        this.body.position.set(20, 60, 0); // Spawn CENTER (Near First Tower)
         this.body.ccdSpeedThreshold = 1;
         this.body.ccdIterations = 10;
 

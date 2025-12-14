@@ -4,55 +4,298 @@ import { Switch } from '../world/Switch.js';
 import { Enemy } from '../Enemy.js';
 import { Chest } from '../world/Chest.js';
 import { EnemiesDb } from '../data/EnemiesDb.js';
+import { Waypoint } from '../world/Waypoint.js';
+import { Tower } from '../world/Tower.js';
+import { CityGenerator } from '../world/CityGenerator.js';
+import { SceneDecorationManager } from '../world/SceneDecorationManager.js';
 
 export class LevelManager {
     constructor(world) {
         this.world = world;
-        this.game = world.game;
+        // Getter for game to ensure it's always current
+        Object.defineProperty(this, 'game', { get: () => this.world.game });
         this.scene = world.scene;
         this.terrain = world.terrainManager;
         this.activeCamps = []; // { x, z, chest: Chest, enemies: Enemy[], cleared: bool }
         this.switches = [];
         this.generatedObjects = [];
+
+        // EXPOSE FORCE SPAWN GLOBAL
+        window.forceSpawn = () => {
+            console.warn("FORCE SPAWNING WORLD...");
+            this.spawnBiomeTowers();
+            this.spawnCities(); // Fix: Include Cities
+            this.spawnDecorations(); // Fix: Include Decor
+            this.spawnWaypoints();
+            console.error("FORCE SPAWN COMPLETE. Check Debug Overlay.");
+        };
     }
 
+
     generate() {
-        console.log("Generating World Population...");
-        this.spawnTutorialChest(); // NOUVEAU: Coffre de tutoriel au spawn
-        this.spawnBiomeTowers();   // New Deterministic Towers
+        console.log("Generating World Population... (LOUD CHECK)");
+        if (this.game && this.game.ui) this.game.ui.showToast("DEBUG: LevelManager.generate STARTED", "info");
+
+        this.spawnTutorialChest();
+        this.spawnBiomeTowers();
+        this.spawnCities(); // New: Procedural Cities
+        this.spawnDecorations(); // New: Instanced Biome Decor
+        this.spawnWaypoints(); // New: Waypoints via LevelManager
         this.populateCamps();
         this.spawnHiddenChests();
         this.spawnLegendaryChest();
     }
 
     spawnBiomeTowers() {
-        console.log("Spawning 10 Biome Towers (Genshin Style)...");
-        // Clear existing if any (handled by World usually, but we ensure cleanliness)
+        console.log("Spawning 10 Biome Towers (Genshin Style - Radial)...");
         if (this.world.towers) this.world.towers = [];
 
+        // RADIAL COORDINATES (Matching TerrainManager.js)
+        // Center: Forest
+        // Ring (R=1400): 9 Biomes
+        const R = 1400;
+        const angleStep = (Math.PI * 2) / 9;
+        const offset = angleStep / 2; // Center of sector
+
         const biomes = [
-            { name: 'ICE', x: -1600, z: -1050 },      // North-West Center
-            { name: 'SNOW', x: -800, z: -1050 },      // North-West-Central
-            { name: 'AIR', x: 0, z: -1050 },          // North-Center
-            { name: 'LIGHTNING', x: 800, z: -1050 },  // North-East-Central
-            { name: 'CRYSTAL', x: 1600, z: -1050 },   // North-East
-            { name: 'FOREST', x: -1600, z: 1050 },    // South-West
-            { name: 'JUNGLE', x: -800, z: 1050 },     // South-West-Central
-            { name: 'GOLD', x: 0, z: 1050 },          // South-Center
-            { name: 'FIRE', x: 800, z: 1050 },        // South-East-Central
-            { name: 'LAVA', x: 1600, z: 1050 }        // South-East
+            { name: 'FOREST', x: 0, z: 0 }, // Center Hub
+            { name: 'JUNGLE', x: Math.cos(0 * angleStep + offset) * R, z: Math.sin(0 * angleStep + offset) * R },
+            { name: 'GOLD', x: Math.cos(1 * angleStep + offset) * R, z: Math.sin(1 * angleStep + offset) * R },
+            { name: 'LAVA', x: Math.cos(2 * angleStep + offset) * R, z: Math.sin(2 * angleStep + offset) * R },
+            { name: 'FIRE', x: Math.cos(3 * angleStep + offset) * R, z: Math.sin(3 * angleStep + offset) * R },
+            { name: 'CRYSTAL', x: Math.cos(4 * angleStep + offset) * R, z: Math.sin(4 * angleStep + offset) * R },
+            { name: 'LIGHTNING', x: Math.cos(5 * angleStep + offset) * R, z: Math.sin(5 * angleStep + offset) * R },
+            { name: 'AIR', x: Math.cos(6 * angleStep + offset) * R, z: Math.sin(6 * angleStep + offset) * R },
+            { name: 'ICE', x: Math.cos(7 * angleStep + offset) * R, z: Math.sin(7 * angleStep + offset) * R },
+            { name: 'SNOW', x: Math.cos(8 * angleStep + offset) * R, z: Math.sin(8 * angleStep + offset) * R }
+        ];
+
+        // 1. CLEAR EXISTING TOWERS (Prevent Duplicates)
+        if (this.world.towers && this.world.towers.length > 0) {
+            console.warn("[LevelManager] Clearing existing towers before spawn...");
+            this.world.towers.forEach(t => {
+                if (t.mesh) this.scene.remove(t.mesh);
+                if (t.body) this.world.physicsWorld.removeBody(t.body);
+                // Icon removal? MapManager handles icons via sync usually, or we can manually remove if needed.
+                // Assuming MapManager.syncMapIcons() handles orphan icons or we force refresh.
+            });
+            this.world.towers = [];
+            // Remove from interactables too?
+            if (this.world.interactables) {
+                this.world.interactables = this.world.interactables.filter(i => !i.isTower); // Assuming isTower flag or class check
+                // Simpler: Just rely on garbage collection if interactables are weak refs? No.
+                // Filter out destroyed towers:
+                // We'll leave interactables update to the end or filter manually.
+            }
+        } else {
+            this.world.towers = [];
+        }
+
+        let count = 0;
+        try {
+            biomes.forEach(b => {
+                // FORCE HEIGHT (Bypass Terrain Check Debugging)
+                let h = 60; // High up so we can see them falling/existing
+
+                try {
+                    if (this.terrain) h = this.terrain.getHeightAt(b.x, b.z);
+                } catch (e) { console.warn("Height check failed", e); }
+                if (h < 5) h = 5;
+
+                // DIRECT SPAWN (Bypass World Method)
+                const tower = new Tower(this.world, b.x, b.z, `tower_${b.name}`, h);
+                this.world.towers.push(tower);
+                // Ensure it's in interactables
+                if (this.world.interactables && !this.world.interactables.includes(tower)) {
+                    this.world.interactables.push(tower);
+                }
+
+                // Add Icon Immediately (in case MapManager missed it)
+                if (this.game.ui && this.game.ui.mapManager) {
+                    this.game.ui.mapManager.addTowerIcon(tower, count);
+                }
+
+                count++;
+            });
+        } catch (e) {
+            console.error("Critical Tower Spawn Error:", e);
+            if (this.game && this.game.ui) this.game.ui.showToast("ERREUR: Generation Tours!" + e.message, "error");
+        }
+
+        console.log(`[LevelManager] ${count} Biome Towers Created (Radial Layout).`);
+        if (this.game && this.game.ui) this.game.ui.showToast(`Monde Généré: ${count} Tours`, "success");
+    }
+
+    spawnCities() {
+        console.log("Spawning Biome Cities...");
+        if (!this.cityGenerator) {
+            this.cityGenerator = new CityGenerator(this.world);
+        }
+
+        // Initialize storage
+        this.world.cities = [];
+
+        // Same Biomes as Towers for positioning
+        const R = 1400;
+        const angleStep = (Math.PI * 2) / 9;
+        const offset = angleStep / 2;
+
+        const biomes = [
+            { name: 'FOREST', x: 0, z: 0 },
+            { name: 'JUNGLE', x: Math.cos(0 * angleStep + offset) * R, z: Math.sin(0 * angleStep + offset) * R },
+            { name: 'GOLD', x: Math.cos(1 * angleStep + offset) * R, z: Math.sin(1 * angleStep + offset) * R },
+            { name: 'LAVA', x: Math.cos(2 * angleStep + offset) * R, z: Math.sin(2 * angleStep + offset) * R },
+            { name: 'FIRE', x: Math.cos(3 * angleStep + offset) * R, z: Math.sin(3 * angleStep + offset) * R },
+            { name: 'CRYSTAL', x: Math.cos(4 * angleStep + offset) * R, z: Math.sin(4 * angleStep + offset) * R },
+            { name: 'LIGHTNING', x: Math.cos(5 * angleStep + offset) * R, z: Math.sin(5 * angleStep + offset) * R },
+            { name: 'AIR', x: Math.cos(6 * angleStep + offset) * R, z: Math.sin(6 * angleStep + offset) * R },
+            { name: 'ICE', x: Math.cos(7 * angleStep + offset) * R, z: Math.sin(7 * angleStep + offset) * R },
+            { name: 'SNOW', x: Math.cos(8 * angleStep + offset) * R, z: Math.sin(8 * angleStep + offset) * R }
         ];
 
         biomes.forEach(b => {
-            const h = this.terrain ? this.terrain.getGlobalHeight(b.x, b.z) : 0;
-            // Use World's spawnTower helper if available, or create manually
-            // We'll call world.spawnTower which handles the Tower class instantiation
-            if (this.world.spawnTower) {
-                // ID format: tower_BIOME
-                this.world.spawnTower(b.x, b.z, `tower_${b.name}`);
+            // Place city slightly offset from Tower (so they don't overlap)
+            // Offset by 150m roughly
+            const cityX = b.x + 120;
+            const cityZ = b.z + 120;
+
+            // REGISTER only (Do not load yet)
+            const city = {
+                x: cityX,
+                z: cityZ,
+                biome: b.name,
+                name: `${b.name} City`,
+                isLoaded: false,
+                activeObjects: null
+            };
+            this.world.cities.push(city);
+
+            // Add Icon Helper
+            if (this.game.ui && this.game.ui.mapManager) {
+                this.game.ui.mapManager.addCityIcon(city);
             }
         });
-        console.log("[LevelManager] 10 Biome Towers Created.");
+
+        console.log(`[LevelManager] ${biomes.length} Cities Generated.`);
+    }
+
+    spawnDecorations() {
+        console.log("Initializing Dynamic Decoration System...");
+        if (!this.decorManager) {
+            this.decorManager = new SceneDecorationManager(this.world);
+        }
+        // No pre-population. Dynamic Streaming only.
+    }
+
+    updateDecorStreaming(playerPos) {
+        if (!this.decorManager) return;
+
+        const CHUNK_SIZE = 50;
+        const VIEW_DIST = 8; // Increased range (400m)
+
+        const px = Math.floor(playerPos.x / CHUNK_SIZE) * CHUNK_SIZE;
+        const pz = Math.floor(playerPos.z / CHUNK_SIZE) * CHUNK_SIZE;
+
+        // Load Nearby
+        for (let x = -VIEW_DIST; x <= VIEW_DIST; x++) {
+            for (let z = -VIEW_DIST; z <= VIEW_DIST; z++) {
+                const cx = px + x * CHUNK_SIZE;
+                const cz = pz + z * CHUNK_SIZE;
+
+                // Distance Check (Circular)
+                const distSq = (cx - playerPos.x) ** 2 + (cz - playerPos.z) ** 2;
+                if (distSq > (VIEW_DIST * CHUNK_SIZE) ** 2) continue;
+
+                let biome = 'WILD';
+                if (this.terrain) biome = this.terrain.getBiome(cx, cz);
+
+                this.decorManager.loadChunk(cx, cz, CHUNK_SIZE, biome);
+            }
+        }
+
+        // Cleanup Far Chunks (Simple garbage collection)
+        // Ideally this should be more efficient, but Map iteration is okay-ish.
+        // Let's do it every 60 frames?
+        if (Math.random() < 0.05) { // Occasional cleanup
+            for (const [key, objects] of this.decorManager.activeChunks) {
+                const [sx, sz] = key.split(',').map(Number);
+                const distSq = (sx - playerPos.x) ** 2 + (sz - playerPos.z) ** 2;
+
+                if (distSq > (VIEW_DIST * CHUNK_SIZE + 100) ** 2) {
+                    this.decorManager.unloadChunk(sx, sz);
+                }
+            }
+        }
+    }
+
+    spawnWaypoints() {
+        console.log("Populating 100 Waypoints (Radial Distribution)...");
+
+        // 1. CLEAR EXISTING
+        if (this.world.waypoints && this.world.waypoints.length > 0) {
+            this.world.waypoints.forEach(w => {
+                if (w.mesh) this.scene.remove(w.mesh);
+                // Icons handled by MapManager sync usually
+            });
+            this.world.waypoints = [];
+        } else {
+            this.world.waypoints = [];
+        }
+
+        const MIN_DIST = 150;
+        let placed = 0;
+        let attempts = 0;
+        const MAX_ATTEMPTS = 500;
+
+        // Try to place 100 waypoints uniformly in R=2200 circle
+        while (placed < 100 && attempts < MAX_ATTEMPTS) {
+            attempts++;
+
+            // Random Point in Circle
+            const r = Math.random() * 2000; // Slightly reduced radius
+            const theta = Math.random() * Math.PI * 2;
+            const tx = Math.cos(theta) * r;
+            const tz = Math.sin(theta) * r;
+
+            // HEIGHT CHECK
+            let ty = 60; // Default High
+            try {
+                if (this.terrain) ty = this.terrain.getHeightAt(tx, tz) + 2.0; // +2m Safety Offset
+            } catch (e) { }
+
+            // If water (or noise fail), default to land height for test? 
+            // Or skip. Let's skip water but be lenient.
+            if (ty < 2.5) continue;
+
+            // Dist Checks
+            let ok = true;
+            for (const wp of this.world.waypoints) {
+                const d = (wp.position.x - tx) ** 2 + (wp.position.z - tz) ** 2;
+                if (d < MIN_DIST * MIN_DIST) { ok = false; break; }
+            }
+            if (this.world.towers) {
+                for (const t of this.world.towers) {
+                    const d = (t.position.x - tx) ** 2 + (t.position.z - tz) ** 2;
+                    if (d < 100 * 100) { ok = false; break; }
+                }
+            }
+
+            if (!ok) continue;
+
+            // Create
+            // Biome helper for ID
+            const biome = this.terrain ? this.terrain.getBiome(tx, tz) : 'WILD';
+            const wp = new Waypoint(this.world, tx, tz, `wp_${biome}_${placed}`, ty);
+            this.world.waypoints.push(wp);
+
+            // Add Icon
+            if (this.game.ui && this.game.ui.mapManager) {
+                this.game.ui.mapManager.addWaypointIcon(wp);
+            }
+
+            placed++;
+        }
+        console.log(`[LevelManager] Created ${placed} Waypoints.`);
     }
 
     populateCamps() {
@@ -190,7 +433,7 @@ export class LevelManager {
             const r = 3 + Math.random() * 5;
             const ex = camp.x + Math.cos(angle) * r;
             const ez = camp.z + Math.sin(angle) * r;
-            const ey = this.terrain ? this.terrain.getGlobalHeight(ex, ez) + 1 : camp.y + 1;
+            const ey = this.terrain ? this.terrain.getGlobalHeight(ex, ez) + 2.0 : camp.y + 2.0; // +2m Safety
 
             const enemy = new Enemy(this.world, new CANNON.Vec3(ex, ey, ez), camp.enemyType);
 
@@ -214,7 +457,7 @@ export class LevelManager {
     }
 
     spawnCamp(x, z, biome = 'FOREST') {
-        const y = this.terrain ? this.terrain.getGlobalHeight(x, z) : 0;
+        const y = this.terrain ? this.terrain.getGlobalHeight(x, z) + 0.5 : 0; // +0.5m Slight offset
 
         // Define Enemy Type based on Biome
         let enemyType = 'goblin_warrior'; // Default
@@ -392,17 +635,12 @@ export class LevelManager {
     }
 
     clear() {
-        console.log("Clearing Procedural World...");
+        console.log("Resetting Dynamic World (Enemies/Chests/Camps)...");
         // Remove tracked enemies
-        // Note: This relies on tracked objects being valid.
-        // If World.enemies has other stuff, this might desync.
-        // Ideally we iterate world.enemies and remove?
-
-        // Simple approach: Clear World.enemies entirely for now (Roguelike reset)
         if (this.world.enemies) {
             for (const e of this.world.enemies) {
-                this.scene.remove(e.mesh);
-                this.world.physicsWorld.removeBody(e.body);
+                if (e.mesh) this.scene.remove(e.mesh);
+                if (e.body) this.world.physicsWorld.removeBody(e.body);
             }
             this.world.enemies = []; // Wipe
         }
@@ -410,13 +648,48 @@ export class LevelManager {
         // Clear Chests
         if (this.world.chests) {
             for (const c of this.world.chests) {
-                this.scene.remove(c.mesh);
+                if (c.mesh) this.scene.remove(c.mesh);
                 // Physics? Chests might have bodies?
             }
             this.world.chests = [];
         }
 
         this.activeCamps = [];
-        this.generatedObjects = [];
+        this.generatedObjects = []; // Ensure Towers/Waypoints are NOT in here
+
+        // DO NOT WIPE TOWERS OR WAYPOINTS
+        // They are static and persistent.
+    }
+
+    update(dt) {
+        if (this.game.player && this.game.player.mesh) {
+            this.updateCityStreaming(this.game.player.mesh.position);
+        }
+    }
+
+    updateCityStreaming(playerPos) {
+        if (!this.world.cities) return;
+        if (!this.cityGenerator) return;
+
+        const LOAD_DIST = 350;
+        const UNLOAD_DIST = 450;
+
+        this.world.cities.forEach(city => {
+            const dx = city.x - playerPos.x;
+            const dz = city.z - playerPos.z;
+            const distSq = dx * dx + dz * dz;
+
+            if (city.isLoaded) {
+                // Check Unload
+                if (distSq > UNLOAD_DIST * UNLOAD_DIST) {
+                    this.cityGenerator.unloadCity(city);
+                }
+            } else {
+                // Check Load
+                if (distSq < LOAD_DIST * LOAD_DIST) {
+                    this.cityGenerator.loadCity(city);
+                }
+            }
+        });
     }
 }

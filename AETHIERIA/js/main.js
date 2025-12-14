@@ -18,6 +18,8 @@ import { World } from './World.js';
 import { Player } from './Player.js';
 import { UIManager } from './UI.js';
 import { SaveManager } from './managers/SaveManager.js';
+import { DebugOverlay } from './DebugOverlay.js'; // DEBUG
+
 import { WaypointManager } from './managers/WaypointManager.js';
 import { AudioManager } from './AudioManager.js';
 import { DebugManager } from './Debug.js';
@@ -53,7 +55,9 @@ export class Game {
         /** @type {WaypointManager} */ this.waypointManager = new WaypointManager(this); // Added WaypointManager
         /** @type {UIManager} */ this.ui = new UIManager(this);
         /** @type {AudioManager} */ this.audio = new AudioManager();
-        /** @type {DebugManager} */ this.debug = new DebugManager(this);
+        /** @type {UIManager} */ this.ui = new UIManager(this);
+        /** @type {AudioManager} */ this.audio = new AudioManager();
+        /** @type {DebugManager} */ this.debug = new DebugManager(this); // F3 Menu
         /** @type {DialogueManager} */ this.dialogueManager = new DialogueManager(this);
         /** @type {QuestManager} */ this.questManager = new QuestManager(this);
         /** @type {CombatUI} */ this.combatUI = new CombatUI(this);
@@ -135,6 +139,14 @@ export class Game {
             await this.loader.loadAll();
             this.loader.updateProgress(85);
 
+            // AUTO-FIX: Force Spawn if missing
+            setTimeout(() => {
+                if (window.forceSpawn) {
+                    console.log("Auto-running forceSpawn...");
+                    window.forceSpawn();
+                }
+            }, 3000);
+
             // World
             console.log("Creating World...");
             this.world = new World(this);
@@ -169,8 +181,10 @@ export class Game {
             // Phase 3: Profile Selection
             const slotsInfo = await this.saveManager.getSlotsInfo();
             this.ui.createSlotSelectionUI(slotsInfo);
-
             this.loader.updateProgress(100);
+
+            // DEBUG OVERLAY
+            // new DebugOverlay(this); // REMOVED BY USER REQUEST
 
             // Force Hide Loading Screen
             const loadingScreen = document.getElementById('loading-screen');

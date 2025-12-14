@@ -95,7 +95,8 @@ export class World {
         // Use World Builder
         // Moved to init()
         // Use World Builder
-        this.levelManager.generate();
+        // Moved to init() for better timing
+        // this.levelManager.generate();
 
         // --- NPCS ---
         this.npcs = [];
@@ -115,9 +116,12 @@ export class World {
         // FOREST (Act 2)
         this.generateForest();
 
-        // WAYPOINTS (Fast Travel)
+        // FOREST (Act 2)
+        this.generateForest();
+
+        // WAYPOINTS (Fast Travel) -> Moved to LevelManager
         this.waypoints = [];
-        this.spawnWaypoints();
+        // this.spawnWaypoints();
 
         // LOOT
         this.loot = [];
@@ -135,9 +139,15 @@ export class World {
         if (this.game.ui) this.game.ui.showToast("[DEBUG] World Init Start...", "info");
 
         try {
-            // 1. Generate Camps - MOVED TO CONSTRUCTOR
-            // console.log("Step 1: Level Generation (Skipped, in constructor)");
-            // if (this.levelManager) {
+            // 1. Generate Camps & Population
+            if (this.levelManager) {
+                try {
+                    this.levelManager.generate();
+                } catch (err) {
+                    console.error("CRITICAL: Level Generation Failed", err);
+                    if (this.game.ui) this.game.ui.showToast("CRITICAL: POI GEN FAILED: " + err.message, "error");
+                }
+            }
             //    this.levelManager.generate();
             // } else {
             //    console.error("LevelManager missing!");
@@ -212,7 +222,7 @@ export class World {
             const x = (Math.random() - 0.5) * 2 * range;
             const z = (Math.random() - 0.5) * 2 * range;
 
-            let y = this.getSafeHeight(x, z);
+            let y = this.getSafeHeight(x, z) + 1.0; // +1m Safety Offset
 
             // Don't spawn underwater
             if (y < 2.5 && y < 50) continue;
@@ -253,87 +263,15 @@ export class World {
     }
 
     spawnWaypoints() {
+        console.warn("[World] spawnWaypoints() is deprecated. Using LevelManager.");
+        /*
         if (!this.game.waypointManager) return;
-
         console.log('[World] Spawning 100 Biome Waypoints (Distributed)...');
-
-        // BIOME GRID CONFIG
-        const biomes = [
-            // ROW 0 (North Z < 0) [z range: -2000 to -100]
-            { name: 'ICE', minX: -2000, maxX: -1200, minZ: -1900, maxZ: -200 },
-            { name: 'SNOW', minX: -1200, maxX: -400, minZ: -1900, maxZ: -200 },
-            { name: 'AIR', minX: -400, maxX: 400, minZ: -1900, maxZ: -200 },
-            { name: 'LIGHTNING', minX: 400, maxX: 1200, minZ: -1900, maxZ: -200 },
-            { name: 'CRYSTAL', minX: 1200, maxX: 2000, minZ: -1900, maxZ: -200 },
-
-            // ROW 1 (South Z > 0) [z range: 200 to 1900]
-            { name: 'FOREST', minX: -2000, maxX: -1200, minZ: 200, maxZ: 1900 },
-            { name: 'JUNGLE', minX: -1200, maxX: -400, minZ: 200, maxZ: 1900 },
-            { name: 'GOLD', minX: -400, maxX: 400, minZ: 200, maxZ: 1900 },
-            { name: 'FIRE', minX: 400, maxX: 1200, minZ: 200, maxZ: 1900 },
-            { name: 'LAVA', minX: 1200, maxX: 2000, minZ: 200, maxZ: 1900 }
-        ];
-
-        let total = 0;
-        const MIN_DIST = 250; // Increased spacing
-
-        biomes.forEach(biome => {
-            let placedInBiome = 0;
-            let attempts = 0;
-
-            while (placedInBiome < 10 && attempts < 500) {
-                attempts++;
-
-                // Random Pos within Biome Bounds
-                const tx = biome.minX + Math.random() * (biome.maxX - biome.minX);
-                const tz = biome.minZ + Math.random() * (biome.maxZ - biome.minZ);
-
-                // 1. Terrain Height Check
-                const ty = this.terrainManager.getGlobalHeight(tx, tz);
-                if (ty < 2.2) continue; // Avoid water
-
-                // 2. Distance Check (Distribution)
-                let tooClose = false;
-                // Check vs Existing Waypoints
-                for (const wp of this.waypoints) {
-                    const dx = wp.position.x - tx;
-                    const dz = wp.position.z - tz;
-                    if (dx * dx + dz * dz < MIN_DIST * MIN_DIST) {
-                        tooClose = true;
-                        break;
-                    }
-                }
-
-                // Also check vs Towers
-                if (!tooClose && this.towers) {
-                    for (const t of this.towers) {
-                        const dx = t.position.x - tx;
-                        const dz = t.position.z - tz;
-                        if (dx * dx + dz * dz < 150 * 150) { // Keep away from towers slightly
-                            tooClose = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (tooClose) continue;
-
-                // VALID - Create Waypoint
-                const wp = new Waypoint(this, tx, ty, tz, `wp_${biome.name}_${placedInBiome}`);
-                this.game.waypointManager.register(wp.id, wp.position, 'waypoint', wp);
-
-                // Add Icon
-                if (this.game.ui && this.game.ui.mapManager) {
-                    this.game.ui.mapManager.addWaypointIcon(wp);
-                }
-
-                placedInBiome++;
-                total++;
-            }
-        });
-
-        console.log(`[World] Total Waypoints Spawned: ${total}`);
+        // ... LEGACY CODE REMOVED ...
+        */
     }
+
+
 
     /**
      * @param {THREE.Vector3} position
@@ -919,7 +857,7 @@ void main() {
     generateFogGrid() {
         this.fogGrid = [];
         const worldSize = 4000; // Updated to match new map size
-        const gridSize = 50; // 50 meters
+        const gridSize = 10; // 10 meters (High Resolution)
         const halfSize = worldSize / 2;
 
         for (let x = -halfSize; x < halfSize; x += gridSize) {
@@ -1054,6 +992,9 @@ void main() {
         if (this.terrainManager && this.terrainManager.update) {
             this.terrainManager.update(playerBody ? playerBody.position : null);
         }
+
+        // Update Level Manager (City Streaming)
+        if (this.levelManager) this.levelManager.update(dt);
 
         if (playerBody) {
             this.updateLoot(dt, playerBody);

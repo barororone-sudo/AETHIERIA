@@ -32,7 +32,17 @@ export class Tower {
         this.mesh.position.y += 5; // Center is 5m up (height 10)
         this.mesh.castShadow = true;
         this.mesh.receiveShadow = true;
-        this.world.scene.add(this.mesh);
+        this.mesh.castShadow = true;
+        this.mesh.receiveShadow = true;
+
+        if (this.world.scene) {
+            this.world.scene.add(this.mesh);
+        } else if (this.game && this.game.world && this.game.world.scene) {
+            // Fallback if world arg was actually game or incomplete
+            this.game.world.scene.add(this.mesh);
+        } else {
+            console.error("[Tower] CRITICAL: Scene not found in world:", this.world);
+        }
 
         // 2. Physics
         const shape = new CANNON.Cylinder(1, 1.5, 10, 8);
@@ -220,9 +230,14 @@ export class Tower {
         }
 
         // Visual Change
-        this.mesh.material.color.setHex(0x33ccff);
-        this.mesh.material.emissive.setHex(0x004466);
-        this.light.color.setHex(0x33ccff);
+        if (this.mesh && this.mesh.material) {
+            this.mesh.material.color.setHex(0x33ccff);
+            this.mesh.material.emissive.setHex(0x004466);
+        }
+
+        if (this.light) {
+            this.light.color.setHex(0x33ccff);
+        }
 
         // BEAM TURNS BLUE
         if (this.beamMat) {

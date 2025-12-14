@@ -46,12 +46,22 @@ export class Chunk {
 
             // Get Biome and Color
             // Note: getBiome and getBiomeColor now expect world coordinates directly
-            const biome = this.tm.getBiome(wx, wz); // Pass height for biome calculation
+            // Get Random Jitter for Biome Sampling (Organic Edges)
+            const jitterScale = 20; // 20m jitter
+            const jx = (Math.random() - 0.5) * jitterScale;
+            const jz = (Math.random() - 0.5) * jitterScale;
+
+            // Get Biome with Jittered Coords
+            const biome = this.tm.getBiome(wx + jx, wz + jz);
             const hex = this.tm.getBiomeColor(biome);
 
-            // Add slight random noise to terrain color for texture
-            const noise = (Math.random() * 0.1) - 0.05;
+            // Base Color
             color.setHex(hex);
+
+            // Add organic noise overlay (Texture simulation)
+            // Usage of World Pos for consistent noise
+            const noise = (Math.sin(wx * 0.1) * Math.cos(wz * 0.1)) * 0.05 + (Math.random() * 0.05);
+
             color.r += noise;
             color.g += noise;
             color.b += noise;

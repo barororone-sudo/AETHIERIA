@@ -132,6 +132,7 @@ export class MapManager {
                 if (p.type === 'tower') this.addTowerIcon(d.tower, d.index);
                 if (p.type === 'waypoint') this.addWaypointIcon(d.waypoint);
                 if (p.type === 'camp') this.addCampIcon(d.camp);
+                if (p.type === 'city') this.addCityIcon(d.city); // FIX: Add City Handling
             });
             this.pendingIcons = [];
         }
@@ -220,17 +221,32 @@ export class MapManager {
 
         // DEBUG: Dummy Red Square at (0,0) Map Center
         if (!this.dummyDebug) {
-            this.dummyDebug = document.createElement('div');
-            Object.assign(this.dummyDebug.style, {
-                width: '20px', height: '20px',
-                backgroundColor: 'red', border: '2px solid white',
-                position: 'absolute', top: '50%', left: '50%',
-                transform: 'translate(-50%, -50%)',
-                zIndex: '10000', pointerEvents: 'none',
-                boxShadow: '0 0 10px red'
-            });
-            this.content.appendChild(this.dummyDebug);
-            console.log("DEBUG: Dummy Red Square Added to Map Content at 50%, 50%");
+            // ...
+        }
+
+        // APPLY TRANSFORM (Critical Fix)
+        if (this.content) {
+            const scale = this.isBigMap ? this.viewState.scale : 1.0;
+            // Minimap (Small): Centered on player?
+            // BigMap: Free pan/zoom (this.viewState)
+
+            if (this.isBigMap) {
+                this.content.style.transform = `translate(${this.viewState.x}px, ${this.viewState.y}px) scale(${this.viewState.scale})`;
+            } else {
+                // Minimap Mode: Center on player
+                // We need to convert World -> Map Coords
+                if (this.game.player && this.game.player.mesh) {
+                    const p = this.game.player.mesh.position;
+                    const mapPos = this.worldToMap(p.x, p.z);
+                    // Container Center (e.g. 100px) - MapPos
+                    // Presuming 200px minimap
+                    const cx = 100;
+                    const cy = 100;
+                    const tx = cx - mapPos.x;
+                    const ty = cy - mapPos.y;
+                    this.content.style.transform = `translate(${tx}px, ${ty}px) scale(1)`;
+                }
+            }
         }
 
         // DEBUG LOGS (User Request)
@@ -540,10 +556,10 @@ export class MapManager {
         const color = isUnlocked ? '#FFD700' : '#FF0000';
 
         Object.assign(icon.style, {
-            width: '20px', height: '20px', // Large Square
+            width: '12px', height: '12px', // Reduced Size (was 20px)
             backgroundColor: color,
             border: '2px solid #ffffff',
-            borderRadius: '4px',
+            borderRadius: '2px', // Slightly rounded
             position: 'absolute',
             transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))',
             zIndex: '2000', // Top Priority
@@ -595,43 +611,79 @@ export class MapManager {
     }
 
     revealBiomeAt(x, z) {
-        // Map Biome Logic (same as generateMapTexture)
-        // Col Limits: -1200, -400, 400, 1200
-        // Row Split: z=0
+        if (!this.fogCtx) return;
 
-        let minX, maxX, minZ, maxZ;
+        // GENSHIN STYLE: Organic Radial Reveal
+        // 1. Determine if Center (Forest) or Outer Wedge
+        const dist = Math.sqrt(x * x + z * z);
+        const mapCenter = this.worldToMap(0, 0);
 
-        // Determine Column
-        if (x < -1200) { minX = -2500; maxX = -1200; }
-        else if (x < -400) { minX = -1200; maxX = -400; }
-        else if (x < 400) { minX = -400; maxX = 400; }
-        else if (x < 1200) { minX = 400; maxX = 1200; }
-        else { minX = 1200; maxX = 2500; }
+        this.fogCtx.save();
+        this.fogCtx.globalCompositeOperation = 'destination-out';
+        this.fogCtx.fillStyle = 'rgba(0,0,0,1)';
+        this.fogCtx.beginPath();
 
-        // Determine Row
-        if (z < 0) { minZ = -2500; maxZ = 0; }
-        else { minZ = 0; maxZ = 2500; }
+        if (dist < 800) {
+            // CENTRAL BIOME (Forest) - Organic Circle
+            const radius = 900 * this.scale; // Slightly larger to overlap
+            const steps = 60;
+            for (let i = 0; i <= steps; i++) {
+                const a = (i / steps) * Math.PI * 2;
+                // Add Noise to radius
+                const variance = Math.sin(a * 10) * 0.05 + Math.cos(a * 23) * 0.05;
+                const r = radius * (1 + variance);
+                const px = mapCenter.x + Math.cos(a) * r;
+                const py = mapCenter.y + Math.sin(a) * r;
+                if (i === 0) this.fogCtx.moveTo(px, py);
+                else this.fogCtx.lineTo(px, py);
+            }
+        } else {
+            // RADIAL SECTOR (Wedge)
+            let angle = Math.atan2(z, x); // -PI to PI
+            // Normalize to positive 0-2PI for easier math logic if needed, but atan2 is fine.
 
-        // Padding to ensure overlap
-        const padding = 20;
+            // Snap to nearest 40-degree sector (9 biomes)
+            const sectorSize = (Math.PI * 2) / 9;
+            const sectorIndex = Math.round(angle / sectorSize);
+            const centerAngle = sectorIndex * sectorSize;
 
-        // Convert to Map Coords
-        const p1 = this.worldToMap(minX - padding, minZ - padding);
-        const p2 = this.worldToMap(maxX + padding, maxZ + padding);
+            // Define Wedge
+            const startAngle = centerAngle - sectorSize / 2 - 0.1; // Overlap
+            const endAngle = centerAngle + sectorSize / 2 + 0.1;
+            const innerR = 600 * this.scale;
+            const outerR = 3000 * this.scale;
 
-        const w = p2.x - p1.x;
-        const h = p2.y - p1.y;
+            // Draw Wavy Wedge
+            // 1. Inner Arc (Wobbly)
+            const steps = 30;
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const a = startAngle + (endAngle - startAngle) * t;
+                const variance = Math.sin(a * 15) * 50 * this.scale; // Wobble
+                const r = innerR + variance;
+                const px = mapCenter.x + Math.cos(a) * r;
+                const py = mapCenter.y + Math.sin(a) * r;
+                if (i === 0) this.fogCtx.moveTo(px, py);
+                else this.fogCtx.lineTo(px, py);
+            }
 
-        // Clear Rect on Fog
-        if (this.fogCtx) {
-            this.fogCtx.save();
-            this.fogCtx.globalCompositeOperation = 'destination-out';
-            this.fogCtx.fillStyle = 'rgba(0,0,0,1)';
-            this.fogCtx.fillRect(p1.x, p1.y, w, h);
-            this.fogCtx.restore();
+            // 2. Outer Arc (Wobbly)
+            for (let i = steps; i >= 0; i--) {
+                const t = i / steps;
+                const a = startAngle + (endAngle - startAngle) * t;
+                const variance = Math.cos(a * 20) * 100 * this.scale;
+                const r = outerR + variance;
+                const px = mapCenter.x + Math.cos(a) * r;
+                const py = mapCenter.y + Math.sin(a) * r;
+                this.fogCtx.lineTo(px, py);
+            }
         }
 
-        console.log(`[MapManager] Revealing Biome Sector for (${x},${z}) -> Rect [${minX}, ${minZ}] to [${maxX}, ${maxZ}]`);
+        this.fogCtx.closePath();
+        this.fogCtx.fill();
+        this.fogCtx.restore();
+
+        console.log(`[MapManager] Revealed Organic Sector for (${x}, ${z})`);
     }
 
     addWaypointIcon(waypoint) {
@@ -713,6 +765,41 @@ export class MapManager {
         camp.mapIcon = icon;
     }
 
+    addCityIcon(city) {
+        if (!this.iconLayer) {
+            this.pendingIcons.push({ type: 'city', data: { city } });
+            return;
+        }
+
+        const icon = document.createElement('div');
+        icon.className = 'map-icon-city';
+        // VISUAL: House Shape (Square base + CSS Triangle roof implies Home)
+        // Or just a Cyan Square.
+
+        Object.assign(icon.style, {
+            width: '14px',
+            height: '14px',
+            backgroundColor: '#00FFFF', // Cyan for Cities
+            border: '2px solid #FFFFFF',
+            position: 'absolute',
+            transform: 'translate(-50%, -50%) scale(calc(1 / var(--map-scale, 1)))',
+            zIndex: '1500', // high priority, below towers
+            cursor: 'help',
+            display: 'block',
+            boxShadow: '0 0 10px #00FFFF'
+        });
+
+        const pos = this.worldToMap(city.x, city.z);
+        icon.style.left = `${pos.x}px`;
+        icon.style.top = `${pos.y}px`;
+
+        // Tooltip
+        icon.title = city.name;
+
+        this.iconLayer.appendChild(icon);
+        city.mapIcon = icon;
+    }
+
     // --- UTILS ---
     worldToMap(x, z) {
         const offsetX = x + this.worldSize / 2;
@@ -748,7 +835,7 @@ export class MapManager {
                 const wx = (x / res) * this.worldSize - this.worldSize / 2;
                 const wz = (y / res) * this.worldSize - this.worldSize / 2;
 
-                let r = 50, g = 50, b = 50; // Default
+                let r = 0, g = 0, b = 0;
 
                 // 1. Get Real Terrain Height if available
                 let h = 0;
@@ -756,33 +843,37 @@ export class MapManager {
                     h = tm.getGlobalHeight(wx, wz);
                 }
 
-                // 2. Determine Biome (Grid Logic)
-                let col = 2; // Middle
-                if (wx < -1200) col = 0;
-                else if (wx < -400) col = 1;
-                else if (wx < 400) col = 2;
-                else if (wx < 1200) col = 3;
-                else col = 4;
+                // 2. Determine Biome (Exact Match with Chunk.js)
+                if (tm) {
+                    // Apply Jitter for Organic Edges (same as Chunk.js)
+                    const jitter = 20;
+                    const jx = (Math.random() - 0.5) * jitter;
+                    const jz = (Math.random() - 0.5) * jitter;
 
-                const isNorth = (wz < 0);
+                    const biome = tm.getBiome(wx + jx, wz + jz);
+                    const color = tm.getBiomeColor(biome); // Returns standard THREE.Color or similar
 
-                // Base Biome Color
-                if (isNorth) {
-                    switch (col) {
-                        case 0: r = 200; g = 240; b = 255; break; // ICE
-                        case 1: r = 240; g = 240; b = 250; break; // SNOW
-                        case 2: r = 180; g = 220; b = 240; break; // AIR
-                        case 3: r = 140; g = 100; b = 180; break; // LIGHTNING
-                        case 4: r = 220; g = 100; b = 220; break; // CRYSTAL
+                    // Convert float/hex to 0-255
+                    if (color && color.r !== undefined) {
+                        r = color.r * 255;
+                        g = color.g * 255;
+                        b = color.b * 255;
+                    } else if (typeof color === 'number') {
+                        // Hex support if needed
+                        r = (color >> 16) & 255;
+                        g = (color >> 8) & 255;
+                        b = color & 255;
                     }
+
+                    // Add Noise to texture (Organic feel)
+                    const noise = (Math.random() - 0.5) * 20;
+                    r = Math.max(0, Math.min(255, r + noise));
+                    g = Math.max(0, Math.min(255, g + noise));
+                    b = Math.max(0, Math.min(255, b + noise));
+
                 } else {
-                    switch (col) {
-                        case 0: r = 34; g = 139; b = 34; break; // FOREST
-                        case 1: r = 0; g = 100; b = 0; break;   // JUNGLE
-                        case 2: r = 218; g = 165; b = 32; break;// GOLD
-                        case 3: r = 255; g = 69; b = 0; break;  // FIRE
-                        case 4: r = 80; g = 0; b = 0; break;    // LAVA
-                    }
+                    // Fallback (Hardcoded) - Only if TM missing
+                    r = 100; g = 100; b = 100;
                 }
 
                 // 3. Apply Topography (Water & Shading)
@@ -790,7 +881,7 @@ export class MapManager {
                     // Water Override
                     r = 60; g = 120; b = 200;
                 } else if (h < 2.5) {
-                    // Beach Override (except for ICE/LAVA maybe? keep simple)
+                    // Beach Override
                     r = 210; g = 190; b = 130;
                 } else {
                     // Land Shading
@@ -838,30 +929,21 @@ export class MapManager {
         this.fogCtx.globalCompositeOperation = 'destination-out';
         this.fogCtx.fillStyle = 'rgba(0,0,0,1)';
 
-        // Organic Shape (Jagged Polygon)
+        // STYLISH REVEAL (Soft Gradient)
+        const grad = this.fogCtx.createRadialGradient(
+            pos.x, pos.y, mapR * 0.5, // Inner radius (Fully Clear)
+            pos.x, pos.y, mapR        // Outer radius (Fade to Fog)
+        );
+
+        // Alpha 1 = Removed (Destination-Out), Alpha 0 = Kept
+        grad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+        this.fogCtx.fillStyle = grad;
         this.fogCtx.beginPath();
-        const points = 32; // Amount of jagged points
-        // Use position to seed the shape rotation/offset so towers look different
-        const seed = (x + z) * 0.01;
-
-        for (let i = 0; i <= points; i++) {
-            const angle = (i / points) * Math.PI * 2;
-
-            // Formula: Base R * (0.8 + 0.3 * noisy_wave)
-            // Using cos(angle * 5) creates a 5-pointed star-like blob
-            // Adding seed ensures uniqueness per tower
-            const variance = Math.cos(angle * 7 + seed) * 0.2 + Math.sin(angle * 3) * 0.1;
-            const currentR = mapR * (0.9 + variance);
-
-            const px = pos.x + Math.cos(angle) * currentR;
-            const py = pos.y + Math.sin(angle) * currentR;
-
-            if (i === 0) this.fogCtx.moveTo(px, py);
-            else this.fogCtx.lineTo(px, py);
-        }
-
-        this.fogCtx.closePath();
+        this.fogCtx.arc(pos.x, pos.y, mapR, 0, Math.PI * 2);
         this.fogCtx.fill();
+
         this.fogCtx.globalCompositeOperation = 'source-over';
         this.fogCtx.restore();
     }
@@ -897,67 +979,91 @@ export class MapManager {
 
     toggleMap(force) {
         if (!this.container) return;
-        // console.log(`TOGGLE MAP CALLED. Current: ${this.isBigMap}, Force: ${force}`);
 
         if (force !== undefined && force !== null) this.isBigMap = force;
         else this.isBigMap = !this.isBigMap;
 
         if (this.isBigMap) {
-            // FORCE Visibility Sequence
-            // FORCE LAYOUT (Manual Override with !important)
+            // --- BIG MAP MODE (Genshin Pause Menu Style) ---
             this.container.style.cssText = `
                 display: block !important;
                 z-index: 2000 !important;
                 opacity: 1 !important;
-                width: 80% !important;
-                width: 80% !important;
-                height: 80% !important;
-                top: 10% !important;
-                left: 10% !important;
-                bottom: auto !important;
-                right: auto !important;
+                width: 90% !important; 
+                height: 90% !important;
+                top: 5% !important;
+                left: 5% !important;
                 border-radius: 20px !important;
                 position: absolute !important;
-                background: rgba(0,0,0,0.8);
+                background: rgba(0,0,0,0.9);
                 border: 2px solid white !important;
+                overflow: hidden !important; 
+                pointer-events: auto !important;
             `;
-            this.container.style.display = 'block'; // Force override
-            // Release mouse for map interaction
-            if (document.pointerLockElement) {
-                document.exitPointerLock();
+
+            // RE-APPLY FOG BLACK (Fix for "Revealed" bug)
+            if (this.fogCtx) {
+                // If canvas reset or first open, ensure black
+                if (this.fogCanvas.width !== this.mapSize) {
+                    this.fogCanvas.width = this.mapSize;
+                    this.fogCanvas.height = this.mapSize;
+                    this.fogCtx.fillStyle = 'black';
+                    this.fogCtx.fillRect(0, 0, this.mapSize, this.mapSize);
+                }
             }
 
-            // Initial Centering on Player for ViewState
-            // Fallback to Window Size if container isn't ready
-            const cw = this.container.clientWidth || (window.innerWidth * 0.8);
-            const ch = this.container.clientHeight || (window.innerHeight * 0.8);
-
+            // AUTO-CENTER ON PLAYER (Fix for "Small/Corner" bug)
             if (this.game.player && this.game.player.mesh) {
+                // Get Container Dimensions (fallback to window if not rendered yet)
+                const cw = this.container.clientWidth || (window.innerWidth * 0.9);
+                const ch = this.container.clientHeight || (window.innerHeight * 0.9);
+
                 const p = this.game.player.mesh.position;
                 const mapPos = this.worldToMap(p.x, p.z);
 
+                // Set ViewState (Scale 1.0 for details, Centered)
                 this.viewState.scale = 1.0;
                 this.viewState.x = (cw / 2) - mapPos.x;
                 this.viewState.y = (ch / 2) - mapPos.y;
+
+                this.viewStateStart.x = this.viewState.x;
+                this.viewStateStart.y = this.viewState.y;
+
+                // Reveal Player Area (200m) - DISABLED BY USER REQUEST
+                // this.revealZone(p.x, p.z, 200);
+            }
+
+            // Apply Transform Immediately
+            if (this.content) {
+                this.content.style.transform = `translate(${this.viewState.x}px, ${this.viewState.y}px) scale(${this.viewState.scale})`;
             }
 
             if (this.game.ui) this.game.ui.showToast("MOLETTE: Zoom | GLISSER: Déplacer");
+            if (document.pointerLockElement) document.exitPointerLock();
+
         } else {
-            this.container.classList.remove('big-map-active');
+            // --- MINIMAP MODE (HUD Style) ---
+            this.container.style.cssText = `
+                display: block !important;
+                z-index: 1000 !important;
+                opacity: 0.9 !important;
+                width: 200px !important;
+                height: 200px !important;
+                top: 20px !important;
+                right: 20px !important;
+                left: auto !important; 
+                bottom: auto !important;
+                background: rgba(0,0,0,0.5); 
+                border: 2px solid rgba(255,255,255,0.5) !important;
+                border-radius: 50% !important; 
+                position: absolute !important;
+                overflow: hidden !important;
+                box-shadow: 0 0 10px rgba(0,0,0,0.5);
+                pointer-events: none !important; 
+            `;
+            // Note: Transform updates for minimap are handled in update() loop (player following)
 
-            // CLEAR OVERRIDES (Restores CSS class defaults like Border)
-            this.container.style.cssText = '';
-
-            this.container.style.display = 'block'; // Ensure it stays visible as minimap
-
-            // RESET LAYOUT TO MINIMAP
-            this.container.style.width = '200px';
-            this.container.style.height = '200px';
-            this.container.style.top = 'auto'; // Clear top
-            this.container.style.left = 'auto'; // Clear left
-            this.container.style.bottom = '20px';
-            this.container.style.right = '20px';
-            this.container.style.borderRadius = '50%';
+            // Allow game to capture pointer again if clicked
         }
     }
 

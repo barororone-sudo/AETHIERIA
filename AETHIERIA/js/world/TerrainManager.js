@@ -105,31 +105,38 @@ export class TerrainManager {
      * @returns {string} Biome Type
      */
     getBiome(x, z) {
-        // Grid 5x2
-        // Col Index: 0..4 (West to East)
-        const col = Math.floor((x + 2000) / 800);
-        // Row Index: 0 (North/Z<0) or 1 (South/Z>0)
-        const row = z < 0 ? 0 : 1;
+        // RADIAL MAP (Genshin Style)
+        // Center (0,0) is Starter Area (Forest)
+        // Others radiate outwards
 
-        // Clamp
-        const c = Math.max(0, Math.min(4, col));
+        const dist = Math.sqrt(x * x + z * z);
 
-        // BIOME MAP
-        // North (Row 0): ICE | SNOW | AIR | LIGHTNING | CRYSTAL
-        // South (Row 1): FOREST | JUNGLE | GOLD | FIRE | LAVA
+        // 1. Central Zone (Radius 250) -> FOREST (Mondstadt)
+        if (dist < 250) return 'FOREST';
 
-        if (row === 0) {
-            if (c === 0) return 'ICE';
-            if (c === 1) return 'SNOW';
-            if (c === 2) return 'AIR';
-            if (c === 3) return 'LIGHTNING';
-            return 'CRYSTAL';
-        } else {
-            if (c === 0) return 'FOREST'; // Starting Area (approx x=-1000)
-            if (c === 1) return 'JUNGLE';
-            if (c === 2) return 'GOLD';
-            if (c === 3) return 'FIRE';
-            return 'LAVA';
+        // 2. Outer Ring (Radius > 600)
+        // Split into 9 Segments (40 degrees each)
+        const angle = Math.atan2(z, x); // -PI to PI
+        // Normalize angle to 0..2PI
+        let normAngle = angle;
+        if (normAngle < 0) normAngle += Math.PI * 2;
+
+        // 9 Biomes remaining: ICE, SNOW, AIR, LIGHTNING, CRYSTAL, JUNGLE, GOLD, FIRE, LAVA
+        // Slice index 0..8
+        const slice = Math.floor(normAngle / (Math.PI * 2 / 9)) % 9;
+
+        // Logical Geographical Progression
+        switch (slice) {
+            case 0: return 'JUNGLE';    // East-South-East (Lush)
+            case 1: return 'GOLD';      // South-East (Geo)
+            case 2: return 'LAVA';      // South (Volcanic)
+            case 3: return 'FIRE';      // South-West (Hot)
+            case 4: return 'CRYSTAL';   // West (Magic)
+            case 5: return 'LIGHTNING'; // North-West (Storm)
+            case 6: return 'AIR';       // North-West-North (Sky)
+            case 7: return 'ICE';       // North (Cold)
+            case 8: return 'SNOW';      // North-East (Frozen)
+            default: return 'FOREST';
         }
     }
 
@@ -165,6 +172,11 @@ export class TerrainManager {
     /**
      * FBM (Fractal Brownian Motion) Height Calculation
      */
+    // Alias for User Request
+    getHeightAt(x, z) {
+        return this.getGlobalHeight(x, z);
+    }
+
     getGlobalHeight(x, z) {
         if (!Utils.Noise || !Utils.Noise.perlin2) return 0;
 
