@@ -43,10 +43,11 @@ export class Tower {
         });
         this.world.physicsWorld.addBody(this.body);
 
-        // 3. Light
-        this.light = new THREE.PointLight(0xff0000, 5, 20);
-        this.light.position.set(0, 6, 0);
-        this.mesh.add(this.light);
+        // 3. Light (REMOVED to prevent WebGL limit crashes with 10 towers)
+        // Emissive material is enough for "Glow"
+        // this.light = new THREE.PointLight(0xff0000, 5, 20);
+        // this.light.position.set(0, 6, 0);
+        // this.mesh.add(this.light);
 
         // 4. Register
         if (this.game.ui && this.game.ui.mapManager) {
@@ -77,7 +78,7 @@ export class Tower {
             depthWrite: false
         });
         this.beamMesh = new THREE.Mesh(beamGeo, this.beamMat);
-        this.beamMesh.position.y = 10; // Start from top of tower
+        this.beamMesh.position.y = 5; // Start from top of tower (Mesh height 10/2)
         this.mesh.add(this.beamMesh);
     }
 

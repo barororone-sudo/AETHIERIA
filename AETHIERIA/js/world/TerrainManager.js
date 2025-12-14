@@ -7,8 +7,8 @@ export class TerrainManager {
         this.world = world;
         this.chunkSize = 64;
         this.chunkResolution = 33; // Optimized Res (1 vertex per 2 meters)
-        this.renderDistance = 2; // Radius
-        this.unloadDistance = 3;
+        this.renderDistance = 4; // Optimized from 6 (Balance range vs lag)
+        this.unloadDistance = 5;
 
         this.chunks = new Map();
         this.group = new THREE.Group();

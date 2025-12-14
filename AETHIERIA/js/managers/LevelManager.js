@@ -79,7 +79,7 @@ export class LevelManager {
             let placed = 0;
             let attempts = 0;
 
-            while (placed < 4 && attempts < 500) {
+            while (placed < 10 && attempts < 500) {
                 attempts++;
 
                 const x = biome.minX + Math.random() * (biome.maxX - biome.minX);
@@ -160,7 +160,7 @@ export class LevelManager {
     checkMobSpawning(dt) {
         if (!this.game.player || !this.game.player.mesh) return;
         const playerPos = this.game.player.mesh.position;
-        const SPAWN_DIST = 30; // Close range for testing (normally 60-80)
+        const SPAWN_DIST = 80; // Changed from 30 to 80 for smoother gameplay
         const DESPAWN_DIST = 150;
 
         this.activeCamps.forEach(camp => {
@@ -180,15 +180,23 @@ export class LevelManager {
     }
 
     spawnCampEnemies(camp) {
-        // console.log(`Spawning enemies for camp at ${camp.x}, ${camp.z}`);
-        camp.enemies = []; // Reset array
+        camp.enemies = [];
         camp.enemiesSpawned = true;
+        const count = 3; // 3 Enemies per camp
 
-        // Biome-specific enemy selection logic could go here if needed per-enemy
-        // For now relying on camp.enemyType set during spawnCamp
+        for (let i = 0; i < count; i++) {
+            // Random position around fire
+            const angle = Math.random() * Math.PI * 2;
+            const r = 3 + Math.random() * 5;
+            const ex = camp.x + Math.cos(angle) * r;
+            const ez = camp.z + Math.sin(angle) * r;
+            const ey = this.terrain ? this.terrain.getGlobalHeight(ex, ez) + 1 : camp.y + 1;
 
-        // Register
-        // (Handled by specific enemy spawning logic usually, but ensure consistency)
+            const enemy = new Enemy(this.world, new CANNON.Vec3(ex, ey, ez), camp.enemyType);
+
+            camp.enemies.push(enemy);
+            if (this.world.enemies) this.world.enemies.push(enemy);
+        }
     }
 
     despawnCampEnemies(camp) {

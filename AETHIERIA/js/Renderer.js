@@ -21,9 +21,9 @@ export class Renderer {
         });
 
         this.instance.setSize(window.innerWidth, window.innerHeight);
-        this.instance.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        this.instance.setPixelRatio(1.0); // FORCED 1.0 for Performance (User reported 12 FPS)
         this.instance.shadowMap.enabled = true;
-        this.instance.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.instance.shadowMap.type = THREE.BasicShadowMap; // Faster Shadows
 
         // Tone Mapping for realistic lighting
         this.instance.toneMapping = THREE.ACESFilmicToneMapping;
@@ -41,7 +41,7 @@ export class Renderer {
         this.scene = null;
         this.camera = null;
         this.composer = null;
-        this.outlinePass = null;
+        // this.outlinePass = null; // Disabled for FPS
 
         window.addEventListener('resize', this.onResize.bind(this));
     }
@@ -59,15 +59,9 @@ export class Renderer {
         const renderPass = new RenderPass(scene, camera);
         this.composer.addPass(renderPass);
 
-        // 2. Outline Pass (Anime Contours)
-        this.outlinePass = new OutlinePass(new THREE.Vector2(width, height), scene, camera);
-        this.outlinePass.edgeStrength = 4.0;
-        this.outlinePass.edgeGlow = 0.0;
-        this.outlinePass.edgeThickness = 1.0;
-        this.outlinePass.pulsePeriod = 0;
-        this.outlinePass.visibleEdgeColor.set('#000000'); // Black edges
-        this.outlinePass.hiddenEdgeColor.set('#190a05');
-        this.composer.addPass(this.outlinePass);
+        // 2. Outline Pass (DISABLED for FPS)
+        // this.outlinePass = new OutlinePass(new THREE.Vector2(width, height), scene, camera);
+        // this.composer.addPass(this.outlinePass);
 
         // 3. Bloom Pass (Glow)
         // Resolution, Strength, Radius, Threshold
@@ -87,7 +81,7 @@ export class Renderer {
         const height = window.innerHeight;
 
         this.instance.setSize(width, height);
-        this.instance.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        this.instance.setPixelRatio(1.0); // FORCED 1.0
 
         if (this.composer) {
             this.composer.setSize(width, height);

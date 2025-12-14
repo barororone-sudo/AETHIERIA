@@ -430,8 +430,8 @@ export class World {
         this.sunLight.castShadow = true;
 
         // Shadow Settings
-        this.sunLight.shadow.mapSize.width = 2048; // Higher res for debug
-        this.sunLight.shadow.mapSize.height = 2048;
+        this.sunLight.shadow.mapSize.width = 1024; // Optimized from 2048
+        this.sunLight.shadow.mapSize.height = 1024;
         this.sunLight.shadow.bias = -0.0005;
         this.sunLight.shadow.normalBias = 0.05;
 

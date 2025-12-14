@@ -434,7 +434,7 @@ export class MapManager {
 
         const camps = this.game.world.levelManager.activeCamps;
         const player = this.game.player;
-        const DETECTION_RANGE = 50; // Show camps within 50 units
+        const DETECTION_RANGE = 100; // Increased to 100m per user request
 
         camps.forEach(camp => {
             // Create icon if it doesn't exist
