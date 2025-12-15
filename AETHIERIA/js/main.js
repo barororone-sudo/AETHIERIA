@@ -55,8 +55,6 @@ export class Game {
         /** @type {WaypointManager} */ this.waypointManager = new WaypointManager(this); // Added WaypointManager
         /** @type {UIManager} */ this.ui = new UIManager(this);
         /** @type {AudioManager} */ this.audio = new AudioManager();
-        /** @type {UIManager} */ this.ui = new UIManager(this);
-        /** @type {AudioManager} */ this.audio = new AudioManager();
         /** @type {DebugManager} */ this.debug = new DebugManager(this); // F3 Menu
         /** @type {DialogueManager} */ this.dialogueManager = new DialogueManager(this);
         /** @type {QuestManager} */ this.questManager = new QuestManager(this);
@@ -161,13 +159,20 @@ export class Game {
             console.log("Creating Player...");
             this.player = new Player(this, this.camera);
             this.player.world = this.world; // Link World to Player
-            if (this.player.combat) this.player.combat.init(); // Init Combat (Pools)
+            if (this.player.combat) {
+                // combat.init() moved to after world.init()
+            }
 
             this.story = new StoryManager(this);
 
             // Phase 2: Initialization
             if (this.world) {
                 await this.world.init();
+            }
+
+            // Fix: Init combat AFTER world is fully initialized
+            if (this.player && this.player.combat) {
+                this.player.combat.init();
             }
             if (this.ui) this.ui.initMinimap(); // Initialize Map AFTER World is ready
             if (this.world) this.particles = new ParticleManager(this.world.scene);
@@ -378,6 +383,16 @@ export class Game {
         // Render
         if (this.world) {
             this.renderer.render(this.world.scene, this.camera);
+        }
+    }
+
+    /**
+     * @param {string} text
+     * @param {number} duration
+     */
+    displaySubtitle(text, duration = 3000) {
+        if (this.ui) {
+            this.ui.showCinematicText(text, duration);
         }
     }
 

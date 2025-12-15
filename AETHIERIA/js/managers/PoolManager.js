@@ -1,80 +1,171 @@
-
+// js/managers/PoolManager.js
 import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+import { Enemy } from '../Enemy.js';
 
 export class PoolManager {
-    constructor(game) {
-        this.game = game;
-        this.pools = {};
-        this.factories = {};
+    constructor(world) {
+        this.world = world;
+        this.pools = new Map(); // type -> Array<Object>
+
+        // Configuration map for constructors
+        this.constructors = {
+            'enemy': Enemy
+            // Add projectiles, vfx, etc. later
+        };
+
+        // Factories for simple objects (Combat.js support)
+        this.factories = new Map();
     }
 
-    register(type, createFn, initialSize = 10) {
-        if (!this.game || !this.game.world) {
-            console.warn("PoolManager: Game or World not ready during register.");
-            return;
+    /**
+     * Register a factory for simple object pooling (Projectiles)
+     * @param {string} id 
+     * @param {Function} factoryFn 
+     * @param {number} count Initial count
+     */
+    register(id, factoryFn, count = 0) {
+        this.factories.set(id, factoryFn);
+        if (!this.pools.has(id)) {
+            this.pools.set(id, []);
         }
-        this.factories[type] = createFn;
-        this.pools[type] = [];
 
-        for (let i = 0; i < initialSize; i++) {
-            const obj = createFn();
-            this.deactivate(obj);
-            this.pools[type].push({ inUse: false, object: obj });
-            // Add to scene if it's a mesh, but keep hidden
-            if (obj instanceof THREE.Object3D) {
-                this.game.world.scene.add(obj);
+        // Pre-populate
+        for (let i = 0; i < count; i++) {
+            const obj = factoryFn();
+            if (obj && obj instanceof THREE.Object3D) obj.visible = false;
+            this.pools.get(id).push(obj);
+        }
+    }
+
+    /**
+     * Get object by ID (Combat.js style)
+     * @param {string} id 
+     * @returns {any}
+     */
+    get(id) {
+        if (!this.pools.has(id)) return null;
+
+        const pool = this.pools.get(id);
+        let obj = null;
+
+        if (pool.length > 0) {
+            obj = pool.pop();
+        } else {
+            // Expand
+            const factory = this.factories.get(id);
+            if (factory) {
+                obj = factory();
             }
         }
+
+        if (obj) {
+            if (obj.visible !== undefined) obj.visible = true;
+            // Reset active flag if it exists (some systems use this)
+            if (obj.active !== undefined) obj.active = true;
+        }
+        return obj;
     }
 
-    get(type) {
-        if (!this.pools[type]) {
-            console.warn(`Pool '${type}' not registered.`);
-            return null;
+    /**
+     * Return object to pool (Combat.js style)
+     * @param {string} id 
+     * @param {any} object 
+     */
+    return(id, object) {
+        if (!this.pools.has(id)) {
+            this.pools.set(id, []);
         }
 
-        // Find unused
-        let entry = this.pools[type].find(e => !e.inUse);
+        // Reset properties
+        if (object.visible !== undefined) object.visible = false;
+        if (object.active !== undefined) object.active = false;
 
-        if (!entry) {
-            // Expand pool
-            console.log(`Expanding pool '${type}'`);
-            const obj = this.factories[type]();
-            this.game.world.scene.add(obj);
-            entry = { inUse: false, object: obj };
-            this.pools[type].push(entry);
-        }
-
-        entry.inUse = true;
-        this.activate(entry.object);
-        return entry.object;
+        this.pools.get(id).push(object);
     }
 
-    return(type, object) {
-        if (!this.pools[type]) return;
+    /**
+     * Get an object from the pool or create a new one
+     * @param {string} category 'enemy'
+     * @param {string|object} typeOrConfig Detailed type (e.g. 'goblin')
+     * @param {CANNON.Vec3} position 
+     * @returns {any} The spawned object
+     */
+    spawn(category, typeOrConfig, position) {
+        // Ensure pool exists
+        if (!this.pools.has(category)) {
+            this.pools.set(category, []);
+        }
 
-        const entry = this.pools[type].find(e => e.object === object);
-        if (entry) {
-            entry.inUse = false;
-            this.deactivate(object);
+        const pool = this.pools.get(category);
+
+        // 1. Try to find a dead/inactive object in the pool
+        // For enemies, we might want to match specific ID if possible, 
+        // OR we just reset a generic Enemy instance with new config.
+        // For now, let's assume we reuse generic container and fully reset.
+
+        let object = pool.find(obj => obj.isDead && !obj.active);
+
+        if (object) {
+            // REUSE
+            // console.log(`♻️ Reusing ${category} from pool`);
+            object.active = true;
+            object.isDead = false; // Revive
+
+            // Call generic reset if available
+            if (object.reset) {
+                object.reset(position, typeOrConfig);
+            }
+            return object;
+        } else {
+            // CREATE NEW
+            // console.log(`✨ Creating new ${category}`);
+            const Constructor = this.constructors[category];
+            if (!Constructor) {
+                console.error(`PoolManager: No constructor for ${category}`);
+                return null;
+            }
+
+            // Create instance (it should handle adding itself to world usually, 
+            // but we might need to manage that if we want strict pooling)
+            // Existing Enemy constructor adds mesh/body to world.
+            const newObj = new Constructor(this.world, position, typeOrConfig);
+
+            // Mark as poolable
+            newObj.poolCategory = category;
+            newObj.active = true;
+            newObj.isDead = false;
+
+            pool.push(newObj);
+            return newObj;
         }
     }
 
-    activate(obj) {
-        obj.visible = true;
-        // Physics activation handled by caller usually, but we can ensure it's awake if needed
-        if (obj.body) {
-            obj.body.wakeUp();
-        }
-    }
+    /**
+     * Despawn object (return to pool)
+     * @param {any} object 
+     */
+    despawn(object) {
+        if (!object) return;
 
-    deactivate(obj) {
-        obj.visible = false;
-        if (obj.body) {
-            obj.body.sleep();
-            obj.body.position.set(0, -1000, 0); // Move away
-            obj.body.velocity.set(0, 0, 0);
-            obj.body.angularVelocity.set(0, 0, 0);
+        // Deactivate
+        object.active = false;
+        object.isDead = true;
+
+        if (object.mesh) object.mesh.visible = false;
+
+        // Sleep physics
+        if (object.body) {
+            object.body.sleep();
+            object.body.position.set(0, -1000, 0); // Move to void
+            // Do NOT remove from physics world, just sleep/move
         }
+
+        // Custom cleanup
+        if (object.onDespawn) {
+            object.onDespawn();
+        }
+
+        // console.log(`💤 Despawned ${object.poolCategory || 'object'}`);
     }
 }

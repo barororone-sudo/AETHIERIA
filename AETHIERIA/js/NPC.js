@@ -128,6 +128,12 @@ export class NPC {
 
     interact() {
         console.log("Interacting with", this.name);
+
+        // Trigger Quest Progress
+        if (this.game.questManager) {
+            this.game.questManager.checkQuestProgress('TALK_NPC', { npcId: this.name });
+        }
+
         this.game.dialogueManager.startDialogue(this.name, this.dialogueData);
     }
 }

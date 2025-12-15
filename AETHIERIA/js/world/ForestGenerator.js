@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { Utils } from '../Utils.js';
 
+// 🚀 OPTIMIZATION: Reusable Object3D to avoid garbage collection
+const _dummy = new THREE.Object3D();
+
 export class ForestGenerator {
     constructor(world) {
         this.world = world;
@@ -56,9 +59,13 @@ export class ForestGenerator {
         const meshes = this.activeChunks.get(key);
         meshes.forEach(m => {
             this.scene.remove(m);
-            if (m.geometry) m.geometry.dispose();
-            // Do NOT dispose material as it is shared
+
+            // 🛑 CRITICAL FIX: NEVER dispose shared geometries!
+            // Only dispose unique materials if they were cloned (here they are shared too)
+            // m.geometry.dispose(); // <--- REMOVED
         });
+
+        // Clear references
         this.activeChunks.delete(key);
     }
 
@@ -71,7 +78,6 @@ export class ForestGenerator {
      */
     generateChunk(chunkX, chunkZ, biome) {
         const meshes = [];
-        const dummy = new THREE.Object3D();
         const range = 50; // Use fixed range or passed size
 
         // Config based on Biome
@@ -105,12 +111,14 @@ export class ForestGenerator {
             } else if (treeType === 'ICE_SPIKE') {
                 // Single mesh structure for Ice
                 const iceMesh = new THREE.InstancedMesh(this.geoIce, this.matIce, treeCount);
-                this.populatemesh(iceMesh, treeCount, chunkX, chunkZ, range, 2.0, dummy, 0.5, 2.0);
+                iceMesh.matrixAutoUpdate = false; // 🚀 STATIC MATRIX OPTIMIZATION
+                this.populatemesh(iceMesh, treeCount, chunkX, chunkZ, range, 2.0, 0.5, 2.0);
                 meshes.push(iceMesh);
                 treeType = null; // Done
             } else if (treeType === 'CRYSTAL') {
                 const crysMesh = new THREE.InstancedMesh(this.geoCrystal, this.matCrystal, treeCount);
-                this.populatemesh(crysMesh, treeCount, chunkX, chunkZ, range, 1.5, dummy, 1.0, 2.0);
+                crysMesh.matrixAutoUpdate = false; // 🚀 STATIC MATRIX OPTIMIZATION
+                this.populatemesh(crysMesh, treeCount, chunkX, chunkZ, range, 1.5, 1.0, 2.0);
                 meshes.push(crysMesh);
                 treeType = null; // Done
             }
@@ -118,35 +126,39 @@ export class ForestGenerator {
             // Dual-Mesh Trees (Trunk + Leaves)
             if (treeType === 'PINE' || treeType === 'PALM') {
                 const trunks = new THREE.InstancedMesh(tGeo, tMat, treeCount);
+                trunks.matrixAutoUpdate = false; // 🚀
+
                 const leaves = new THREE.InstancedMesh(lGeo, lMat, treeCount);
+                leaves.matrixAutoUpdate = false; // 🚀
 
                 for (let i = 0; i < treeCount; i++) {
                     const { x, y, z, scale } = this.getRandomPos(chunkX, chunkZ, range);
                     if (y === null) {
                         // Hide if invalid
-                        dummy.position.set(0, -500, 0);
-                        dummy.updateMatrix();
-                        trunks.setMatrixAt(i, dummy.matrix);
-                        leaves.setMatrixAt(i, dummy.matrix);
+                        _dummy.position.set(0, -9999, 0); // Far away
+                        _dummy.updateMatrix();
+                        trunks.setMatrixAt(i, _dummy.matrix);
+                        leaves.setMatrixAt(i, _dummy.matrix);
                         continue;
                     }
 
                     // Trunk
-                    dummy.position.set(x, y + 2 * scale, z);
-                    dummy.scale.set(scale, scale, scale);
-                    dummy.rotation.set(0, Math.random() * Math.PI, 0);
-                    dummy.updateMatrix();
-                    trunks.setMatrixAt(i, dummy.matrix);
+                    _dummy.position.set(x, y + 2 * scale, z);
+                    _dummy.scale.set(scale, scale, scale);
+                    _dummy.rotation.set(0, Math.random() * Math.PI, 0);
+                    _dummy.updateMatrix();
+                    trunks.setMatrixAt(i, _dummy.matrix);
 
                     // Leaves
                     // Offset y based on type
                     const leafOffset = treeType === 'PINE' ? 4 * scale : 3.5 * scale;
-                    dummy.position.set(x, y + 2 * scale + leafOffset, z);
-                    dummy.updateMatrix();
-                    leaves.setMatrixAt(i, dummy.matrix);
+                    _dummy.position.set(x, y + 2 * scale + leafOffset, z);
+                    _dummy.updateMatrix();
+                    leaves.setMatrixAt(i, _dummy.matrix);
                 }
                 trunks.instanceMatrix.needsUpdate = true;
                 leaves.instanceMatrix.needsUpdate = true;
+
                 trunks.castShadow = true;
                 trunks.receiveShadow = true;
                 leaves.castShadow = true;
@@ -160,10 +172,11 @@ export class ForestGenerator {
         if (rockCount > 0) {
             let rMat = this.matRockGrey;
             if (rockType === 'LAVA') rMat = this.matRockLava;
-            // Gold rock? reusing grey for now or add gold mat
 
             const rocks = new THREE.InstancedMesh(this.geoRock, rMat, rockCount);
-            this.populatemesh(rocks, rockCount, chunkX, chunkZ, range, 0.5, dummy, 0.8, 1.5);
+            rocks.matrixAutoUpdate = false; // 🚀
+
+            this.populatemesh(rocks, rockCount, chunkX, chunkZ, range, 0.5, 0.8, 1.5);
             rocks.castShadow = true;
             rocks.receiveShadow = true;
             meshes.push(rocks);
@@ -175,19 +188,19 @@ export class ForestGenerator {
     /**
      * Helper to populate a single InstancedMesh with random positions
      */
-    populatemesh(mesh, count, cx, cz, range, yOffset, dummy, minScale = 1, maxScale = 1) {
+    populatemesh(mesh, count, cx, cz, range, yOffset, minScale = 1, maxScale = 1) {
         for (let i = 0; i < count; i++) {
             const { x, y, z, scale } = this.getRandomPos(cx, cz, range, minScale, maxScale);
             if (y === null) {
-                dummy.position.set(0, -500, 0);
-                dummy.updateMatrix();
+                _dummy.position.set(0, -9999, 0);
+                _dummy.updateMatrix();
             } else {
-                dummy.position.set(x, y + yOffset * scale, z);
-                dummy.scale.set(scale, scale, scale);
-                dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-                dummy.updateMatrix();
+                _dummy.position.set(x, y + yOffset * scale, z);
+                _dummy.scale.set(scale, scale, scale);
+                _dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+                _dummy.updateMatrix();
             }
-            mesh.setMatrixAt(i, dummy.matrix);
+            mesh.setMatrixAt(i, _dummy.matrix);
         }
         mesh.instanceMatrix.needsUpdate = true;
     }
@@ -208,7 +221,6 @@ export class ForestGenerator {
 
     // Legacy method mostly for compatibility or specific calls
     generate() {
-        // No-op or call generateChunk for initial area
         console.log("ForestGenerator: Dynamic generation now handled by LevelManager.");
     }
 }

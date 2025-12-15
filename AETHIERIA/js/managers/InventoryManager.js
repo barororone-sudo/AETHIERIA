@@ -9,6 +9,10 @@ export class InventoryManager {
         this.maxStack = 99;
     }
 
+    hasItem(itemId) {
+        return this.slots.some(slot => slot && slot.id === itemId);
+    }
+
     addItem(itemId, count = 1) {
         // Use DataManager
         const itemDef = this.player.game.data.getItem(itemId);

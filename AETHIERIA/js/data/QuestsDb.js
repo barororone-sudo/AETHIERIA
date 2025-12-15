@@ -44,15 +44,61 @@ export const QuestsDb = [
                 targetPos: { x: 10, y: 0, z: -15 },
                 radius: 5,
                 isCompleted: false
+            },
+            {
+                id: 'talk_elara',
+                description: "Parlez à Elara",
+                type: 'TALK_NPC',
+                targetId: 'elara',
+                targetPos: { x: 0, y: 0, z: 0 }, // Relative to player usually, but HUD handles it
+                radius: 5,
+                isCompleted: false
             }
         ],
         rewards: {
             exp: 50,
-            items: ['sword_rusty'],
+            items: ['sword_rusted'],
             gold: 100
         },
         onComplete: {
-            unlocks: ['mq_02_first_contact']
+            unlocks: ['quest_001_restore_forest']
+        }
+    },
+
+    {
+        id: 'quest_001_restore_forest',
+        type: 'MAIN',
+        act: 1,
+        title: "Restauration de la Forêt",
+        description: "Elara vous a demandé de réactiver la Tour de la Forêt pour stabiliser la réalité.",
+        prereq: 'mq_01_wakeup',
+        steps: [
+            {
+                id: 'defeat_malphas',
+                description: "Survivre au Jugement",
+                type: 'KILL_BOSS',
+                targetId: 'boss_malphas',
+                targetPos: { x: 0, y: 0, z: 15 },
+                radius: 60, // Guide user to arena
+                isCompleted: false
+            },
+            {
+                id: 'activate_forest_tower',
+                description: "Activez la Tour de la Forêt",
+                type: 'ACTIVATE_OBJECT',
+                targetId: 'tower_FOREST',
+                targetPos: { x: 0, y: 0, z: 0 },
+                radius: 30,
+                isCompleted: false
+            }
+        ],
+        rewards: {
+            exp: 100,
+            gold: 0
+        },
+        onComplete: {
+            // unlocks: ['mq_02_first_contact'] // Bridge back to existing flow or replace
+            unlocks: ['mq_03_training']
         }
     },
 

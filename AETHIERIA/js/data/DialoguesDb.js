@@ -10,9 +10,33 @@ export const DialoguesDb = {
     'elara': {
         // Default dialogue (no active quest)
         'default': {
-            speaker: 'Elara',
-            text: "Bonjour, voyageur. Que puis-je faire pour vous ?",
+            speaker: 'Elara (Holo)',
+            text: "Systèmes en ligne. En attente d'instructions.",
             next: null
+        },
+
+        // FIRST INTERACTION (Spawned via Ancient Communicator)
+        // FIRST INTERACTION (Spawned via Ancient Communicator)
+        'meet_elara': {
+            speaker: 'Elara (Esprit Fragmenté)',
+            text: "...Le silence... s'est enfin brisé.",
+            next: 'meet_elara_2'
+        },
+        'meet_elara_2': {
+            speaker: 'Elara (Esprit Fragmenté)',
+            text: "Porteur de l'Éclat... Je suis Elara. Ma mémoire est en miettes, tout comme ce monde.",
+            next: 'meet_elara_3'
+        },
+        'meet_elara_3': {
+            speaker: 'Elara (Esprit Fragmenté)',
+            text: "Une Ombre dévore l'horizon. Les Tours de Garde se sont éteintes une à une. Si nous ne les rallumons pas, l'Aethieria retournera au néant.",
+            next: 'meet_elara_4'
+        },
+        'meet_elara_4': {
+            speaker: 'Elara (Esprit Fragmenté)',
+            text: "La Tour de la Forêt est proche. C'est notre seul espoir de stabiliser cette réalité. Allez-y, je guiderai vos pas.",
+            next: null,
+            questTrigger: 'quest_001_restore_forest'
         },
 
         // When mq_01_wakeup is active

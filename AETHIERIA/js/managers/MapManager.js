@@ -289,15 +289,15 @@ export class MapManager {
                 icon = document.createElement('div');
                 icon.className = 'map-icon-quest';
                 Object.assign(icon.style, {
-                    width: '16px', height: '16px',
-                    backgroundColor: 'gold',
-                    border: '2px solid white',
+                    width: '20px', height: '20px', // Larger
+                    backgroundColor: 'rgba(255, 215, 0, 0.8)', // Gold transparent
+                    border: '3px solid white',
                     borderRadius: '50%',
                     position: 'absolute',
                     transform: 'translate(-50%, -50%)',
-                    zIndex: '20',
+                    zIndex: '3000', // Above everything
                     pointerEvents: 'none',
-                    boxShadow: '0 0 10px gold'
+                    boxShadow: '0 0 20px gold'
                 });
                 this.iconLayer.appendChild(icon);
                 this.icons.set('quest_marker', icon);

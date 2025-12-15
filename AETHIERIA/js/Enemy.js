@@ -4,6 +4,12 @@ import * as CANNON from 'cannon-es';
 import { Chemistry, Elements } from './Chemistry.js';
 import { EnemiesDb, EnemyType, BehaviorType } from './data/EnemiesDb.js';
 
+// 🚀 ZERO ALLOCATION: Reusable Global Temps
+const _tempVec3 = new THREE.Vector3();
+const _tempVec3_2 = new THREE.Vector3();
+const _tempQuat = new THREE.Quaternion();
+const _tempCanonVec3 = new CANNON.Vec3();
+
 export class Enemy {
     /**
      * @param {import('./World.js').World} world 
@@ -25,7 +31,7 @@ export class Enemy {
         }
 
         // Apply Config or Defaults
-        this.config = config || EnemiesDb.find(e => e.id === 'slime_green') || EnemiesDb[0]; // Fallback to Blob
+        this.config = config || EnemiesDb.find(e => e.id === 'slime_green') || EnemiesDb[0]; // Fallback
 
         this.name = this.config.name;
         this.id = this.config.id;
@@ -36,10 +42,22 @@ export class Enemy {
         this.maxHp = this.config.stats.hp;
         this.speed = this.config.stats.speed;
         this.damageVal = this.config.stats.damage;
-        this.expReward = this.config.stats.exp || 10; // Default 10 XP
+        this.expReward = this.config.stats.exp || 10;
 
-        // Element (Legacy support, though arguably redundancy)
+        // Element (Integration with Chemistry)
         this.element = Elements.NONE;
+        if (this.config.visuals && this.config.visuals.particles) {
+            const p = this.config.visuals.particles.toUpperCase();
+            if (p === 'PYRO' || p === 'FIRE') this.element = Elements.PYRO;
+            else if (p === 'CRYO' || p === 'ICE') this.element = Elements.CRYO;
+            else if (p === 'HYDRO' || p === 'WATER') this.element = Elements.HYDRO;
+            else if (p === 'ELECTRO') this.element = Elements.ELECTRO;
+        } else if (this.id.includes('red')) this.element = Elements.PYRO;
+        else if (this.id.includes('blue')) this.element = Elements.HYDRO; // Default blue to Hydro if no particle
+        else if (this.id.includes('yellow')) this.element = Elements.ELECTRO;
+
+        // Boss Malphas = Metal/Void? Lets say Neutral or specific.
+        if (this.id === 'boss_malphas') this.element = Elements.NONE; // Neural for now
 
         // State Machine
         this.state = 'IDLE'; // IDLE, PATROL, ALERT, CHASE, ATTACK, RETURN, PREP, STUNNED
@@ -49,11 +67,13 @@ export class Enemy {
             state: 0,
             attack: 0,
             path: 0,
-            stun: 0 // New Stun Timer
+            stun: 0
         };
 
         this.spawnPoint = position.clone();
         this.patrolPoint = position.clone();
+
+        this.active = true; // Pool Flag
 
         // --- VISUALS ---
         this.VISUAL_OFFSET_Y = 0.0;
@@ -65,7 +85,7 @@ export class Enemy {
             if (this.world.monsterFactory) {
                 this.mesh = this.world.monsterFactory.createEnemy(this.config.visuals);
             } else {
-                // Fallback if factory missing (should not happen)
+                // Fallback
                 const geo = new THREE.BoxGeometry(1, 1, 1);
                 const mat = new THREE.MeshStandardMaterial({ color: 0x880000 });
                 this.mesh = new THREE.Mesh(geo, mat);
@@ -79,15 +99,12 @@ export class Enemy {
         if (this.world.getGroundHeight) {
             const groundY = this.world.getGroundHeight(position.x, position.z);
             if (groundY !== null && groundY !== undefined && groundY > 0) {
-                // Ground height found and valid
-                const spawnHeight = groundY + (this.height / 2) + 1.0; // 1m buffer
+                const spawnHeight = groundY + (this.height / 2) + 1.0;
                 position.y = Math.max(ABSOLUTE_MIN_HEIGHT, spawnHeight);
             } else {
-                // Fallback: use absolute minimum
                 position.y = ABSOLUTE_MIN_HEIGHT;
             }
         } else {
-            // No ground detection available
             position.y = ABSOLUTE_MIN_HEIGHT;
         }
 
@@ -95,11 +112,10 @@ export class Enemy {
         this.world.scene.add(this.mesh);
 
         // --- PHYSICS ---
-        // Scale physics body to match visual scale roughly
         const halfExtents = new CANNON.Vec3(0.5 * (this.config.visuals.scale || 1), 0.5 * (this.config.visuals.scale || 1), 0.5 * (this.config.visuals.scale || 1));
         const shape = new CANNON.Box(halfExtents);
         this.body = new CANNON.Body({
-            mass: 5 * (this.config.visuals.scale || 1), // Heavier if bigger
+            mass: 5 * (this.config.visuals.scale || 1),
             position: new CANNON.Vec3(position.x, position.y, position.z),
             fixedRotation: true
         });
@@ -108,101 +124,133 @@ export class Enemy {
         this.world.physicsWorld.addBody(this.body);
 
         // --- UI ---
-        if (this.game.combatUI) {
+        // Only create floating HP bar for non-bosses
+        const isBoss = (this.type === 'BOSS' || (this.config && this.config.visuals && this.config.visuals.isBoss));
+        if (this.game.combatUI && !isBoss) {
             this.hpBar = this.game.combatUI.createHealthBar(this);
         }
     }
 
-    createProceduralMesh(config) {
-        const color = config.visuals.color || 0xff0000;
-        const scale = config.visuals.scale || 1.0;
-        const model = config.visuals.model || 'BOX';
-
-        let geo, mat;
-        if (model === 'BLOB') {
-            geo = new THREE.SphereGeometry(0.5, 16, 16);
-            geo.translate(0, -0.2, 0); // Flatten bottom roughly
-            geo.scale(1, 0.6, 1);
-        } else if (model === 'CONSTRUCT') {
-            geo = new THREE.BoxGeometry(0.8, 1.2, 0.6); // Bulky
-        } else {
-            geo = new THREE.BoxGeometry(0.5, 1.0, 0.5); // Humanoid
+    /**
+     * RESET for Object Pooling
+     * @param {CANNON.Vec3} position
+     * @param {string|object} configOrId
+     */
+    reset(position, configOrId) {
+        // 1. Re-Config
+        let config = null;
+        if (typeof configOrId === 'string') {
+            config = EnemiesDb.find(e => e.id === configOrId);
+        } else if (configOrId && configOrId.stats) {
+            config = configOrId;
         }
+        this.config = config || this.config; // Keep old if null (shouldn't happen)
 
-        mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.7 });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.scale.setScalar(scale);
+        // 2. Stats
+        this.hp = this.config.stats.hp;
+        this.maxHp = this.config.stats.hp;
+        this.speed = this.config.stats.speed;
+        this.damageVal = this.config.stats.damage;
+        this.expReward = this.config.stats.exp || 10;
 
-        // Golem Special: Glowing Eyes
-        if (config.visuals.glow) {
-            const eyeGeo = new THREE.BoxGeometry(0.1, 0.05, 0.05);
-            const eyeMat = new THREE.MeshBasicMaterial({ color: config.visuals.glow });
-            const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
-            const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
-            leftEye.position.set(-0.15, 0.3, 0.25);
-            rightEye.position.set(0.15, 0.3, 0.25);
-            mesh.add(leftEye);
-            mesh.add(rightEye);
+        this.name = this.config.name;
+        this.id = this.config.id;
+        this.type = this.config.type;
+
+        // 3. State
+        this.state = 'IDLE';
+        this.isInvulnerable = false;
+        this.isDead = false;
+
+        // Element Inference
+        this.element = Elements.NONE;
+        if (this.config.visuals && this.config.visuals.particles) {
+            const p = this.config.visuals.particles.toUpperCase();
+            if (p === 'PYRO' || p === 'FIRE') this.element = Elements.PYRO;
+            else if (p === 'CRYO' || p === 'ICE') this.element = Elements.CRYO;
+            else if (p === 'HYDRO' || p === 'WATER') this.element = Elements.HYDRO;
+            else if (p === 'ELECTRO') this.element = Elements.ELECTRO;
+        } else if (this.id.includes('red')) this.element = Elements.PYRO;
+        else if (this.id.includes('blue')) this.element = Elements.HYDRO;
+        else if (this.id.includes('yellow')) this.element = Elements.ELECTRO;
+
+        // 4. Position
+        this.spawnPoint.copy(position);
+        this.patrolPoint.copy(position);
+
+        this.body.position.set(position.x, position.y, position.z);
+        this.body.velocity.set(0, 0, 0);
+        this.body.angularVelocity.set(0, 0, 0);
+        this.body.wakeUp();
+
+        this.mesh.position.copy(position);
+        this.mesh.visible = true;
+        this.active = true;
+
+        // 5. Visuals - Rebuild if needed? 
+        // For strict performance, we should reuse mesh if same type.
+        // For now, let's assume same mesh or minimal update.
+        // If type changed completely (e.g. Slime -> Goblin), we might need to swap mesh.
+        // TODO: Mesh Swapping logic in optimizations later.
+
+        // Update HP Bar
+        if (this.hpBar) {
+            this.hpBar.update(this.mesh.position, this.hp, this.maxHp);
+        } else if (this.game.combatUI && !(this.type === 'BOSS' || (this.config && this.config.visuals && this.config.visuals.isBoss))) {
+            // Re-create if missing and NOT a boss
+            this.hpBar = this.game.combatUI.createHealthBar(this);
         }
-
-        // Equipment (Visual Only for now)
-        if (config.visuals.equipment) {
-            if (config.visuals.equipment.leftHand === 'shield_wood') {
-                const shield = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.05, 16), new THREE.MeshStandardMaterial({ color: 0x8B4513 }));
-                shield.rotation.x = Math.PI / 2;
-                shield.position.set(0.35, 0, 0.3);
-                mesh.add(shield);
-            }
-        }
-
-        return mesh;
     }
 
     /**
-     * Dot Product Vision Check
+     * Dot Product Vision Check - ZERO ALLOCATION
      */
     canSeePlayer(player) {
         if (!player || !player.mesh) return false;
 
-        const dist = this.body.position.distanceTo(player.body.position);
-        if (dist > this.config.stats.detectionRadius) return false;
+        const distSq = this.body.position.distanceSquared(player.body.position);
+        const radius = this.config.stats.detectionRadius;
+        if (distSq > radius * radius) return false;
 
         // Vector to player
-        const toPlayer = new THREE.Vector3().subVectors(player.mesh.position, this.mesh.position).normalize();
+        _tempVec3.copy(player.mesh.position).sub(this.mesh.position).normalize();
 
         // My Forward vector
-        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.mesh.quaternion).normalize();
+        _tempVec3_2.set(0, 0, 1).applyQuaternion(this.mesh.quaternion).normalize();
 
-        // Dot Product: 1.0 = Direct front, 0.0 = Side, -1.0 = Behind
-        const dot = forward.dot(toPlayer);
+        // Dot Product
+        const dot = _tempVec3_2.dot(_tempVec3);
 
         // 60 Degrees cone approx 0.5 dot
         if (dot > 0.5) {
-            // TODO: Raycast check for walls? For now assume line of sight in open field.
             return true;
         }
 
         return false;
     }
 
-    update(dt, playerPosition) {
+    update(dt) {
         if (this.state === 'DUMMY') return; // Debug Dummy
         if (!this.world.game.player) return;
 
-        // --- OPTIMIZATION: Distance Culling ---
-        // Skip logic if too far from player (100m)
+        // --- OPTIMIZATION: Distance Culling & Sleep Physics ---
         const player = this.world.game.player;
-        const distToPlayer = this.body.position.distanceTo(player.body.position);
+        const distSq = this.body.position.distanceSquared(player.body.position); // CANNON method
 
-        if (distToPlayer > 100) {
-            // SLEEP PHYSICS: Essential for performance with 100+ enemies
+        // 100m Culling (100*100 = 10000)
+        // Exception: BOSSES should have larger range
+        let cullDistSq = 10000;
+        if (this.type === 'ELITE' || this.type === 'BOSS' || (this.config && this.config.visuals && this.config.visuals.isBoss)) {
+            cullDistSq = 250000; // 500m
+        }
+
+        if (distSq > cullDistSq) {
             if (this.body.sleepState !== CANNON.Body.SLEEPING) {
                 this.body.sleep();
-                this.mesh.visible = false; // Hide 3D model
+                this.mesh.visible = false;
             }
             return;
         } else {
-            // WAKE PHYSICS
             if (this.body.sleepState === CANNON.Body.SLEEPING) {
                 this.body.wakeUp();
                 this.mesh.visible = true;
@@ -218,33 +266,75 @@ export class Enemy {
         this.timers.state -= dt;
         this.timers.attack -= dt;
 
-        // const player = this.world.game.player; // Defined above
-        // const distToPlayer = this.body.position.distanceTo(player.body.position); // Defined above
+        // Calculate SQRT distance only once here if needed for audio logic, otherwise use SQ
+        // Using SQ everywhere is faster, but some logic needs generic dist.
+        const dist = Math.sqrt(distSq);
+
+        // DEBUG BOSS AI
+        if ((this.type === 'BOSS' || (this.config && this.config.visuals && this.config.visuals.isBoss))) {
+            if (!this._bossDebugTimer) this._bossDebugTimer = 0;
+            this._bossDebugTimer += dt;
+            if (this._bossDebugTimer > 1.0) {
+                this._bossDebugTimer = 0;
+                console.log(`[BOSS_AI] State: ${this.state} | DistToPlayer: ${dist.toFixed(1)} | DistToSpawn: ${this.body.position.distanceTo(this.spawnPoint).toFixed(1)} | Invuln: ${this.isInvulnerable} | HP: ${this.hp}/${this.maxHp}`);
+            }
+        }
+
+        // 🛡️ BOSS MALPHAS PHASE 2 LOGIC
+        if (this.config.id === 'boss_malphas' && !this.isEnraged && this.hp < this.maxHp * 0.5) {
+            this.isEnraged = true;
+            this.speed *= 1.5; // +50% Speed
+
+            // Visual Change - Turn Red
+            if (this.mesh) {
+                this.mesh.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const mat = child.material;
+                        if (mat.emissive) {
+                            mat.emissive.setHex(0xff0000);
+                            mat.emissiveIntensity = 2.0;
+                        }
+                        if (mat.color) {
+                            mat.color.setHex(0x550000); // Dark Red body
+                        }
+                    }
+                });
+            }
+
+            if (this.game.ui) this.game.ui.showToast("MALPHAS EST ENRAGÉ !", "warning");
+        }
+
+        // Phase 2 Particle Trail
+        if (this.isEnraged && this.game.particles) {
+            if (Math.random() < 0.3) {
+                this.game.particles.emit(this.body.position, 'lava', 1);
+            }
+        }
 
         switch (this.state) {
             case 'IDLE':
-                this.updateIdle(dt, player, distToPlayer);
+                this.updateIdle(dt, player, dist);
                 break;
             case 'PATROL':
-                this.updatePatrol(dt, player, distToPlayer);
+                this.updatePatrol(dt, player, dist);
                 break;
             case 'ALERT':
-                this.updateAlert(dt, player, distToPlayer);
+                this.updateAlert(dt, player, dist);
                 break;
             case 'CHASE':
-                this.updateChase(dt, player, distToPlayer);
+                this.updateChase(dt, player, dist);
                 break;
-            case 'PREP': // ⚠️ Telegraph Phase
-                this.updatePrep(dt, player, distToPlayer);
+            case 'PREP':
+                this.updatePrep(dt, player, dist);
                 break;
             case 'ATTACK':
-                this.updateAttack(dt, player, distToPlayer);
+                this.updateAttack(dt, player, dist);
                 break;
-            case 'STUNNED': // 💫 Hit Stun
+            case 'STUNNED':
                 this.updateStunned(dt);
                 break;
-            case 'RETURN': // 🛡️ Leash Return
-                this.updateReturn(dt, player, distToPlayer);
+            case 'RETURN':
+                this.updateReturn(dt);
                 break;
         }
 
@@ -255,7 +345,7 @@ export class Enemy {
         // Transition: See Player -> ALERT or CHASE
         if (this.canSeePlayer(player) || this.detectAudio(player, dist)) {
             this.state = 'ALERT';
-            this.timers.state = 1.0; // 1s Alert delay
+            this.timers.state = 1.0;
             this.showEmote('?');
             return;
         }
@@ -279,10 +369,11 @@ export class Enemy {
         }
 
         // Move to Patrol Point
-        const speed = this.speed * 0.5; // Half speed for patrol
+        const speed = this.speed * 0.5;
+        // Use manual distance check to avoid alloc logic if possible in moveTowards
         this.moveTowards(this.patrolPoint, speed);
 
-        // Reached point?
+        // Reached point? (Using CANNON distanceTo for native checks)
         if (this.body.position.distanceTo(this.patrolPoint) < 1.0) {
             this.state = 'IDLE';
             this.timers.state = 2 + Math.random() * 3;
@@ -296,17 +387,22 @@ export class Enemy {
         if (this.timers.state <= 0) {
             this.state = 'CHASE';
             this.showEmote('!');
-            this.alertAllies(10); // Group behaviors
+            this.alertAllies(10);
         }
     }
 
     updateChase(dt, player, dist) {
-        // 🛡️ Leash Check: Return to spawn if too far (>40m)
-        if (this.spawnPoint && this.body.position.distanceTo(this.spawnPoint) > 40) {
+        // 🛡️ Leash Check: Return to spawn if too far
+        // Bosses get a huge arena (150m) vs Mobs (40m)
+        let leashDist = 40;
+        if (this.type === 'BOSS' || this.isBoss) leashDist = 150;
+
+        const distFromSpawn = this.body.position.distanceTo(this.spawnPoint);
+        if (this.spawnPoint && distFromSpawn > leashDist) {
             this.state = 'RETURN';
             this.timers.state = 2.0;
-            this.isInvulnerable = true; // Enable God Mode
-            this.showEmote('💢'); // Angry/Reset emote
+            this.isInvulnerable = true;
+            this.showEmote('💢');
             return;
         }
 
@@ -314,15 +410,17 @@ export class Enemy {
         if (this.type === EnemyType.RANGED && dist < 5.0) {
             // RUN AWAY!
             const playerPos = player.body.position;
-            const fleeDir = new CANNON.Vec3(
+            // No Alloc Flee Dir
+            _tempCanonVec3.set(
                 this.body.position.x - playerPos.x,
                 0,
                 this.body.position.z - playerPos.z
             );
-            fleeDir.normalize();
-            this.body.velocity.x = fleeDir.x * this.speed;
-            this.body.velocity.z = fleeDir.z * this.speed;
-            this.lookAt(player.mesh.position); // Look at threat while backing up
+            _tempCanonVec3.normalize();
+            this.body.velocity.x = _tempCanonVec3.x * this.speed;
+            this.body.velocity.z = _tempCanonVec3.z * this.speed;
+
+            this.lookAt(player.mesh.position);
             return;
         }
 
@@ -331,12 +429,10 @@ export class Enemy {
         if (dist > attackRange) {
             this.moveTowards(player.body.position, this.speed);
         } else {
-            // In Range -> PREP (Telegraph) instead of direct ATTACK
+            // In Range -> PREP (Telegraph)
             if (this.timers.attack <= 0) {
                 this.state = 'PREP';
                 this.timers.state = 0.5; // 0.5s Telegraph Duration
-
-                // 🔴 Visual Telegraph: Flash Red
                 this.flashColor(0xFF0000, 500);
             } else {
                 // Wait/Strafe
@@ -347,28 +443,25 @@ export class Enemy {
     }
 
     updatePrep(dt, player, dist) {
-        // Stop moving during telegraph
         this.body.velocity.set(0, 0, 0);
         this.lookAt(player.mesh.position);
 
         if (this.timers.state <= 0) {
             this.state = 'ATTACK';
-            this.timers.state = 0.2; // Quick strike duration
-            this.timers.attack = 2.0; // Cooldown for next time
+            this.timers.state = 0.2;
+            this.timers.attack = 2.0;
         }
     }
 
     updateAttack(dt, player, dist) {
         this.body.velocity.set(0, 0, 0);
 
-        // Execute Attack Logic (Instant or Animated)
-        // For now, instant hit check at start of frame
         if (this.timers.state > 0) {
-            // Doing attack animation...
+            // Animating...
         } else {
             // Finish Attack
             const attackRange = this.config.ai?.attackRange || 2.0;
-            console.log(`${this.name} attacks!`);
+            // console.log(`${this.name} attacks!`);
 
             // Check Hit
             if (dist <= attackRange * 1.5) {
@@ -379,41 +472,76 @@ export class Enemy {
         }
     }
 
+    updateReturn(dt) {
+        // Run fast to spawn
+        const speed = this.speed * 2.0; // Sprint
+        this.moveTowards(this.spawnPoint, speed);
 
+        // Rapid Heal
+        this.hp = Math.min(this.hp + (this.maxHp * 0.5 * dt), this.maxHp);
+
+        // Strict connection check - IMPROVED
+        // Ignore Y axis for distance check to prevent being stuck due to height diffs
+        const distSq = (this.body.position.x - this.spawnPoint.x) ** 2 + (this.body.position.z - this.spawnPoint.z) ** 2;
+
+        // Threshold sq: 3.0 * 3.0 = 9.0
+        if (distSq < 9.0) {
+            this.state = 'IDLE';
+            this.hp = this.maxHp;
+            this.timers.state = 2.0;
+            this.isInvulnerable = false;
+            this.showEmote('✅');
+            this.body.velocity.set(0, 0, 0); // Stop moving
+        }
+
+        // Failsafe: If close enough but Y is wrong, snap? 
+        // Or just let the physics handle it. 
+        // If we are super close in XZ but stuck, release anyway.
+    }
+
+    /**
+     * Move physics body towards target - ZERO ALLOCATION
+     * @param {CANNON.Vec3} targetPos 
+     * @param {number} speed 
+     */
     moveTowards(targetPos, speed) {
-        // CANNON.Vec3 doesn't have subVectors() - manual subtraction
-        const dir = new CANNON.Vec3(
+        // Reuse global cannon vec
+        _tempCanonVec3.set(
             targetPos.x - this.body.position.x,
-            0, // Don't move vertically
+            0,
             targetPos.z - this.body.position.z
         );
 
-        const len = Math.sqrt(dir.x * dir.x + dir.z * dir.z);
-        if (len > 0.1) {
-            dir.x /= len;
-            dir.z /= len;
-            this.body.velocity.x = dir.x * speed;
-            this.body.velocity.z = dir.z * speed;
+        const lenSq = _tempCanonVec3.lengthSquared();
+        if (lenSq > 0.01) {
+            _tempCanonVec3.normalize();
+            this.body.velocity.x = _tempCanonVec3.x * speed;
+            this.body.velocity.z = _tempCanonVec3.z * speed;
 
-            // Look At (Yaw only)
-            const angle = Math.atan2(dir.x, dir.z);
-            const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
-            this.mesh.quaternion.slerp(q, 0.1);
-            this.body.quaternion.copy(this.mesh.quaternion); // Sync physics rot
+            // Look At (Yaw only) - Reuse global Quat/Vec3
+            const angle = Math.atan2(_tempCanonVec3.x, _tempCanonVec3.z);
+            _tempQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle); // Note: Vector3(0,1,0) is static internally in Three usually, but let's be safe. 
+            // Actually better to use Object3D.lookAt manually if we want 0 alloc, but slerp needs quat.
+            this.mesh.quaternion.slerp(_tempQuat, 0.1);
+            this.body.quaternion.copy(this.mesh.quaternion);
         }
     }
 
+    /**
+     * Rotate mesh towards target - ZERO ALLOCATION
+     * @param {THREE.Vector3} targetPos 
+     */
     lookAt(targetPos) {
         const dx = targetPos.x - this.body.position.x;
         const dz = targetPos.z - this.body.position.z;
         const angle = Math.atan2(dx, dz);
-        const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
-        this.mesh.quaternion.slerp(q, 0.1);
+
+        _tempQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+        this.mesh.quaternion.slerp(_tempQuat, 0.1);
         this.body.quaternion.copy(this.mesh.quaternion);
     }
 
     pickRandomPatrolPoint() {
-        // Random point within 10m of spawn
         const radius = 10;
         const theta = Math.random() * Math.PI * 2;
         this.patrolPoint.set(
@@ -424,184 +552,15 @@ export class Enemy {
     }
 
     showEmote(symbol) {
-        // TODO: Floating UI above head
-        // console.log(`[${this.name}] Emote: ${symbol}`);
+        // TODO implementation
     }
-
-    takeDamage(amount, element, isWeakPoint) {
-        // 🛡️ Invulnerable Check (Leash)
-        if (this.isInvulnerable) {
-            this.game.ui.showToast("Immunisé !", "info");
-            return;
-        }
-
-        // Shield Logic (Orc)
-        if (this.config.id === 'orc_warrior' && this.world.game.player) {
-            const player = this.world.game.player;
-            const toPlayer = new THREE.Vector3().subVectors(player.mesh.position, this.mesh.position).normalize();
-            const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.mesh.quaternion).normalize();
-            if (forward.dot(toPlayer) > 0.5) { // Facing player
-                console.log("BLOCKED!");
-                amount *= 0.2; // 80% Reduction
-            }
-        }
-
-        const finalDamage = amount;
-        this.hp -= finalDamage;
-
-        // 💫 Hit Stun Logic
-        // Interrupt Attack/Prep
-        if (this.state === 'ATTACK' || this.state === 'PREP' || this.state === 'CHASE') {
-            this.state = 'STUNNED';
-            this.timers.stun = 0.5; // Stun duration
-            // Cancel telegraph
-            if (this.telegraphMesh) {
-                this.telegraphMesh.geometry.dispose();
-                this.telegraphMesh.material.dispose();
-                this.mesh.remove(this.telegraphMesh);
-                this.telegraphMesh = null;
-            }
-        }
-
-        // --- VFX: Damage Numbers ---
-        if (this.game.combatUI && this.mesh) {
-            this.game.combatUI.showDamage(this.mesh.position, finalDamage, isWeakPoint);
-        }
-
-        // --- VFX: Particles ---
-        if (this.game.particles && this.mesh) {
-            let pType = 'blood';
-            if (this.type === 'TANK' || this.type === 'CONSTRUCT') pType = 'metal';
-            else if (this.config.id.includes('slime')) pType = 'slime';
-            this.game.particles.emit(this.mesh.position, pType, 5);
-        }
-
-        // Flash Red visual
-        this.flashColor(0xFFFFFF, 100);
-
-        if (this.hp <= 0) this.die();
-    }
-
-    die() {
-        if (this.isDead) return; // Prevent double-death
-
-        console.log("Enemy Defeated!", this.name);
-        this.isDead = true;
-        this.element = 'none'; // Clear Status
-        this.elementTimer = 0;
-
-        // UI
-        if (this.hpBar) {
-            // this.world.scene.remove(this.hpBar.mesh); // If HP bar was separate mesh
-            this.hpBar = null;
-        }
-        this.elementIcon = null;
-
-        // 🏕️ Notify world for camp clearing
-        if (this.world && this.world.notifyEnemyDeath) {
-            this.world.notifyEnemyDeath(this);
-        }
-
-        // Grant XP
-        if (this.game.player) {
-            this.game.player.gainExp(this.expReward);
-        }
-
-        // Notify Story
-        if (this.game.story) {
-            this.game.story.notify('KILL_ENEMY', this.config.id || this.name);
-        }
-
-        this.world.scene.remove(this.mesh);
-        this.world.physicsWorld.removeBody(this.body);
-
-        // Loot
-        if (this.game.lootManager) {
-            const drops = this.game.lootManager.rollLoot(this);
-            if (drops.length > 0) {
-                this.game.lootManager.spawnLoot(this.mesh.position, drops);
-            }
-        }
-    }
-
-    /**
-     * Apply Elemental Status
-     * @param {string} element 
-     */
-    applyElement(element) {
-        if (!element || element === Elements.NONE) return null;
-
-        // Logic
-        const reaction = Chemistry.applyElement(this, element, this.world);
-
-        if (reaction) {
-            // FLOATING TEXT FOR REACTION
-            if (this.game.ui && this.game.ui.showFloatingText) {
-                const pos = this.mesh.position.clone().add(new THREE.Vector3(0, 2.5, 0));
-                this.game.ui.showFloatingText(pos, reaction.type, reaction.color || '#ffffff', 1.5);
-            }
-            return reaction;
-        } else {
-            // New Aura Applied
-            if (this.game.ui && this.game.ui.showFloatingText) {
-                const pos = this.mesh.position.clone().add(new THREE.Vector3(0, 2, 0));
-                let c = '#ffffff';
-                if (element === Elements.PYRO) c = '#ff4400';
-                if (element === Elements.HYDRO) c = '#0044ff';
-                if (element === Elements.CRYO) c = '#00ffff';
-                if (element === Elements.ELECTRO) c = '#cc00ff';
-
-                this.game.ui.showFloatingText(pos, element, c, 1.0);
-            }
-            return null;
-        }
-    }
-
-    update(dt) {
-        if (this.isDead) return;
-
-        // Element Decay
-        if (this.element && this.element !== Elements.NONE) {
-            this.elementTimer = (this.elementTimer || 0) + dt;
-            if (this.elementTimer > 5.0) { // 5 Seconds Aura
-                this.element = Elements.NONE;
-                this.elementTimer = 0;
-            }
-        }
-
-        // State Machine
-        this.updateState(dt);
-        this.updatePhysics(dt);
-
-        if (this.hpBar) {
-            this.hpBar.update(this.mesh.position, this.hp, this.maxHp);
-        }
-
-        // Return Logic if CHASE too far (simple check)
-        if (this.state === 'CHASE' && this.spawnPoint) {
-            if (this.body.position.distanceTo(this.spawnPoint) > 40) {
-                this.state = 'RETURN';
-            }
-        }
-    }
-
-    // Legacy support for manual calls (Debug)
-    applyKnockback(dir, force) {
-        this.body.velocity.x += dir.x * force;
-        this.body.velocity.z += dir.z * force;
-        this.body.velocity.y += 5;
-    }
-
-    // --- NEW BEHAVIORS ---
 
     updateStunned(dt) {
-        // Paused state
         if (this.timers.stun <= 0) {
-            this.state = 'CHASE'; // Recover
-            // Maybe temporary immunity to stun?
+            this.state = 'CHASE';
         } else {
             this.timers.stun -= dt;
-            this.body.velocity.set(0, 0, 0); // Stop moving
+            this.body.velocity.set(0, 0, 0);
         }
     }
 
@@ -621,31 +580,16 @@ export class Enemy {
         });
     }
 
-    updateReturn(dt, player, dist) {
-        // Run fast to spawn
-        const speed = this.speed * 2.0; // Sprint
-        this.moveTowards(this.spawnPoint, speed);
-
-        // Rapid Heal
-        this.hp = Math.min(this.hp + (this.maxHp * 0.5 * dt), this.maxHp); // 50% HP/sec
-
-        if (this.body.position.distanceTo(this.spawnPoint) < 1.0) {
-            this.state = 'IDLE';
-            this.hp = this.maxHp;
-            this.timers.state = 2.0;
-            this.isInvulnerable = false; // Disable God Mode
-            this.showEmote('✅');
-        }
-    }
-
     alertAllies(range) {
         if (!this.world.enemies) return;
+
+        const rangeSq = range * range; // Optimize
 
         for (const ally of this.world.enemies) {
             if (ally === this || ally.state === 'CHASE' || ally.state === 'RETURN' || ally.isDead) continue;
 
-            const dist = this.body.position.distanceTo(ally.body.position);
-            if (dist < range) {
+            const distSq = this.body.position.distanceSquared(ally.body.position);
+            if (distSq < rangeSq) {
                 ally.state = 'ALERT';
                 ally.timers.state = 0.5;
                 ally.showEmote('!');
@@ -654,13 +598,13 @@ export class Enemy {
     }
 
     detectAudio(player, dist) {
-        // Simple noise mechanics
         if (dist > 15) return false;
 
         let noiseLevel = 0;
+        // CANNON length() is fine, checking speed
         const speed = player.body.velocity.length();
-        if (speed > 8) noiseLevel = 1.0; // Sprinting
-        else if (speed > 2) noiseLevel = 0.3; // Walking
+        if (speed > 8) noiseLevel = 1.0;
+        else if (speed > 2) noiseLevel = 0.3;
 
         if (player.isAttacking) noiseLevel = 1.0;
 
@@ -668,5 +612,116 @@ export class Enemy {
             return true;
         }
         return false;
+    }
+
+    takeDamage(amount, element, isWeakPoint) {
+        console.log(`[Enemy] ${this.name} taking damage: ${amount}. Invuln: ${this.isInvulnerable}`);
+        if (this.isInvulnerable) {
+            this.game.ui.showToast("Immunisé !", "info");
+            return;
+        }
+
+        let finalDamage = amount;
+
+        // --- CHEMISTRY REACTION ---
+        // element is the Attack Element (Trigger)
+        // this.element is the Enemy Element (Aura)
+        if (element && element !== Elements.NONE) {
+
+            // 1. Check for Reaction
+            const reaction = Chemistry.getReaction(element, this.element);
+
+            if (reaction) {
+                // Apply Multiplier
+                if (reaction.multiplier) {
+                    finalDamage *= reaction.multiplier;
+                    // Show Text: "MELT (x2.0)"
+                    if (this.game.combatUI && this.mesh) {
+                        this.game.combatUI.showDamage(this.mesh.position, `${reaction.type} x${reaction.multiplier}`, true); // True for Critical/Special style
+                    }
+                } else if (reaction.damage) {
+                    // Transform (Overload, etc) - Extra Flat Damage
+                    finalDamage += reaction.damage; // Add flat damage to hit
+                    if (this.game.combatUI && this.mesh) {
+                        this.game.combatUI.showDamage(this.mesh.position, reaction.type, true);
+                    }
+                } else {
+                    // Other effects (Freeze)
+                    if (this.game.combatUI && this.mesh) {
+                        this.game.combatUI.showDamage(this.mesh.position, reaction.type, true);
+                    }
+                }
+
+                // Side Effects
+                if (reaction.type === 'FROZEN') {
+                    // TODO: Implement Freeze logic (pause AI)
+                }
+
+            }
+        }
+
+        this.hp -= finalDamage;
+
+        // 💫 Hit Stun Logic
+        if (this.state === 'ATTACK' || this.state === 'PREP' || this.state === 'CHASE') {
+            if (this.type !== 'BOSS' && !this.isBoss) { // Bosses resist stun usually
+                this.state = 'STUNNED';
+                this.timers.stun = 0.5;
+            }
+        }
+
+        // --- VFX ---
+        if (this.game.combatUI && this.mesh) {
+            this.game.combatUI.showDamage(this.mesh.position, finalDamage, isWeakPoint);
+        }
+
+        if (this.game.particles && this.mesh) {
+            let pType = 'blood';
+            if (this.type === 'TANK' || this.type === 'CONSTRUCT') pType = 'metal';
+            else if (this.config.id.includes('slime')) pType = 'slime';
+            this.game.particles.emit(this.mesh.position, pType, 5);
+        }
+
+        this.flashColor(0xFFFFFF, 100);
+
+        if (this.hp <= 0) this.die();
+    }
+
+    die() {
+        if (this.game.player) {
+            this.game.player.gainExp(this.expReward);
+        }
+
+        if (this.game.story) {
+            this.game.story.notify('KILL_ENEMY', this.config.id || this.name);
+        }
+
+        // QUEST PROGRESSION
+        if (this.game.questManager) {
+            // Notify generic kill
+            this.game.questManager.checkQuestProgress('KILL_ENEMY', { enemyId: this.config.id });
+
+            // Notify boss kill if applicable
+            if (this.type === EnemyType.ELITE || this.type === EnemyType.BOSS || this.config.visuals?.isBoss) {
+                this.game.questManager.checkQuestProgress('KILL_BOSS', { enemyId: this.config.id });
+            }
+        }
+
+        // Loot
+        if (this.game.lootManager) {
+            const drops = this.game.lootManager.rollLoot(this);
+            if (drops.length > 0) {
+                this.game.lootManager.spawnLoot(this.mesh.position, drops);
+            }
+        }
+
+        // POOL DESPAWN
+        if (this.world.poolManager) {
+            this.world.poolManager.despawn(this);
+        } else {
+            // Fallback Legacy Destroy
+            this.world.scene.remove(this.mesh);
+            this.world.physicsWorld.removeBody(this.body);
+        }
     }
 }

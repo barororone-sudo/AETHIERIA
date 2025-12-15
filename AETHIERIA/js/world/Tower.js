@@ -115,6 +115,15 @@ export class Tower {
     }
 
     showInteractButton() {
+        // QUEST LOCK CHECK
+        if (this.game.questManager) {
+            const step = this.game.questManager.currentStep;
+            // If we are in the Boss Step, BLOCK interaction
+            if (step && step.id === 'defeat_malphas') {
+                return;
+            }
+        }
+
         if (this.interactBtn) {
             this.interactBtn.style.display = 'block';
             return;
@@ -149,6 +158,20 @@ export class Tower {
     }
 
     interact() {
+        // QUEST LOCK CHECK
+        if (this.game.questManager) {
+            const step = this.game.questManager.currentStep;
+            if (step && step.id === 'defeat_malphas') {
+                this.game.ui.showToast("La tour est verrouillée par une force sombre...", "error");
+                return;
+            }
+        }
+
+        if (this.isUnlocked) return;
+
+        // Safety check
+        if (!this.game) return;
+
         this.triggerCinematic();
     }
 
@@ -191,6 +214,11 @@ export class Tower {
         // Notify Story
         if (this.game.story) {
             this.game.story.notify('INTERACT', this.id);
+        }
+
+        // Notify Quest Manager (CRITICAL FOR PROGRESSION)
+        if (this.game.questManager) {
+            this.game.questManager.checkQuestProgress('ACTIVATE_OBJECT', { objectId: this.id });
         }
 
         let progress = 0;

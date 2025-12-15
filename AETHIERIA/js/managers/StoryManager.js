@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+import { NPC } from '../NPC.js';
+import { ElaraHologram } from '../world/ElaraHologram.js';
+import { Chest } from '../world/Chest.js';
 import { Guardian } from '../Guardian.js';
 import { EnemiesDb, getEnemyById } from '../data/EnemiesDb.js';
 import { ItemsDb, getItemById } from '../data/ItemsDb.js';
@@ -29,8 +33,80 @@ export class StoryManager {
         this.tutorialStep = 0;
         this.tutorialTimer = 0;
 
+        this.elaraSpawned = false;
+        this.elaraEventTriggered = false;
+
         // Initialize UI integration
         // (UI methods are called on game.ui directly now)
+    }
+
+    // ADDED: Elara Spawn Logic
+    spawnElara(playerPos) {
+        if (this.elaraSpawned) return;
+        this.elaraSpawned = true;
+
+        console.log("🦾 SPAWNING ELARA (Hologram)...");
+
+        // Spawn 2m in front of player
+        const spawnPos = playerPos.clone();
+        spawnPos.z -= 2;
+        spawnPos.y += 0; // Ground snap handles this
+
+        // Create NPC (Logic + Interaction Hitbox)
+        this.elara = new NPC(this.game, this.game.world, 'elara', spawnPos, 'meet_elara');
+
+        // Hide the default humanoid mesh (keep it for hitbox interaction)
+        if (this.elara.mesh) {
+            this.elara.mesh.traverse((child) => {
+                if (child.isMesh) {
+                    child.material.transparent = true;
+                    child.material.opacity = 0; // Invisible hitbox
+                    child.visible = false; // Actually, let's hide it. If Raycaster ignores hidden, we have a problem.
+                    // But ElaraHologram has meshes. Maybe we interact with THEM?
+                    // NPC.js interacts via 'this.mesh'. 
+                    // Let's rely on ElaraHologram meshes for raycast?
+                    // No, NPC logic is bound to 'this.elara'.
+                    // Solution: Opacity 0.
+                    child.material.opacity = 0;
+                    child.material.visible = false; // This might disable raycast.
+                    // Let's just set opacity 0.
+                    child.material.opacity = 0;
+                }
+            });
+            // Hack: If we set child.visible=false, raycast fails.
+            // If we set opacity 0, it works.
+        }
+
+        // 🔮 SPAWN DIVINE HOLOGRAM VISUALS
+        // This class manages the cool Icosahedron + Torus + Particles
+        this.elaraVisuals = new ElaraHologram(this.game, spawnPos);
+
+        // Link visuals to NPC update loop for bobbing?
+        // ElaraHologram has its own update(dt). We need to call it.
+
+        if (this.game.ui) {
+            this.game.ui.showToast("Signal Intercepté : IA Activée", "info");
+            this.game.ui.playSound('ui_ding');
+        }
+
+        // UPDATE QUEST OBJECTIVE TO ELARA'S POSITION
+        if (this.game.questManager) {
+            const activeQuest = this.game.questManager.getActiveQuest();
+            if (activeQuest && activeQuest.id === 'mq_01_wakeup') {
+                const step = activeQuest.steps.find(s => s.id === 'talk_elara');
+                if (step) {
+                    step.targetPos = { x: spawnPos.x, y: spawnPos.y + 2, z: spawnPos.z };
+                    this.game.questManager.updateObjective(); // Refresh UI/Beacon
+                }
+            }
+        }
+    }
+
+    // DEBUG: Force Spawn
+    testSpawnElara() {
+        if (this.game.player) {
+            this.spawnElara(this.game.player.mesh.position);
+        }
     }
 
     startNewGameSequence() {
@@ -68,7 +144,12 @@ export class StoryManager {
                 }, 1000);
             }
 
-            this.startTutorial();
+            // SKIP TUTORIAL AS REQUESTED
+            console.log("Skipping Tutorial -> PLAYING");
+            this.state = 'PLAYING';
+            this.game.player.isInTutorial = false;
+            this.game.player.inputLocked = false; // UNLOCK INPUTS
+            this.game.ui.hideCinematicOverlay();
         });
     }
 
@@ -219,6 +300,38 @@ export class StoryManager {
     }
 
     update(dt) {
+        // --- GLOBAL CHECKS ---
+        // AUTO-CHECK: Trigger Elara Event if Item is present (Works in Tutorial too)
+        if (!this.elaraSpawned && !this.elaraEventTriggered && this.game.player && this.game.player.inventory) {
+            // Throttle check or wait for inventory init
+            if (this.game.player.inventory.hasItem('ancient_communicator')) {
+                this.elaraEventTriggered = true;
+                this.spawnElara(this.game.player.mesh.position);
+            }
+        }
+
+        // UPDATE ELARA (For visuals & Interaction Prompt)
+        if (this.elara) {
+            this.elara.update(dt);
+        }
+        if (this.elaraVisuals) {
+            this.elaraVisuals.update(dt);
+        }
+
+        this.checkBossEvents(dt);
+
+        // UPDATE BOSS HEALTH BAR
+        if (this.activeBoss && this.activeBoss.active && !this.activeBoss.isDead) {
+            if (this.game.combatUI) {
+                this.game.combatUI.updateBossHealth(this.activeBoss.hp, this.activeBoss.maxHp);
+            }
+        } else if (this.activeBoss && (this.activeBoss.isDead || !this.activeBoss.active)) {
+            // Boss died or despawned - hide bar
+            if (this.game.combatUI && this.game.combatUI.bossBarContainer) {
+                this.game.combatUI.hideBossHealthBar();
+            }
+        }
+
         // --- TUTORIAL LOGIC ---
         if (this.state === 'TUTORIAL') {
             this.updateTutorial(dt);
@@ -236,6 +349,190 @@ export class StoryManager {
             this.beam.scale.set(s, 1, s);
         }
     }
+
+    checkBossEvents(dt) {
+        if (!this.game.player || !this.game.player.mesh) return;
+
+        // CHECK: MALPHAS SPAWN (Forest Tower)
+        // Condition: Near Tower (0,0) RADIUS 60, Quest Active
+        const distSq = this.game.player.mesh.position.lengthSq(); // 0,0 center
+        if (distSq < 60 * 60) {
+            // Check Quest State using the new helper
+            const step = this.game.questManager.currentStep;
+
+
+
+            // CRITICAL FIX: If flag is true but boss is missing from world, RESET FLAG
+            if (this.malphasSpawned && (!this.activeBoss || !this.activeBoss.active || this.activeBoss.isDead)) {
+                // Check if actually dead (quest completed?)
+                // If step is still 'defeat_malphas', then he shouldn't be dead/gone.
+                if (step && step.id === 'defeat_malphas') {
+                    console.warn("[BossTrigger] Flag is TRUE but Boss is MISSING/DEAD while step is active. RESETTING.");
+                    this.malphasSpawned = false;
+                    this.activeBoss = null;
+                }
+            }
+
+            if (step && step.id === 'defeat_malphas' && !this.malphasSpawned) {
+                // Wait for Elara to leave/finish
+                if (this.elara) return;
+
+                console.log("[BossTrigger] Conditions MET. Attempting Spawn...");
+                this.spawnMalphas();
+            }
+        }
+    }
+
+    notify(event, params) {
+        // console.log(`[Story] Event: ${event}`, params);
+
+        if (event === 'KILL_ENEMY' && params === 'boss_malphas') {
+            // BOSS DEFEATED
+            this.game.ui.showToast("Le Gardien est tombé... La Tour est accessible.", "success", 5000);
+
+            // 1. Reset Atmosphere
+            if (this.scene.fog) {
+                this.scene.fog.color.setHex(0x87CEEB); // Blue Sky
+            }
+            if (this.game.world.sunLight) {
+                this.game.world.sunLight.intensity = 1.2; // Normal
+            }
+
+            // 1b. Tower Lights Up (Cyan)
+            const towerLight = new THREE.PointLight(0x00ffff, 2, 50);
+            towerLight.position.set(0, 30, 0);
+            this.game.world.scene.add(towerLight);
+            // Optional: Animation or Beam
+            this.createObjectiveBeam(new THREE.Vector3(0, 0, 0));
+
+            // 2. Spawn Loot (Tier 3 Chest)
+            // Handled by LootManager usually, but user asked for specific chest spawn here?
+            // "Spawn un 'Coffre Rare' (Tier 3) à l'endroit de sa mort"
+            // The Enemy.die() spawns generic loot. 
+            // I'll leave generic loot or add a chest? 
+            // Let's spawn a specific chest for impact.
+            if (this.activeBoss) {
+                const chestPos = this.activeBoss.mesh.position.clone();
+                if (this.game.world.chests) {
+                    const Chest = this.game.world.Chest; // Assuming Chest class is accessible via world
+                    const chest = new Chest(this.game, this.game.world, chestPos, 3, false); // Tier 3
+                    this.game.world.chests.push(chest);
+                }
+            }
+        }
+
+        // Check Triggers
+        this.triggers.forEach(t => {
+            if (t.active && t.condition(this.game, event, params)) {
+                t.action(this.game);
+                if (t.once) t.active = false;
+            }
+        });
+    }
+
+    spawnMalphas() {
+        if (this.malphasSpawned) return;
+        this.malphasSpawned = true;
+
+        console.log("⚠️ SPAWNING BOSS MALPHAS ⚠️");
+
+        try {
+            // 1. ATMOSPHERE
+            const scene = this.scene || (this.game ? this.game.scene : null);
+
+            if (scene && scene.fog) {
+                this.oldFogColor = scene.fog.color.getHex();
+                scene.fog.color.setHex(0x220505); // Gris/Rouge oppressant
+            }
+
+            if (this.game && this.game.world && this.game.world.sunLight) {
+                this.game.world.sunLight.intensity = 0.5; // Le soleil se voile
+            }
+
+            // 2. SPAWN LOGIC
+            // Emerge from ground (Y: -10 to 0)
+            const spawnPos = new CANNON.Vec3(0, -10, 15);
+
+            console.log("[BossSpawn] Calling PoolManager.spawn...");
+            // Force boss_malphas ID
+            const boss = this.game.world.poolManager.spawn('enemy', 'boss_malphas', spawnPos);
+
+            if (!boss) {
+                console.error("[BossSpawn] FAILED.");
+                this.malphasSpawned = false;
+                return;
+            }
+
+            this.activeBoss = boss;
+
+            // INIT BOSS BAR
+            if (this.game.combatUI) {
+                this.game.combatUI.createBossHealthBar("Malphas, Le Verrou Rouillé", boss.maxHp);
+            }
+
+            // 3. CINEMATIC ENTRANCE
+            // Dialogue
+            this.game.displaySubtitle("INTRUS... PROTOCOLE DE PURGE... ACTIVÉ.");
+            if (this.game.ui) this.game.ui.playSound('boss_spawn'); // Hypothetical sound
+
+            // Animation Rise
+            let y = -10;
+            // Get Ground Height specifically at spawn X,Z
+            let targetY = this.game.world.getGroundHeight(0, 15);
+            if (targetY === null || targetY === undefined) targetY = 0;
+            targetY = Math.max(0, targetY);
+
+            // Camera Shake (Simulated via player shake or separate effect)
+            if (this.game.player.screenShake) this.game.player.screenShake(1.0, 5.0); // 1.0 intensity, 5s duration
+
+            const riseInterval = setInterval(() => {
+                if (!boss || boss.isDead || !boss.active) {
+                    clearInterval(riseInterval);
+                    return;
+                }
+
+                y += 0.05; // Slow rise
+                // Update Physics & Mesh
+                if (boss.body) boss.body.position.set(0, y, 15);
+                // Sync Mesh manually here to avoid lag
+                if (boss.mesh) boss.mesh.position.set(0, y, 15);
+
+                if (y >= targetY) {
+                    clearInterval(riseInterval);
+
+                    // Final position lock
+                    if (boss.body) {
+                        boss.body.position.set(0, targetY, 15);
+                        boss.body.velocity.set(0, 0, 0);
+                    }
+                    if (boss.mesh) boss.mesh.position.set(0, targetY, 15);
+
+                    // FORCE COMBAT STATE
+                    boss.state = 'CHASE';
+                    boss.timers.state = 10.0;
+                    boss.isInvulnerable = false; // ⚔️ VULNERABLE
+                    boss.active = true;
+
+                    // Force Aggro immediately
+                    if (this.game.player && this.game.player.mesh) {
+                        boss.lookAt(this.game.player.mesh.position);
+                    }
+
+
+                    // Update Spawn Point to avoid Leash
+                    if (boss.spawnPoint) {
+                        boss.spawnPoint.copy(boss.body.position);
+                    }
+                }
+            }, 30); // ~30fps update for rise
+
+        } catch (e) {
+            console.error("[BossSpawn] CRITICAL CRASH:", e);
+            this.malphasSpawned = false;
+        }
+    }      // --- TUTORIAL LOGIC ---
+
+
 
     updateTutorial(dt) {
         const input = this.game.input;
@@ -521,7 +818,7 @@ export class StoryManager {
 
         // 3. Dialogue
         if (this.game.dialogueManager) {
-            this.game.dialogueManager.startDialogue('lumina_act1_end');
+            // this.game.dialogueManager.startDialogue('lumina_act1_end'); // Lumina removed
         }
     }
 
@@ -608,8 +905,42 @@ export class StoryManager {
      * @param {string} eventType - e.g. 'OPEN_CHEST', 'EQUIP_WEAPON'
      * @param {Object} data - Context data, e.g. { tier: 1 } or { id: 'sword_starter' }
      */
+    despawnElara() {
+        if (!this.elara) return;
+        console.log("🦾 DESPAWNING ELARA...");
+
+        // Remove NPC Mesh
+        if (this.elara.mesh) {
+            this.game.world.scene.remove(this.elara.mesh);
+        }
+
+        // Remove Visuals
+        if (this.elaraVisuals) {
+            if (this.elaraVisuals.mesh) this.game.world.scene.remove(this.elaraVisuals.mesh);
+            this.elaraVisuals = null;
+        }
+
+        this.elara = null;
+        this.elaraSpawned = false; // Allow respawn if needed, or keep true to lock? Logic says likely lock, but 'elara' check prevents update.
+        // Actually, we use 'this.elara' check for boss spawn. So nulling it fixes the boss spawn.
+    }
+
     triggerEvent(eventType, data = {}) {
         console.log(`Story Event: ${eventType}`, data);
+
+        // 🟢 SPECIAL: ELARA SPAWN TRIGGER
+        if (eventType === 'ITEM_PICKUP' && data.id === 'ancient_communicator') {
+            if (this.game.player && this.game.player.mesh) {
+                this.spawnElara(this.game.player.mesh.position);
+            }
+        }
+
+        // 🔴 SPECIAL: ELARA DESPAWN TRIGGER
+        if (eventType === 'DIALOGUE_COMPLETE' && data.id === 'meet_elara') {
+            this.despawnElara();
+            // Trigger Boss Check immediately?
+            this.checkBossEvents(0.1);
+        }
 
         // ✨ Quest 001 "Le Réveil" - Specific Logic
         const quest001 = this.activeQuests.find(q => q.id === 'quest_001');
@@ -767,7 +1098,9 @@ export class StoryManager {
             completedQuests: this.completedQuests,
             bossSpawned: this.bossSpawned || false,
             guardianHp: this.guardian ? this.guardian.hp : null,
-            tutorialStep: this.tutorialStep // Save Tutorial Step
+            tutorialStep: this.tutorialStep,
+            elaraSpawned: this.elaraSpawned || false,
+            elaraEventTriggered: this.elaraEventTriggered || false
         };
     }
 
@@ -782,6 +1115,10 @@ export class StoryManager {
         if (data.completedQuests) this.completedQuests = data.completedQuests;
         if (data.bossSpawned) this.bossSpawned = data.bossSpawned;
         if (data.tutorialStep) this.tutorialStep = data.tutorialStep;
+        if (data.elaraSpawned !== undefined) this.elaraSpawned = data.elaraSpawned;
+        if (data.elaraEventTriggered !== undefined) this.elaraEventTriggered = data.elaraEventTriggered;
+
+        // Restore Tutorial UI
 
         // Restore Tutorial UI
         if (this.state === 'TUTORIAL') {

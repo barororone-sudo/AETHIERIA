@@ -191,6 +191,8 @@ export class Player {
         // 🎯 WEAPON ANIMATIONS (Phase 2)
         this.weaponAnimations = new WeaponAnimations(this);
 
+        // this.combat.init(); // REMOVED: Called in main.js AFTER world init to avoid null pool
+
         console.log('⚔️ Advanced Combat Systems initialized');
 
         // Define Animations

@@ -180,11 +180,91 @@ export class CombatUI {
         }
     }
 
+
     removeElement(index) {
         const el = this.elements[index];
         if (el.dom && el.dom.parentNode) {
             el.dom.parentNode.removeChild(el.dom);
         }
         this.elements.splice(index, 1);
+    }
+
+    /**
+     * BOSS HEALTH BAR SYSTEM
+     */
+    createBossHealthBar(name, maxHp) {
+        if (this.bossBarContainer) {
+            this.hideBossHealthBar();
+        }
+
+        // Container centered at top
+        const container = document.createElement('div');
+        container.style.position = 'absolute';
+        container.style.top = '10%'; // Below compass/stats
+        container.style.left = '50%';
+        container.style.transform = 'translateX(-50%)';
+        container.style.width = '600px';
+        container.style.height = '30px';
+        container.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        container.style.border = '2px solid #8B0000'; // Dark Red Border
+        container.style.boxShadow = '0 0 20px rgba(139, 0, 0, 0.5)';
+        container.style.pointerEvents = 'none';
+        container.style.zIndex = '1000';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+
+        // Title
+        const title = document.createElement('div');
+        title.innerText = name.toUpperCase();
+        title.style.color = '#FF4444';
+        title.style.fontFamily = 'Cinzel, serif';
+        title.style.fontSize = '18px';
+        title.style.textAlign = 'center';
+        title.style.marginBottom = '5px';
+        title.style.textShadow = '0 0 10px #FF0000';
+        container.insertBefore(title, null); // Add title above bar logic if complex, but flex column handles it
+
+        // Bar Wrapper
+        const barWrapper = document.createElement('div');
+        barWrapper.style.width = '100%';
+        barWrapper.style.height = '100%';
+        barWrapper.style.position = 'relative';
+        container.appendChild(barWrapper);
+
+        // Fill
+        const fill = document.createElement('div');
+        fill.style.width = '100%';
+        fill.style.height = '100%';
+        fill.style.backgroundColor = '#FF0000';
+        fill.style.boxShadow = 'inset 0 0 10px #500000';
+        fill.style.transition = 'width 0.2s ease-out';
+        barWrapper.appendChild(fill);
+
+        document.body.appendChild(container);
+
+        this.bossBarContainer = container;
+        this.bossBarFill = fill;
+        this.bossMaxHp = maxHp;
+    }
+
+    updateBossHealth(currentHp, maxHp) {
+        if (!this.bossBarContainer) return;
+
+        // Update max if changed (e.g. phases)
+        if (maxHp) this.bossMaxHp = maxHp;
+
+        const pct = Math.max(0, (currentHp / this.bossMaxHp) * 100);
+        this.bossBarFill.style.width = `${pct}%`;
+
+        // Flash effect on hit?
+        // if (pct < prevPct) ...
+    }
+
+    hideBossHealthBar() {
+        if (this.bossBarContainer && this.bossBarContainer.parentNode) {
+            this.bossBarContainer.parentNode.removeChild(this.bossBarContainer);
+        }
+        this.bossBarContainer = null;
+        this.bossBarFill = null;
     }
 }

@@ -399,13 +399,15 @@ export class LevelManager {
         this._campCheckTimer = 2.0; // Check every 2 seconds
 
         // Monster Lock Logic
+        // Monster Lock Logic
         this.activeCamps.forEach(camp => {
             if (!camp.cleared && camp.chest && camp.chest.locked && camp.enemiesSpawned) {
-                const stillActive = camp.enemies.filter(e => this.world.enemies.includes(e) && !e.isDead);
+                // Check if enemies are still active/alive (using pool 'active' flag)
+                const stillActive = camp.enemies.filter(e => e.active && !e.isDead);
                 if (stillActive.length === 0) {
                     camp.cleared = true;
                     camp.chest.unlock();
-                    this.game.ui.showToast("Camp nettoyé ! Coffre déverrouillé.", 'success');
+                    if (this.game.ui) this.game.ui.showToast("Camp nettoyé ! Coffre déverrouillé.", 'success');
                 }
             }
         });
@@ -434,9 +436,15 @@ export class LevelManager {
     }
 
     spawnCampEnemies(camp) {
-        camp.enemies = [];
+        camp.enemies = []; // Local refs
         camp.enemiesSpawned = true;
         const count = 3; // 3 Enemies per camp
+
+        // Safety check
+        if (!this.world.poolManager) {
+            console.error("PoolManager missing!");
+            return;
+        }
 
         for (let i = 0; i < count; i++) {
             // Random position around fire
@@ -444,24 +452,36 @@ export class LevelManager {
             const r = 3 + Math.random() * 5;
             const ex = camp.x + Math.cos(angle) * r;
             const ez = camp.z + Math.sin(angle) * r;
-            const ey = this.terrain ? this.terrain.getGlobalHeight(ex, ez) + 2.0 : camp.y + 2.0; // +2m Safety
+            const ey = this.terrain ? this.terrain.getGlobalHeight(ex, ez) + 2.0 : camp.y + 2.0;
 
-            const enemy = new Enemy(this.world, new CANNON.Vec3(ex, ey, ez), camp.enemyType);
+            const pos = new CANNON.Vec3(ex, ey, ez);
 
-            camp.enemies.push(enemy);
-            if (this.world.enemies) this.world.enemies.push(enemy);
+            // POOL SPAWN
+            // Use 'enemy' category and pass specific type
+            const enemy = this.world.poolManager.spawn('enemy', camp.enemyType, pos);
+
+            if (enemy) {
+                camp.enemies.push(enemy);
+                if (this.world.enemies && !this.world.enemies.includes(enemy)) {
+                    this.world.enemies.push(enemy);
+                }
+            }
         }
     }
 
     despawnCampEnemies(camp) {
         if (!camp.enemies) return;
         camp.enemies.forEach(e => {
+            // Remove from global list if present
             if (this.world.enemies) {
                 const idx = this.world.enemies.indexOf(e);
                 if (idx > -1) this.world.enemies.splice(idx, 1);
             }
-            if (e.mesh) this.scene.remove(e.mesh);
-            if (e.body) this.world.physicsWorld.removeBody(e.body);
+
+            // POOL DESPAWN
+            if (this.world.poolManager) {
+                this.world.poolManager.despawn(e);
+            }
         });
         camp.enemies = [];
         camp.enemiesSpawned = false;
@@ -604,7 +624,7 @@ export class LevelManager {
         this.switches.push(s);
 
         // Guardian Golem nearby
-        const golem = new Enemy(this.world, new CANNON.Vec3(x - 5, y + 2, z), 'golem_ancient');
+        const golem = this.world.poolManager.spawn('enemy', 'golem_ancient', new CANNON.Vec3(x - 5, y + 2, z));
         if (this.world.enemies) this.world.enemies.push(golem);
     }
 
@@ -620,7 +640,7 @@ export class LevelManager {
         const gy = this.terrain ? this.terrain.getGlobalHeight(gx, gz) : 0;
 
         console.log("Spawning Guardian Golem!");
-        new Enemy(this.world, new CANNON.Vec3(gx, gy + 2, gz), 'golem_ancient');
+        this.world.poolManager.spawn('enemy', 'golem_ancient', new CANNON.Vec3(gx, gy + 2, gz));
     }
 
     getData() {

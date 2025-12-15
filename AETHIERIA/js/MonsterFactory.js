@@ -249,7 +249,22 @@ export class MonsterFactory {
 
     createConstruct(color, config) {
         const group = new THREE.Group();
-        const stoneMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.9 });
+
+        // Material Handling
+        let stoneMat;
+        if (config.isBoss) {
+            // Obsidian with Emissive Veins
+            stoneMat = new THREE.MeshStandardMaterial({
+                color: color,
+                roughness: 0.2, // Shiny Obsidan
+                metalness: 0.8,
+                emissive: config.glow || 0xff0000,
+                emissiveIntensity: 0.2
+            });
+        } else {
+            stoneMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.9 });
+        }
+
         const glowMat = new THREE.MeshBasicMaterial({ color: config.glow || 0x00ffff });
 
         // Core (Floating Cube)
@@ -259,36 +274,54 @@ export class MonsterFactory {
         core.castShadow = true;
         group.add(core);
 
-        // Eye (Glow)
-        const eye = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.1), glowMat);
+        // BOSS: Core Pulse Eye
+        const eyeSize = config.isBoss ? 0.6 : 0.4;
+        const eye = new THREE.Mesh(new THREE.PlaneGeometry(eyeSize, eyeSize * 0.25), glowMat);
         eye.position.z = 0.41;
         core.add(eye);
+        core.userData.eye = eye; // Ref for animation
 
         // Floating Limbs
         const limbGeo = new THREE.BoxGeometry(0.3, 0.6, 0.3);
 
-        // Shoulders
+        // Shoulders (Disjointed)
+        const shDist = config.isBoss ? 1.2 : 0.8;
         const shL = new THREE.Mesh(limbGeo, stoneMat);
-        shL.position.set(-0.8, 0, 0);
+        shL.position.set(-shDist, 0.2, 0); // Higher
         core.add(shL);
         const shR = new THREE.Mesh(limbGeo, stoneMat);
-        shR.position.set(0.8, 0, 0);
+        shR.position.set(shDist, 0.2, 0);
         core.add(shR);
 
-        // Hands (Lower)
-        const handL = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), stoneMat);
-        handL.position.set(0, -0.8, 0);
+        // Hands (Big floating blocks)
+        const handSize = config.isBoss ? 0.6 : 0.4;
+        const handGeo = new THREE.BoxGeometry(handSize, handSize, handSize);
+
+        const handL = new THREE.Mesh(handGeo, stoneMat);
+        handL.position.set(0, -1.0, 0);
         shL.add(handL);
 
-        const handR = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), stoneMat);
-        handR.position.set(0, -0.8, 0);
+        const handR = new THREE.Mesh(handGeo, stoneMat);
+        handR.position.set(0, -1.0, 0);
         shR.add(handR);
 
-        // No legs, it floats
-        // Maybe some debris below?
-        const debris = new THREE.Mesh(new THREE.TetrahedronGeometry(0.3), stoneMat);
-        debris.position.y = -1.0;
-        core.add(debris);
+        // Debris / Legs (Floating Rocks)
+        if (config.isBoss) {
+            // Multiple debris rings
+            for (let i = 0; i < 5; i++) {
+                const rock = new THREE.Mesh(new THREE.TetrahedronGeometry(0.2 + Math.random() * 0.2), stoneMat);
+                rock.position.set(
+                    (Math.random() - 0.5) * 1.5,
+                    -1.0 - Math.random() * 1.0,
+                    (Math.random() - 0.5) * 1.5
+                );
+                core.add(rock);
+            }
+        } else {
+            const debris = new THREE.Mesh(new THREE.TetrahedronGeometry(0.3), stoneMat);
+            debris.position.y = -1.0;
+            core.add(debris);
+        }
 
         return group;
     }

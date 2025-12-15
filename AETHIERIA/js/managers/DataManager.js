@@ -21,7 +21,18 @@ export class DataManager {
     }
 
     getDialogue(id) {
-        return this.dialogues[id] || null;
+        // 1. Direct Lookup (e.g. 'elara') - Returns entire NPC block
+        if (this.dialogues[id]) return this.dialogues[id];
+
+        // 2. Deep Lookup (Search in all NPCs)
+        for (const npcId in this.dialogues) {
+            const npcDialogues = this.dialogues[npcId];
+            // Return the WHOLE set so we can navigate 'next' pointers
+            if (npcDialogues && npcDialogues[id]) {
+                return npcDialogues;
+            }
+        }
+        return null; // Not found
     }
 
     getEnemyStats(id) {

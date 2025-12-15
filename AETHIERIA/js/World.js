@@ -11,6 +11,7 @@ import { MonsterFactory } from './MonsterFactory.js';
 import { TerrainManager } from './world/TerrainManager.js';
 import { Chest } from './world/Chest.js';
 import { ForestGenerator } from './world/ForestGenerator.js';
+import { PoolManager } from './managers/PoolManager.js';
 import { LevelManager } from './managers/LevelManager.js';
 
 export class World {
@@ -53,6 +54,7 @@ export class World {
         // --- FACTORIES ---
         this.monsterFactory = new MonsterFactory(game);
         this.terrainManager = new TerrainManager(this);
+        this.poolManager = new PoolManager(this); // POOL MANAGER
         this.levelManager = new LevelManager(this);
 
         // --- LIGHTING ---
@@ -869,13 +871,7 @@ void main() {
     }
 
     loadPrologue() {
-        // Spawn Lumina (Guide)
-        const luminaPos = new THREE.Vector3(5, 0, 5);
-        if (this.terrainManager) {
-            luminaPos.y = this.terrainManager.getGlobalHeight(luminaPos.x, luminaPos.z);
-        }
-        const lumina = new NPC(this.game, this, 'Lumina', luminaPos, 'lumina_intro');
-        this.npcs.push(lumina);
+        // Lumina removed (replaced by Elara)
 
         // Spawn Starting Chest
         const chestPos = new THREE.Vector3(8, 0, 8);

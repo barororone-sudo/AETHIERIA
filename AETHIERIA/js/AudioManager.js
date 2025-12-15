@@ -33,7 +33,7 @@ export class AudioManager {
         // Music (Loop)
         this.music = new Howl({
             src: [musicUrl],
-            html5: true, // Stream
+            html5: false, // Web Audio API (More stable than HTML5 Streaming)
             loop: true,
             volume: 0.3,
             onloaderror: (id, err) => {
@@ -43,6 +43,33 @@ export class AudioManager {
 
         this.initialized = true;
         console.log("AudioManager Initialized (Howler.js Sprites)");
+
+        this.unlockAudio();
+    }
+
+    unlockAudio() {
+        if (!Howler.ctx) return;
+
+        const unlock = () => {
+            if (Howler.ctx.state === 'suspended') {
+                Howler.ctx.resume().then(() => {
+                    console.log("AudioContext Resumed Successfully");
+                    // Remove listeners once unlocked
+                    document.removeEventListener('click', unlock);
+                    document.removeEventListener('keydown', unlock);
+                    document.removeEventListener('touchstart', unlock);
+                });
+            } else {
+                // Already running
+                document.removeEventListener('click', unlock);
+                document.removeEventListener('keydown', unlock);
+                document.removeEventListener('touchstart', unlock);
+            }
+        };
+
+        document.addEventListener('click', unlock);
+        document.addEventListener('keydown', unlock);
+        document.addEventListener('touchstart', unlock);
     }
 
     playSFX(id) {

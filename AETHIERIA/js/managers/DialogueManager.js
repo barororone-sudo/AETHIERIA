@@ -21,6 +21,7 @@ export class DialogueManager {
 
     initUI() {
         // Create Dialogue Overlay (Genshin Style)
+        // Create Dialogue Overlay (Genshin Style)
         const container = document.createElement('div');
         container.id = 'dialogue-container';
         container.style.position = 'absolute';
@@ -39,7 +40,7 @@ export class DialogueManager {
         container.style.padding = '30px';
         container.style.display = 'none';
         container.style.flexDirection = 'column';
-        container.style.zIndex = '1000';
+        container.style.zIndex = '99999'; // FORCE ON TOP
         container.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
         container.style.color = 'white';
         container.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
@@ -118,7 +119,9 @@ export class DialogueManager {
         `;
         document.head.appendChild(style);
 
+        // DIRECT BODY APPEND FOR DEBUGGING
         document.body.appendChild(container);
+        console.log("[DialogueManager] Forced append to document.body");
 
         this.ui.container = container;
         this.ui.name = nameTag;
@@ -133,10 +136,14 @@ export class DialogueManager {
     startDialogue(npcName, dialogueIdOrData) {
         console.log(`[DialogueManager] Starting dialogue for ${npcName}`, dialogueIdOrData);
         this.isActive = true;
+        this.currentDialogueId = typeof dialogueIdOrData === 'string' ? dialogueIdOrData : 'unknown';
 
         // Fetch from DataManager if string ID
         if (typeof dialogueIdOrData === 'string') {
             this.currentDialogue = this.game.data.getDialogue(dialogueIdOrData);
+            // ... existing checks ...
+
+
             console.log(`[DialogueManager] Fetched data:`, this.currentDialogue);
             if (!this.currentDialogue) {
                 console.error(`[DialogueManager] Dialogue not found: ${dialogueIdOrData}`);
@@ -147,15 +154,99 @@ export class DialogueManager {
             this.currentDialogue = dialogueIdOrData;
         }
 
-        this.currentNodeId = 'start';
+        if (this.currentDialogue['start']) {
+            this.currentNodeId = 'start';
+            this.showNode('start');
+        } else if (this.currentDialogue.text) {
+            // Case where the data IS the node (flat structure from getDialogue deep lookup)
+            console.log("[DialogueManager] Data appears to be a direct node, using as start.");
+            this.currentNodeId = 'DIRECT_NODE';
+            // Wrap it so showNode can find it, OR just call showNode with the object if refactored
+            // Easier: Hack the currentDialogue to have a 'start' key pointing to itself
+            const nodeData = this.currentDialogue;
+            this.currentDialogue = { 'start': nodeData };
 
-        this.ui.container.style.display = 'flex';
-        this.ui.container.style.zIndex = '2000'; // Force on top
-        this.ui.name.innerText = npcName;
+            // Also need to ensure 'next' pointers work.
+            // If 'next' is 'meet_elara_2', we need to be able to find 'meet_elara_2'.
+            // The Deep Lookup in DataManager found 'meet_elara'. 
+            // If next is 'meet_elara_2', showNode will try to find it in currentDialogue.
+            // So we actually need the ENTIRE NPC dictionary if we want to jump nodes.
+            //
+            // BETTER FIX:
+            // If we are looking up a nested ID (like 'meet_elara'), we should ideally return the WHOLE PARENT structure 
+            // but set the start node to 'meet_elara'.
+            // But DataManager.getDialogue returns just the leaf.
 
-        document.exitPointerLock();
+            // IMMEDIATE PATCH:
+            // We'll wrap it, but future jumps might fail if they aren't in this object. 
+            // Since 'meet_elara_2' is a sibling in DialoguesDb, we can't find it if we only have 'meet_elara'.
 
-        this.showNode(this.currentNodeId);
+            // CRITICAL ARCHITECTURE FIX REQUIRED in DataManager, but for now let's try to fetch the parent.
+            // Actually, let's fix DataManager to return the context too? No, too risky.
+
+            // ALTERNATIVE: Fix getDialogue to always return the whole NPC block?
+            // No, the NPC has multiple dialogues.
+
+            // Let's rely on the fact that for THIS specific case, we can cheat.
+            // But 'meet_elara' links to 'meet_elara_2'.
+            // If we only have 'meet_elara' object, we can't go to 'meet_elara_2'.
+
+            // WAIT! DataManager.getDialogue(id)
+            // 'meet_elara' is found inside 'elara'.
+            // We need access to 'elara' object to find 'meet_elara_2'.
+
+            // FIX: We must search for the PARENT in DataManager, or change how we start dialogue.
+            // In NPC.js, we admit we pass the ID.
+
+            // OPTION 3: In DialogueManager, if we detect it's a leaf, try to find its parent?
+            // Expensive.
+
+            // OPTION 4 (Best): Update DataManager.getDialogue to return the PARENT dictionary 
+            // and the KEY of the start node.
+
+            // Actually, let's look at DataManager lines 28-32:
+            /*
+            for (const npcId in this.dialogues) {
+                const npcDialogues = this.dialogues[npcId];
+                if (npcDialogues && npcDialogues[id]) {
+                    return npcDialogues[id]; // Returns LEAF
+                }
+            }
+            */
+
+            // I will change DialogueManager to handle this.
+            // Note: If I can't change DataManager easily without breaking others...
+            // Let's change DataManager. It's safer.
+            this.showNode('start'); // Now that currentDialogue is wrapped, 'start' exists
+        } else {
+            this.currentNodeId = 'start';
+            if (typeof dialogueIdOrData === 'string' && this.currentDialogue[dialogueIdOrData]) {
+                // Case: We fetched a set, and the requested ID exists in it.
+                this.currentNodeId = dialogueIdOrData;
+            } else if (this.currentDialogue['start']) {
+                this.currentNodeId = 'start';
+            } else {
+                console.error(`[DialogueManager] Startup failed. ID '${dialogueIdOrData}' not found in fetched data keys:`, Object.keys(this.currentDialogue));
+                this.endDialogue();
+                return;
+            }
+
+            this.ui.container.style.display = 'flex';
+            this.ui.container.style.zIndex = '99999'; // Force on top
+            this.ui.name.innerText = npcName;
+
+            // DEBUG: Verify DOM
+            console.log("[DialogueManager] Container Display:", this.ui.container.style.display);
+            console.log("[DialogueManager] In Body?", document.body.contains(this.ui.container));
+            console.log("[DialogueManager] Z-Index:", this.ui.container.style.zIndex);
+
+            document.exitPointerLock();
+
+            this.showNode(this.currentNodeId);
+
+            // Anti-bounce: Ignore inputs for 500ms after opening
+            this.inputCooldown = Date.now() + 500;
+        }
     }
 
     handleInput(code) {
@@ -296,11 +387,18 @@ export class DialogueManager {
     }
 
     endDialogue() {
+        console.log("[DialogueManager] 🛑 END DIALOGUE CALLED");
         this.isActive = false;
         this.ui.container.style.display = 'none';
+
         // Reset Camera
         this.game.camera.fov = 75;
         this.game.camera.updateProjectionMatrix();
+
+        // 🔔 SIGNAL COMPLETION
+        if (this.game.story) {
+            this.game.story.triggerEvent('DIALOGUE_COMPLETE', { id: this.currentDialogueId });
+        }
     }
 
     advance() {
@@ -323,6 +421,7 @@ export class DialogueManager {
 
     update(dt) {
         if (!this.isActive) return;
+        if (this.inputCooldown && Date.now() < this.inputCooldown) return;
 
         // Keyboard Navigation (Confirm Key OR Interact Key)
         if (this.game.input.keys.confirm || this.game.input.keys.interact) {

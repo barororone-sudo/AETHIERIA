@@ -12,14 +12,14 @@ export class SaveManager {
         // Auto-save every 60s
         setInterval(() => {
             if (this.game.isRunning && !this.game.isPaused) {
-                this.save();
+                this.save(true); // Silent autosave
             }
         }, 60000);
 
         // Save on Exit/Refresh
         window.addEventListener('beforeunload', () => {
             if (this.game.isRunning) {
-                this.save();
+                this.save(true); // Silent save on exit
             }
         });
     }
@@ -102,7 +102,7 @@ export class SaveManager {
         return slots;
     }
 
-    async save() {
+    async save(silent = false) {
         const player = this.game.player;
         if (!player || !player.body) return;
 
@@ -130,7 +130,7 @@ export class SaveManager {
                     return acc;
                 }, {}) : {},
                 waypoints: this.game.waypointManager ? this.game.waypointManager.getData() : [],
-                chests: (this.game.world && this.game.world.chests) ? this.game.world.chests.map(c => c.isOpened).filter(o => o) : [] // Basic chest tracking placeholder
+                chests: (this.game.world && this.game.world.chests) ? this.game.world.chests.map(c => c.isOpened).filter(o => o) : [] // Basic chest tracking tracking placeholder
             },
             meta: {
                 date: new Date().toLocaleString('fr-FR', {
@@ -150,7 +150,7 @@ export class SaveManager {
         try {
             localStorage.setItem(this.getCurrentKey(), JSON.stringify(data));
             console.log(`Game Saved to LocalStorage!`);
-            if (this.game.ui && this.game.ui.showToast) {
+            if (!silent && this.game.ui && this.game.ui.showToast) {
                 this.game.ui.showToast("Partie Sauvegardée !");
             }
         } catch (e) {

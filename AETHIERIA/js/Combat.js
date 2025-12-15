@@ -363,6 +363,17 @@ export class Combat {
             return;
         }
 
+        // 🎯 WEAPON TYPE CHECK: BOW
+        if (this.player.equippedWeapon && this.player.equippedWeapon.weaponType === 'BOW') {
+            this.shootArrow();
+            // Don't return, allow visuals/sound? 
+            // Usually bow attack is just the arrow.
+            // But let's play sound here too?
+            // shootArrow does not play sound? (It might need to).
+            // Let's return to avoid melee logic (lunging forward).
+            return;
+        }
+
         // 🎮 USE ADVANCED COMBO SYSTEM
         const comboStep = this.player.comboSystem ? this.player.comboSystem.registerHit() : 1;
         this.comboStep = comboStep - 1; // Keep for compatibility (0-indexed)
@@ -658,7 +669,16 @@ export class Combat {
     }
 
     shootArrow() {
-        if (!this.player.world || !this.pool || !this.player.mesh) return;
+        if (!this.player.world || !this.pool || !this.player.mesh) {
+            console.error("❌ shootArrow Failed: Missing critical refs", {
+                world: !!this.player.world,
+                pool: !!this.pool,
+                mesh: !!this.player.mesh
+            });
+            return;
+        }
+
+        console.log("🏹 shootArrow Called");
 
         // @ts-ignore
         if (this.player.playAnimation) this.player.playAnimation('BOW', false);
@@ -689,7 +709,10 @@ export class Combat {
         }
 
         const arrowMesh = this.pool.get(projId) || this.pool.get('arrow');
-        if (!arrowMesh) return;
+        if (!arrowMesh) {
+            console.error(`❌ Pool failed to provide arrow for ID: ${projId} (and fallback 'arrow')`);
+            return;
+        }
 
         arrowMesh.position.copy(spawnPos);
         arrowMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction.clone().negate());

@@ -152,6 +152,27 @@ export const EnemiesDb = [
             { itemId: 'sword_plasma', chance: 1.0 }, // Guaranteed Epic
             { itemId: 'coin_gold', chance: 1.0, min: 200, max: 500 }
         ]
+    },
+    // --- BOSSES ---
+    {
+        id: 'boss_malphas',
+        name: 'Malphas, Le Verrou Rouillé',
+        type: EnemyType.BOSS,
+        stats: { hp: 500, attack: 25, speed: 3.5, exp: 2000 },
+        ai: { detectionRange: 60, attackRange: 4.0, behavior: BehaviorType.AGGRESSIVE },
+        visuals: {
+            color: 0x111111, // Obsidian
+            scale: 6.0,
+            shape: 'CONSTRUCT',
+            glow: 0xff0000, // Red Veins
+            emissive: 0xff0000,
+            isBoss: true
+        },
+        lootTable: [
+            { itemId: 'key_fragment_alpha', chance: 1.0 }, // Story item
+            { itemId: 'core_malphas', chance: 1.0 },
+            { itemId: 'essence_void', chance: 1.0, min: 3, max: 5 }
+        ]
     }
 ];
 

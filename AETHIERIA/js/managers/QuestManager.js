@@ -58,13 +58,22 @@ export class QuestManager {
             this.game.ui.updateObjective(currentStep.description);
 
             // Spawn visual beacon if step has target position
-            if (currentStep.targetPos && this.game.questBeacon) {
-                this.game.questBeacon.spawnBeacon(currentStep.targetPos.x, currentStep.targetPos.z);
+            if (currentStep.targetPos) {
+                if (this.game.questBeacon) {
+                    this.game.questBeacon.spawnBeacon(currentStep.targetPos.x, currentStep.targetPos.z);
+                }
+                // Update Map Marker
+                if (this.game.ui && this.game.ui.mapManager) {
+                    this.game.ui.mapManager.setQuestMarker(currentStep.targetPos.x, currentStep.targetPos.z);
+                }
             }
         } else {
-            // No active step, remove beacon
+            // No active step, remove beacon & marker
             if (this.game.questBeacon) {
                 this.game.questBeacon.removeBeacon();
+            }
+            if (this.game.ui && this.game.ui.mapManager) {
+                this.game.ui.mapManager.removeQuestMarker();
             }
         }
     }
@@ -107,6 +116,12 @@ export class QuestManager {
                     match = true;
                 }
                 break;
+
+            case 'ACTIVATE_OBJECT':
+                if (eventType === 'ACTIVATE_OBJECT' && currentStep.targetId === data.objectId) {
+                    match = true;
+                }
+                break;
         }
 
         if (match) {
@@ -134,9 +149,12 @@ export class QuestManager {
         step.isCompleted = true;
         console.log(`[QuestManager] ✅ Step completed: ${step.description}`);
 
-        // Remove beacon
+        // Remove beacon & marker
         if (this.game.questBeacon) {
             this.game.questBeacon.removeBeacon();
+        }
+        if (this.game.ui && this.game.ui.mapManager) {
+            this.game.ui.mapManager.removeQuestMarker();
         }
 
         // Check if all steps completed
@@ -224,6 +242,14 @@ export class QuestManager {
      */
     getActiveQuest() {
         return this.activeQuests[0] || null;
+    }
+
+    /**
+     * Helper: Get current active step of active quest
+     */
+    get currentStep() {
+        const q = this.getActiveQuest();
+        return q ? q.steps.find(s => !s.isCompleted) : null;
     }
 
     /**

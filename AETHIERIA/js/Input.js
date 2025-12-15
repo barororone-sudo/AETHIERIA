@@ -43,11 +43,12 @@ export class Input {
 
         // Mouse Wheel (Weapon Switch)
         window.addEventListener('wheel', (e) => {
+            // console.log("Wheel Event:", e.deltaY);
             if (this.onScroll) {
                 // Normalize delta: positive (down) = +1, negative (up) = -1
                 this.onScroll(Math.sign(e.deltaY));
             }
-        }, { passive: true });
+        }, { passive: false }); // False to allow blocking default scroll if needed
     }
 
     onKey(e, isDown) {
