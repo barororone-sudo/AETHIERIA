@@ -1,12 +1,32 @@
 import { useState } from 'react';
 import AuthLayout from './AuthLayout';
+import { supabase } from '../../supabaseClient';
 
 const Verify = ({ email, onVerifySuccess }) => {
     const [code, setCode] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        if (code.length >= 4) onVerifySuccess();
+        if (code.length < 6) return;
+
+        setLoading(true);
+        setError(null);
+
+        const { data, error } = await supabase.auth.verifyOtp({
+            email,
+            token: code,
+            type: 'signup'
+        });
+
+        setLoading(false);
+
+        if (error) {
+            setError(error.message);
+        } else {
+            onVerifySuccess();
+        }
     };
 
     return (
@@ -15,6 +35,8 @@ const Verify = ({ email, onVerifySuccess }) => {
             subtitle={`We sent a secure code to ${email || 'your email'}`}
         >
             <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
+                {error && <div style={{ color: 'red', marginBottom: '1rem', fontSize: '0.9rem', textAlign: 'center' }}>{error}</div>}
+
                 <div style={{ marginBottom: '2rem' }}>
                     <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '5px', color: '#374151' }}>Security Code</label>
                     <input
@@ -31,12 +53,12 @@ const Verify = ({ email, onVerifySuccess }) => {
                     />
                 </div>
 
-                <button className="btn-claim" type="submit" style={{ marginBottom: '1.5rem', boxShadow: 'none' }}>
-                    Verify Access
+                <button className="btn-claim" type="submit" disabled={loading} style={{ marginBottom: '1.5rem', boxShadow: 'none', opacity: loading ? 0.7 : 1 }}>
+                    {loading ? 'Verifying...' : 'Verify Access'}
                 </button>
 
                 <div style={{ textAlign: 'center', fontSize: '0.9rem', color: '#6b7280' }}>
-                    Didn't receive it? <span style={{ color: '#2563eb', fontWeight: 600, cursor: 'pointer' }}>Resend</span>
+                    By verifying, you agree to our Terms.
                 </div>
             </form>
         </AuthLayout>

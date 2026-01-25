@@ -1,0 +1,3 @@
+google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0
+# Paste your Ezoic / AdSense lines here
+# This file verifies you own the site.

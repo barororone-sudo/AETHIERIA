@@ -3,14 +3,42 @@ import { useEffect, useRef } from 'react';
 const AdNetworkSlot = () => {
     const adRef = useRef(null);
 
-    useEffect(() => {
-        // In a real app, you would push to (window.adsbygoogle = window.adsbygoogle || []).push({}); here
-        // For this prototype, we simulate a script load
-        if (adRef.current) {
-            // console.log("AdScript loaded for slot");
-        }
-    }, []);
+    // INSTRUCTIONS FOR USER:
+    // 1. Get your code from Google AdSense or Ezoic.
+    // 2. It usually looks like <ins class="adsbygoogle" ...></ins>
+    // 3. Uncomment the code inside the 'else' block below for Production.
 
+    const isDev = import.meta.env.DEV; // Detects if running on Localhost
+
+    useEffect(() => {
+        if (!isDev) {
+            // Push to AdSense (Uncomment this line when you have your script)
+            // (window.adsbygoogle = window.adsbygoogle || []).push({});
+        }
+    }, [isDev]);
+
+    if (!isDev) {
+        // PRODUCTION MODE (Your Real Ad)
+        return (
+            <div className="slot-card" style={{ padding: 0, justifyContent: 'center', background: '#f1f1f1' }}>
+                {/* PASTE YOUR AD SCRIPT HERE */}
+                {/* Example:
+             <ins className="adsbygoogle"
+                 style={{ display: 'block' }}
+                 data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+                 data-ad-slot="1234567890"
+                 data-ad-format="auto"
+                 data-full-width-responsive="true">
+             </ins>
+             */}
+                <div style={{ padding: '20px', color: '#888' }}>
+                    Ad Loading... (Configure in AdNetworkSlot.jsx)
+                </div>
+            </div>
+        );
+    }
+
+    // DEVELOPMENT MODE (Placeholder)
     return (
         <div className="slot-card" style={{
             background: '#f8f9fa',
@@ -22,7 +50,6 @@ const AdNetworkSlot = () => {
             position: 'relative'
         }} ref={adRef}>
 
-            {/* Dev Placeholder */}
             <div style={{
                 width: '100%', height: '100%',
                 display: 'flex', flexDirection: 'column',
@@ -42,7 +69,6 @@ const AdNetworkSlot = () => {
                 </div>
             </div>
 
-            {/* Label */}
             <div style={{
                 position: 'absolute', bottom: 0, right: 0,
                 background: '#e9ecef', fontSize: '0.6rem',
