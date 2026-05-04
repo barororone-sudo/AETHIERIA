@@ -32,17 +32,23 @@ const ANTI_SINK_MARGIN   = 0.05;
 const GROUND_RAY_START   = 140;
 const GROUND_RAY_LENGTH  = 260;
 const GROUND_STICK_DIST  = 0.36;
+const GROUND_ACCEL       = 18.0;
+const GROUND_BRAKE       = 16.0;
+const AIR_ACCEL          = 5.5;
+const AIR_DRAG           = 0.45;
+const PLANAR_SPEED_CAP   = 12.0;
 
 // ── Climb constants ──────────────────────────────────────────────────────
 const CLIMB_DETECT_DIST   = 0.8;
 const CLIMB_MIN_HEIGHT    = 0.5;
 const CLIMB_SPEED         = 2.5;
 const CLIMB_STAMINA_DRAIN = 15;
+const AUTO_CLIMB_ENABLED  = false; // disabled until wall queries can exclude the player collider robustly
 
 // ── Glide constants ──────────────────────────────────────────────────────
 const GLIDE_SPEED          = 7.2;
-const GLIDE_ACCEL          = 8.0;
-const GLIDE_DRAG           = 1.8;
+const GLIDE_ACCEL          = 9.5;
+const GLIDE_DRAG           = 1.35;
 
 // ── Input state ──────────────────────────────────────────────────────────
 const _keys     = new Set();
@@ -171,6 +177,31 @@ function _getSlopeSpeedModifier(slopeAngle, slopeDir) {
   }
 
   return 1.0;
+}
+
+function _expAlpha(rate, dt) {
+  return 1 - Math.exp(-rate * dt);
+}
+
+function _blendPlanar(vel, targetX, targetZ, rate, dt) {
+  const alpha = _expAlpha(rate, dt);
+  return {
+    x: vel.x + (targetX - vel.x) * alpha,
+    z: vel.z + (targetZ - vel.z) * alpha,
+  };
+}
+
+function _applyPlanarDrag(vel, dragRate, dt) {
+  const drag = Math.exp(-dragRate * dt);
+  return { x: vel.x * drag, z: vel.z * drag };
+}
+
+function _limitPlanar(x, z, maxSpeed = PLANAR_SPEED_CAP) {
+  const speedSq = x * x + z * z;
+  const maxSq = maxSpeed * maxSpeed;
+  if (speedSq <= maxSq) return { x, z };
+  const scale = maxSpeed / Math.sqrt(speedSq);
+  return { x: x * scale, z: z * scale };
 }
 
 // ── Input — edge detection for jump ──────────────────────────────────────
@@ -344,7 +375,7 @@ export function updateTraversal(dt, scene = null) {
 
   // ── Wall detection for CLIMB ────────────────────────────────────────────
   let wallInfo = null;
-  if (moving && !_state.isGrounded && _state.fsm !== STATE.CLIMB &&
+  if (AUTO_CLIMB_ENABLED && moving && !_state.isGrounded && _state.fsm !== STATE.CLIMB &&
       _state.fsm !== STATE.ATTACK && _state.stamina > 5) {
     wallInfo = _detectWall(body, moveX, moveZ);
     if (wallInfo) {
@@ -355,7 +386,7 @@ export function updateTraversal(dt, scene = null) {
       Events.emit('player:climbStart', {});
     }
   }
-  if (_state.fsm === STATE.CLIMB && moving) {
+  if (AUTO_CLIMB_ENABLED && _state.fsm === STATE.CLIMB && moving) {
     wallInfo = wallInfo || _detectWall(body, moveX, moveZ);
     if (!wallInfo) {
       _state.fsm = STATE.FALL;
@@ -369,6 +400,9 @@ export function updateTraversal(dt, scene = null) {
 
   // ── FSM transition ─────────────────────────────────────────────────────
   _updateFSM(moving, sprint, _state.isGrounded);
+  if (!AUTO_CLIMB_ENABLED && _state.fsm === STATE.CLIMB) {
+    _state.fsm = STATE.FALL;
+  }
 
   // ── Clear justDown after FSM has consumed it ───────────────────────────
   _justDown.clear();
@@ -393,8 +427,9 @@ export function updateTraversal(dt, scene = null) {
 
   switch (_state.fsm) {
     case STATE.IDLE: {
-      vx = vel.x * 0.50;
-      vz = vel.z * 0.50;
+      const planar = _applyPlanarDrag(vel, GROUND_BRAKE, dt);
+      vx = planar.x;
+      vz = planar.z;
       if (Math.abs(vx) < 0.02) vx = 0;
       if (Math.abs(vz) < 0.02) vz = 0;
       vy = 0;
@@ -407,12 +442,14 @@ export function updateTraversal(dt, scene = null) {
       const slopeMod = _getSlopeSpeedModifier(_state.slopeAngle, _state.slopeDir);
 
       if (_state.slopeAngle > SLOPE_MAX_WALK && _state.slopeDir > 0) {
-        vx = vel.x * 0.3;
-        vz = vel.z * 0.3;
+        const planar = _applyPlanarDrag(vel, GROUND_BRAKE, dt);
+        vx = planar.x;
+        vz = planar.z;
       } else {
         const speed = baseSpeed * slopeMod;
-        vx = moveX * speed;
-        vz = moveZ * speed;
+        const planar = _blendPlanar(vel, moveX * speed, moveZ * speed, GROUND_ACCEL, dt);
+        vx = planar.x;
+        vz = planar.z;
       }
       vy = 0;
       break;
@@ -431,11 +468,13 @@ export function updateTraversal(dt, scene = null) {
         vy = vel.y;  // gravity handles the arc — no re-impulse
       }
       if (moving) {
-        vx = moveX * cfg.walkSpeed * 0.65;
-        vz = moveZ * cfg.walkSpeed * 0.65;
+        const planar = _blendPlanar(vel, moveX * cfg.walkSpeed * 0.90, moveZ * cfg.walkSpeed * 0.90, AIR_ACCEL, dt);
+        vx = planar.x;
+        vz = planar.z;
       } else {
-        vx = vel.x * 0.98;
-        vz = vel.z * 0.98;
+        const planar = _applyPlanarDrag(vel, AIR_DRAG, dt);
+        vx = planar.x;
+        vz = planar.z;
       }
       break;
     }
@@ -443,12 +482,14 @@ export function updateTraversal(dt, scene = null) {
     case STATE.FALL: {
       vy = vel.y;
       if (moving) {
-        const airSpeed = cfg.walkSpeed * 0.55;
-        vx = vel.x * 0.92 + moveX * airSpeed * 0.08;
-        vz = vel.z * 0.92 + moveZ * airSpeed * 0.08;
+        const airSpeed = cfg.walkSpeed * 0.95;
+        const planar = _blendPlanar(vel, moveX * airSpeed, moveZ * airSpeed, AIR_ACCEL, dt);
+        vx = planar.x;
+        vz = planar.z;
       } else {
-        vx = vel.x * 0.97;
-        vz = vel.z * 0.97;
+        const planar = _applyPlanarDrag(vel, AIR_DRAG, dt);
+        vx = planar.x;
+        vz = planar.z;
       }
       break;
     }
@@ -458,13 +499,13 @@ export function updateTraversal(dt, scene = null) {
       if (moving) {
         const targetVx = moveX * GLIDE_SPEED;
         const targetVz = moveZ * GLIDE_SPEED;
-        const steer = Math.min(GLIDE_ACCEL * dt, 1);
-        vx = vel.x + (targetVx - vel.x) * steer;
-        vz = vel.z + (targetVz - vel.z) * steer;
+        const planar = _blendPlanar(vel, targetVx, targetVz, GLIDE_ACCEL, dt);
+        vx = planar.x;
+        vz = planar.z;
       } else {
-        const drag = Math.max(0, 1 - GLIDE_DRAG * dt);
-        vx = vel.x * drag;
-        vz = vel.z * drag;
+        const planar = _applyPlanarDrag(vel, GLIDE_DRAG, dt);
+        vx = planar.x;
+        vz = planar.z;
       }
       break;
     }
@@ -491,6 +532,10 @@ export function updateTraversal(dt, scene = null) {
   }
 
   // ── Ground snapping (grounded states) ──────────────────────────────────
+  const cappedPlanar = _limitPlanar(vx, vz);
+  vx = cappedPlanar.x;
+  vz = cappedPlanar.z;
+
   const isGroundedState = [STATE.IDLE, STATE.WALK, STATE.RUN, STATE.ATTACK].includes(_state.fsm);
 
   if (isGroundedState && _state.isGrounded) {

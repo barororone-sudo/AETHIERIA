@@ -42,6 +42,39 @@ const CAT = {
   PATH_PROP: 'path_prop',
 };
 
+const CAMERA_BLOCKING_CATS = new Set([
+  CAT.TREE,
+  CAT.ROCK,
+  CAT.STUMP,
+  CAT.STRUCTURE,
+  CAT.FURNITURE,
+  CAT.PATH_PROP,
+]);
+
+function _isCameraBlockingCat(cat) {
+  return CAMERA_BLOCKING_CATS.has(cat);
+}
+
+function _markCameraCollider(root, enabled = true) {
+  if (!root) return;
+
+  const meshes = [root];
+  if (typeof root.getChildMeshes === 'function') {
+    meshes.push(...root.getChildMeshes(false));
+  }
+
+  for (const mesh of meshes) {
+    if (!mesh || mesh.isDisposed?.()) continue;
+    mesh.isPickable = enabled;
+    mesh.checkCollisions = enabled;
+    mesh.metadata = {
+      ...(mesh.metadata ?? {}),
+      cameraCollider: enabled,
+      staticDecor: true,
+    };
+  }
+}
+
 // Y-offset per category — embeds props into terrain for natural look
 const Y_OFFSET = {
   [CAT.TREE]:      0,
@@ -530,9 +563,9 @@ async function _spawnPOIs(scene, loadedMap) {
     }
 
     const layers = [
-      { items: poi.structures || [], label: 'struct', cat: 'structure' },
-      { items: poi.furniture || [],  label: 'furn',   cat: 'furniture' },
-      { items: poi.details || [],    label: 'detail', cat: 'detail' },
+      { items: poi.structures || [], label: 'struct', cat: CAT.STRUCTURE },
+      { items: poi.furniture || [],  label: 'furn',   cat: CAT.FURNITURE },
+      { items: poi.details || [],    label: 'detail', cat: CAT.DETAIL },
     ];
 
     for (const layer of layers) {
@@ -557,7 +590,11 @@ async function _spawnPOIs(scene, loadedMap) {
           snapPropToTerrain(mesh, px, pz, layer.cat, 0);
 
           mesh.setEnabled(true);
-          mesh.isPickable = false;
+          if (_isCameraBlockingCat(layer.cat)) {
+            _markCameraCollider(mesh, true);
+          } else {
+            mesh.isPickable = false;
+          }
 
           // Shadow casting on structures (main visual anchors)
           if (layer.label === 'struct') {
@@ -717,7 +754,11 @@ export function spawnChunkPropsFreePacks(cx, cz, biome, scene, densityScale = 1)
       // Terrain snapping — align to slope per category
       snapPropToTerrain(instance, px, pz, propDef.cat, yOff);
 
-      instance.isPickable = false;
+      if (_isCameraBlockingCat(propDef.cat)) {
+        _markCameraCollider(instance, true);
+      } else {
+        instance.isPickable = false;
+      }
 
       instances.push(instance);
       placed.push({ x: px, z: pz, cat: propDef.cat });

@@ -5,7 +5,7 @@
 
 import { UniversalCamera, Vector3 } from '@babylonjs/core';
 import { CONFIG }                       from '../../core/config.js';
-import { raycastCameraCollision }       from './physicsAdapter.js';
+import { raycastCameraCollision, raycastGround } from './physicsAdapter.js';
 
 let _camera = null;
 let _scene  = null;
@@ -38,11 +38,13 @@ const FOLLOW_Y_GND = 12.0;    // vertical follow on ground (snappy — no float)
 const ZOOM_SPEED   = 6.0;     // smooth zoom lerp speed
 const CLIP_MARGIN  = 0.35;    // distance margin before clip obstacle
 const Y_DEAD_ZONE  = 0.035;   // ignore tiny terrain/player height chatter
+const TERRAIN_MARGIN = 0.55;  // keep the camera above terrain at its final X/Z
 
 let _isGrounded = true;       // track player ground state for Y damping
 
 const _cameraRayOrigin = new Vector3();
 const _cameraRayDir = new Vector3(0, 0, 1);
+const _cameraFinalPos = new Vector3();
 
 export function initCamera(scene, canvas) {
   _scene = scene;
@@ -164,11 +166,21 @@ export function updateCamera(playerPos, dt) {
   _cam.collisionRadius += (safeRadius - _cam.collisionRadius) * collisionLerp;
 
   // ── Position finale ───────────────────────────────────────────────────────
-  _camera.position.set(
-    _cam.target.x + dirX * _cam.collisionRadius,
-    _cam.target.y + dirY * _cam.collisionRadius,
-    _cam.target.z + dirZ * _cam.collisionRadius,
-  );
+  const camX = _cam.target.x + dirX * _cam.collisionRadius;
+  let camY = _cam.target.y + dirY * _cam.collisionRadius;
+  const camZ = _cam.target.z + dirZ * _cam.collisionRadius;
+
+  const ground = raycastGround(camX, camZ, {
+    rayStartY: Math.max(camY + 120, 220),
+    rayLength: 360,
+  });
+  const minCameraY = ground.y + TERRAIN_MARGIN;
+  if (camY < minCameraY) {
+    camY = minCameraY;
+  }
+
+  _cameraFinalPos.set(camX, camY, camZ);
+  _camera.position.copyFrom(_cameraFinalPos);
 
   _camera.setTarget(_cam.target);
 }

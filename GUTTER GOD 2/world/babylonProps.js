@@ -30,6 +30,19 @@ const BIOME_PROPS = {
   schism:     ['deadtree','boulder'],
 };
 
+const CAMERA_BLOCKING_TYPES = new Set(['tree', 'rock', 'deadtree', 'boulder']);
+
+function _markCameraCollider(root, enabled = true) {
+  if (!root) return;
+  root.isPickable = enabled;
+  root.checkCollisions = enabled;
+  root.metadata = {
+    ...(root.metadata ?? {}),
+    cameraCollider: enabled,
+    staticDecor: true,
+  };
+}
+
 // ── Créer les templates une seule fois ────────────────────────────────────
 
 function _getTemplate(typeName, scene) {
@@ -132,7 +145,11 @@ export function spawnChunkProps(cx, cz, biome, scene, densityScale = 1) {
     inst.rotation.y  = rng() * Math.PI * 2;
     const sc         = 0.7 + rng() * 0.6;
     inst.scaling.setAll(sc);
-    inst.isPickable  = false;
+    if (CAMERA_BLOCKING_TYPES.has(typeName)) {
+      _markCameraCollider(inst, true);
+    } else {
+      inst.isPickable = false;
+    }
     instances.push(inst);
   }
 

@@ -2,9 +2,9 @@
 
 import { createEngine, createScene }          from '../engine/babylon/runtime.js';
 import { initLighting, applyBiomeLighting }    from '../engine/babylon/lighting.js';
-import { initCamera, updateCamera, getCamera } from '../engine/babylon/camera.js';
+import { initCamera, updateCamera, getCamera, getCameraDebug } from '../engine/babylon/camera.js';
 import { initPhysics, stepPhysics }            from '../engine/babylon/physics.js';
-import { initPhysicsAdapter }                  from '../engine/babylon/physicsAdapter.js';
+import { initPhysicsAdapter, getPhysicsQueryDebug } from '../engine/babylon/physicsAdapter.js';
 import { createGameLoop, registerSystem, startLoop } from './loop.js';
 import { initPerfOverlay }                     from './perf.js';
 import { initReactiveAudio, getAudioDebugState } from './audio.js';
@@ -71,6 +71,7 @@ import { setFinalBossSpawnHandler } from '../world/phase4Triggers.js';
 // World building systems (Senior Level Design)
 import { initNarrativeVignettes } from '../world/narrativeVignettes.js';
 import { initWorldVfx, updateWorldVfx } from '../world/babylonWorldVfx.js';
+import { initAct1VerticalSlice, getAct1VerticalSliceDebug } from '../world/act1VerticalSlice.js';
 
 // Phase AAA — World Manager, Ecosystem, Instancing, POI
 import { initWorldManager, updateWorldManager, getWorldDebug } from '../world/WorldManager.js';
@@ -214,6 +215,10 @@ async function bootstrap() {
     { type: 'armored', x: -15, z: -10 },
     { type: 'archer',  x:  25, z:  12 },
     { type: 'archer',  x: -18, z: -20 },
+    // Act I vertical slice objectives.
+    { type: 'scout',   x:  11, z:   8 },
+    { type: 'scout',   x: -25, z:  30 },
+    { type: 'scout',   x: -18, z:  24 },
   ];
   for (const s of enemySpawns) {
     const pos = new Vector3(s.x, getTerrainHeight(s.x, s.z) + 2, s.z);
@@ -247,6 +252,7 @@ async function bootstrap() {
   // 12c. Phase 3 — Météo, mutations, landmarks, triggers, post-process, mini-boss
   initWeather(scene);
   initWorldMutations(scene);
+  initAct1VerticalSlice(scene);
   initLandmarks(scene, biome.name);
   initFogOfWar(scene);
 
@@ -534,6 +540,7 @@ async function bootstrap() {
     window.__setWorldFlag     = (key, value = true) => setWorldFlag(key, value);
     window.__getWorldSnapshot = () => getWorldSnapshot();
     window.__setAct           = (act) => setAct(act);
+    window.__getAct1Slice     = () => getAct1VerticalSliceDebug();
     window.__shiftAlignment   = (amt) => shiftAlignment(amt);
     window.__getAlignment     = () => getAlignment();
     window.__getFaction       = () => getFaction();
@@ -543,6 +550,8 @@ async function bootstrap() {
     window.__getPlayerRoot    = () => getPlayerRoot();
     window.__getLockedTarget  = () => getLockedTarget();
     window.__getAllEnemies    = () => enemySource();
+    window.__getCameraDebug   = () => getCameraDebug();
+    window.__getPhysicsQueryDebug = () => getPhysicsQueryDebug();
     window.__getTerrainHeight = (x, z) => getTerrainHeight(x, z);
     window.__getConfig      = () => CONFIG;
     window.__getTimeScale   = () => getTimeScale();
