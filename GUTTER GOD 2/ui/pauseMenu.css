@@ -1,0 +1,91 @@
+#pause-menu-root {
+  position: fixed;
+  inset: 0;
+  z-index: 230;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 4, 9, 0.68);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: #e8e0d0;
+}
+
+.pause-card {
+  width: min(92vw, 420px);
+  border-radius: 12px;
+  border: 1px solid rgba(232, 200, 74, 0.28);
+  background: rgba(11, 14, 26, 0.95);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  padding: 18px;
+}
+
+.pause-title {
+  color: #f3eacc;
+  font-size: 24px;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+}
+
+.pause-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.pause-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(232, 200, 74, 0.35);
+  color: #f3eacc;
+  background: rgba(232, 200, 74, 0.08);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.pause-btn:hover {
+  background: rgba(232, 200, 74, 0.14);
+  border-color: rgba(232, 200, 74, 0.6);
+}
+
+.pause-note {
+  margin-top: 10px;
+  color: #8691ab;
+  font-size: 12px;
+  min-height: 16px;
+}
+
+.pause-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.pause-modal-card {
+  width: min(92vw, 440px);
+  border-radius: 10px;
+  border: 1px solid rgba(232, 200, 74, 0.25);
+  background: rgba(14, 18, 30, 0.95);
+  padding: 18px;
+}
+
+.pause-modal-title {
+  font-size: 17px;
+  color: #f3eacc;
+  margin-bottom: 10px;
+}
+
+.pause-setting-row {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #c2c9d9;
+}
+
+.pause-setting-row input[type="range"] {
+  width: 100%;
+}

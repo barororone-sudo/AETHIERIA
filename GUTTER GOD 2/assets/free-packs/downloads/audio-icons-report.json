@@ -1,0 +1,105 @@
+{
+  "date": "2026-04-22T21:54:42.416Z",
+  "ok": [
+    "Musique — Acte 1 (Exploration calme)",
+    "Musique — Combat général",
+    "Musique — Victoire",
+    "SFX — Magie (sorts, explosions, buffs)",
+    "SFX — Mort joueur",
+    "SFX — UI (level up, quête, notification)",
+    "SFX — Pas (herbe, pierre, donjon)",
+    "Ambiance — Forêt / Plaines (Acte 1)",
+    "Ambiance — Donjon souterrain",
+    "Icônes SVG — game-icons.net (4000+ icônes RPG)",
+    "3D — Kenney Foliage Pack"
+  ],
+  "failed": [
+    {
+      "name": "Musique — Acte 2 (Tension pluie de fer)",
+      "error": "HTTP 404",
+      "url": "https://opengameart.org/sites/default/files/Soliloquy.mp3"
+    },
+    {
+      "name": "Musique — Boss fight",
+      "error": "OGA: lien direct introuvable",
+      "url": "https://opengameart.org/content/boss-battle-8"
+    },
+    {
+      "name": "Musique — Menu principal",
+      "error": "OGA: lien direct introuvable",
+      "url": "https://opengameart.org/content/dark-fantasy-music-pack-2"
+    },
+    {
+      "name": "SFX — Épée (swing, clash, parry)",
+      "error": "OGA: lien direct introuvable",
+      "url": "https://opengameart.org/content/sword-sound-effects"
+    },
+    {
+      "name": "SFX — Impacts combat",
+      "error": "OGA: lien direct introuvable",
+      "url": "https://opengameart.org/content/punch-and-kick-sound-effects"
+    },
+    {
+      "name": "SFX — Loot / Ramassage items",
+      "error": "OGA: lien direct introuvable",
+      "url": "https://opengameart.org/content/item-pick-up-sfx"
+    },
+    {
+      "name": "Ambiance — Pluie / Orage (Acte 2)",
+      "error": "OGA: lien direct introuvable",
+      "url": "https://opengameart.org/content/rain-and-thunder-sfx"
+    },
+    {
+      "name": "Ambiance — Nuit mystérieuse (Acte 5)",
+      "error": "OGA: lien direct introuvable",
+      "url": "https://opengameart.org/content/night-ambience-1"
+    },
+    {
+      "name": "3D — Kenney Weapon Pack",
+      "error": "HTTP 404 — https://kenney.nl/assets/weapon-pack",
+      "url": "https://kenney.nl/assets/weapon-pack"
+    },
+    {
+      "name": "3D — Kenney Dungeon Kit",
+      "error": "HTTP 404 — https://kenney.nl/assets/dungeon-kit",
+      "url": "https://kenney.nl/assets/dungeon-kit"
+    }
+  ],
+  "quaternius_manual": [
+    {
+      "name": "Ultimate Monsters (trolls, démons, loups, dragons)",
+      "url": "https://drive.google.com/drive/folders/18m4KpzpEzhC9wl7jzr6dUc0N8Jozr79C",
+      "dest": "Quaternius_Monsters"
+    },
+    {
+      "name": "Modular Dungeon (dalles, colonnes, pièges, portes)",
+      "url": "https://drive.google.com/drive/folders/1CvofJVYHf00StUTsIWtOuyVxeV0CN3UI",
+      "dest": "Quaternius_Dungeon"
+    },
+    {
+      "name": "Ultimate Animated Animals (cerfs, ours, aigles)",
+      "url": "https://drive.google.com/drive/folders/1uJ3N5HfB7jKTseJUNQr3N4YaN0UuEtHk",
+      "dest": "Quaternius_Animals"
+    },
+    {
+      "name": "Ultimate Home Interior (meubles, déco intérieur)",
+      "url": "https://drive.google.com/drive/folders/1SNK9PwPi8xqqxmpU5xEZeiQjB26C1oX6",
+      "dest": "Quaternius_Interior"
+    },
+    {
+      "name": "Ultimate RPG Pack (armes, armures, items RPG)",
+      "url": "https://drive.google.com/drive/folders/1IhdL3W5XdJrjf_axqAnKvEybMaC3FwF-",
+      "dest": "Quaternius_RPG"
+    },
+    {
+      "name": "Ultimate Nature (arbres animés, plantes, rochers)",
+      "url": "https://drive.google.com/drive/folders/1-Kl0L_Jg8awbh0S5T-z3zxh4mVlnxTpa",
+      "dest": "Quaternius_Nature"
+    },
+    {
+      "name": "Ultimate Animated Character (PNJ animé complet)",
+      "url": "https://drive.google.com/drive/folders/1sNi1AfenfPRrvRt5yfaj5QMMd6KKcUJ5",
+      "dest": "Quaternius_Character"
+    }
+  ]
+}

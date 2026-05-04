@@ -1,0 +1,8 @@
+{
+    "recommendations": [
+        "bierner.github-markdown-preview",
+        "bierner.jsdoc-markdown-highlighting",
+        "biomejs.biome",
+        "ms-fast.fast-tagged-templates"
+    ]
+}

@@ -1,0 +1,112 @@
+{
+  "date": "2026-04-22T21:11:15.639Z",
+  "automatic": {
+    "ok": [
+      "Kenney RPG Audio",
+      "Kenney Interface Sounds",
+      "Kenney Impact Sounds",
+      "Kenney UI Pack",
+      "Kenney UI Pack RPG",
+      "Kenney Game Icons",
+      "Kenney Particle Pack",
+      "Kenney Castle Kit",
+      "Kenney Nature Kit",
+      "Kenney Platformer Kit",
+      "PolyHaven HDRI Moonlit Night",
+      "PolyHaven HDRI Overcast",
+      "PolyHaven HDRI Sunset"
+    ],
+    "failed": [
+      {
+        "name": "Kenney Dungeon Kit",
+        "error": "HTTP 404 — https://kenney.nl/assets/dungeon-kit"
+      },
+      {
+        "name": "Kenney Foliage Pack",
+        "error": "socket hang up"
+      },
+      {
+        "name": "Kenney Weapon Pack",
+        "error": "HTTP 404 — https://kenney.nl/assets/weapon-pack"
+      },
+      {
+        "name": "PolyHaven Cobblestone Floor",
+        "error": "Aucun ZIP 2K trouvé"
+      },
+      {
+        "name": "PolyHaven Mossy Stone Wall",
+        "error": "Aucun ZIP 2K trouvé"
+      },
+      {
+        "name": "PolyHaven Dirt Floor",
+        "error": "Aucun ZIP 2K trouvé"
+      },
+      {
+        "name": "PolyHaven Forest Ground",
+        "error": "Aucun ZIP 2K trouvé"
+      },
+      {
+        "name": "PolyHaven Rock Ground",
+        "error": "Aucun ZIP 2K trouvé"
+      },
+      {
+        "name": "PolyHaven Mud Cracked",
+        "error": "Aucun ZIP 2K trouvé"
+      },
+      {
+        "name": "PolyHaven Mossy Cobblestone",
+        "error": "Aucun ZIP 2K trouvé"
+      },
+      {
+        "name": "PolyHaven Stone Wall",
+        "error": "Aucun ZIP 2K trouvé"
+      },
+      {
+        "name": "PolyHaven Rock Wall",
+        "error": "Aucun ZIP 2K trouvé"
+      },
+      {
+        "name": "PolyHaven Snow Floor",
+        "error": "Aucun ZIP 2K trouvé"
+      },
+      {
+        "name": "PolyHaven Lava Rock",
+        "error": "Aucun ZIP 2K trouvé"
+      },
+      {
+        "name": "PolyHaven Forest Floor",
+        "error": "Aucun ZIP 2K trouvé"
+      }
+    ]
+  },
+  "manual_quaternius": [
+    {
+      "name": "Quaternius Ultimate Monsters",
+      "url": "https://drive.google.com/drive/folders/18m4KpzpEzhC9wl7jzr6dUc0N8Jozr79C"
+    },
+    {
+      "name": "Quaternius Modular Dungeon",
+      "url": "https://drive.google.com/drive/folders/1CvofJVYHf00StUTsIWtOuyVxeV0CN3UI"
+    },
+    {
+      "name": "Quaternius Ultimate Animated Animals",
+      "url": "https://drive.google.com/drive/folders/1uJ3N5HfB7jKTseJUNQr3N4YaN0UuEtHk"
+    },
+    {
+      "name": "Quaternius Ultimate Home Interior",
+      "url": "https://drive.google.com/drive/folders/1SNK9PwPi8xqqxmpU5xEZeiQjB26C1oX6"
+    },
+    {
+      "name": "Quaternius Ultimate RPG",
+      "url": "https://drive.google.com/drive/folders/1IhdL3W5XdJrjf_axqAnKvEybMaC3FwF-"
+    },
+    {
+      "name": "Quaternius Ultimate Nature",
+      "url": "https://drive.google.com/drive/folders/1-Kl0L_Jg8awbh0S5T-z3zxh4mVlnxTpa"
+    },
+    {
+      "name": "Quaternius Ultimate Animated Character",
+      "url": "https://drive.google.com/drive/folders/1sNi1AfenfPRrvRt5yfaj5QMMd6KKcUJ5"
+    }
+  ]
+}

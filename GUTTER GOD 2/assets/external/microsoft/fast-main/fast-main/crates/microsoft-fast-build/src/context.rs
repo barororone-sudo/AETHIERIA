@@ -1,0 +1,191 @@
+use crate::json::JsonValue;
+
+/// Resolve a binding expression against root state and loop variables.
+/// Loop vars are checked innermost-first (rev); falls back to root state.
+///
+/// Dot-notation paths traverse nested objects: `dataset.dateOfBirth` accesses
+/// `state["dataset"]["dateOfBirth"]`. When a custom element receives `data-*`
+/// HTML attributes, the renderer stores them in the child state under a nested
+/// `"dataset"` key so that `{{dataset.X}}` bindings work naturally.
+pub(crate) fn resolve_value(expr: &str, root: &JsonValue, loop_vars: &[(String, JsonValue)]) -> Option<JsonValue> {
+    let expr = expr.trim();
+    for (var_name, value) in loop_vars.iter().rev() {
+        if var_name == expr {
+            return Some(value.clone());
+        }
+        let prefix = format!("{}.", var_name);
+        if let Some(prop_path) = expr.strip_prefix(&prefix) {
+            return get_nested_property(value, prop_path);
+        }
+    }
+    get_nested_property(root, expr)
+}
+
+/// Access nested property via dot-notation path, supporting numeric array indices.
+///
+/// Walks the JSON tree via references, only cloning the final value. This avoids
+/// cloning the full subtree at the start (original approach) and at every
+/// intermediate step — only the leaf value is cloned once before returning.
+fn get_nested_property(value: &JsonValue, path: &str) -> Option<JsonValue> {
+    let parts: Vec<&str> = path.split('.').collect();
+    let mut current: &JsonValue = value;
+    for (i, part) in parts.iter().enumerate() {
+        current = match current {
+            JsonValue::Object(ref map) => map.get(*part)?,
+            JsonValue::Array(ref arr) => {
+                if *part == "length" {
+                    // length synthesises a value — only valid as the final
+                    // segment. If more segments follow, the path is invalid.
+                    return if i == parts.len() - 1 {
+                        Some(JsonValue::Number(arr.len() as f64))
+                    } else {
+                        None
+                    };
+                }
+                let idx: usize = part.parse().ok()?;
+                arr.get(idx)?
+            }
+            _ => return None,
+        };
+    }
+    Some(current.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::json::parse;
+
+    fn state(s: &str) -> JsonValue {
+        parse(s).unwrap()
+    }
+
+    // ── get_nested_property ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_single_key() {
+        let root = state(r#"{"name": "Alice"}"#);
+        assert_eq!(get_nested_property(&root, "name"), Some(JsonValue::String("Alice".into())));
+    }
+
+    #[test]
+    fn test_two_level_object() {
+        let root = state(r#"{"foo": {"bar": "baz"}}"#);
+        assert_eq!(get_nested_property(&root, "foo.bar"), Some(JsonValue::String("baz".into())));
+    }
+
+    #[test]
+    fn test_three_level_object() {
+        let root = state(r#"{"foo": {"bar": {"bat": 42}}}"#);
+        assert_eq!(get_nested_property(&root, "foo.bar.bat"), Some(JsonValue::Number(42.0)));
+    }
+
+    #[test]
+    fn test_four_level_object() {
+        let root = state(r#"{"a": {"b": {"c": {"d": "deep"}}}}"#);
+        assert_eq!(get_nested_property(&root, "a.b.c.d"), Some(JsonValue::String("deep".into())));
+    }
+
+    #[test]
+    fn test_array_index() {
+        let root = state(r#"{"items": ["x", "y", "z"]}"#);
+        assert_eq!(get_nested_property(&root, "items.1"), Some(JsonValue::String("y".into())));
+    }
+
+    #[test]
+    fn test_array_then_object() {
+        let root = state(r#"{"users": [{"name": "Alice"}, {"name": "Bob"}]}"#);
+        assert_eq!(get_nested_property(&root, "users.0.name"), Some(JsonValue::String("Alice".into())));
+    }
+
+    #[test]
+    fn test_object_then_array_then_object() {
+        let root = state(r#"{"org": {"members": [{"city": "Seattle"}, {"city": "Berlin"}]}}"#);
+        assert_eq!(get_nested_property(&root, "org.members.1.city"), Some(JsonValue::String("Berlin".into())));
+    }
+
+    #[test]
+    fn test_missing_intermediate_key() {
+        let root = state(r#"{"foo": {}}"#);
+        assert_eq!(get_nested_property(&root, "foo.bar.bat"), None);
+    }
+
+    #[test]
+    fn test_missing_top_level_key() {
+        let root = state(r#"{}"#);
+        assert_eq!(get_nested_property(&root, "foo.bar"), None);
+    }
+
+    #[test]
+    fn test_out_of_bounds_index() {
+        let root = state(r#"{"items": ["a"]}"#);
+        assert_eq!(get_nested_property(&root, "items.5"), None);
+    }
+
+    #[test]
+    fn test_non_numeric_index_on_array() {
+        let root = state(r#"{"items": ["a", "b"]}"#);
+        assert_eq!(get_nested_property(&root, "items.foo"), None);
+    }
+
+    #[test]
+    fn test_array_length() {
+        let root = state(r#"{"items": [1, 2, 3]}"#);
+        assert_eq!(get_nested_property(&root, "items.length"), Some(JsonValue::Number(3.0)));
+    }
+
+    #[test]
+    fn test_empty_array_length() {
+        let root = state(r#"{"items": []}"#);
+        assert_eq!(get_nested_property(&root, "items.length"), Some(JsonValue::Number(0.0)));
+    }
+
+    #[test]
+    fn test_array_length_with_trailing_segment_returns_none() {
+        let root = state(r#"{"items": [1, 2]}"#);
+        assert_eq!(get_nested_property(&root, "items.length.foo"), None);
+    }
+
+    #[test]
+    fn test_nested_array_length() {
+        let root = state(r#"{"data": {"list": [10, 20, 30, 40]}}"#);
+        assert_eq!(get_nested_property(&root, "data.list.length"), Some(JsonValue::Number(4.0)));
+    }
+
+    // ── resolve_value with loop vars ──────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_loop_var_exact() {
+        let root = state(r#"{}"#);
+        let vars = vec![("item".to_string(), JsonValue::String("hello".into()))];
+        assert_eq!(resolve_value("item", &root, &vars), Some(JsonValue::String("hello".into())));
+    }
+
+    #[test]
+    fn test_resolve_loop_var_property() {
+        let root = state(r#"{}"#);
+        let item = state(r#"{"address": {"city": "Seattle"}}"#);
+        let vars = vec![("item".to_string(), item)];
+        assert_eq!(resolve_value("item.address.city", &root, &vars), Some(JsonValue::String("Seattle".into())));
+    }
+
+    #[test]
+    fn test_resolve_falls_back_to_root() {
+        let root = state(r#"{"title": "Hello"}"#);
+        let item = state(r#"{"name": "Alice"}"#);
+        let vars = vec![("item".to_string(), item)];
+        assert_eq!(resolve_value("title", &root, &vars), Some(JsonValue::String("Hello".into())));
+    }
+
+    #[test]
+    fn test_resolve_inner_loop_var_shadows_outer() {
+        let root = state(r#"{}"#);
+        let outer = JsonValue::String("outer".into());
+        let inner = JsonValue::String("inner".into());
+        let vars = vec![
+            ("x".to_string(), outer),
+            ("x".to_string(), inner),
+        ];
+        assert_eq!(resolve_value("x", &root, &vars), Some(JsonValue::String("inner".into())));
+    }
+}

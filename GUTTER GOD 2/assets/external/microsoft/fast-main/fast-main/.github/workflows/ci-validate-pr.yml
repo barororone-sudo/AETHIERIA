@@ -1,0 +1,71 @@
+name: Validate PRs on Chromium
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+    - main
+    - releases/*
+  pull_request:
+    branches:
+    - main
+    - releases/*
+    - features/*
+    types:
+    - opened
+    - synchronize
+    - reopened
+    - ready_for_review
+
+jobs:
+  test_js:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: 0
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - uses: actions/setup-node@v6
+      with:
+        node-version: 22
+
+    - name: Cache multiple paths
+      uses: actions/cache@v4
+      env:
+        cache-name: cache-node-modules
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+
+    - name: Install package dependencies
+      run: npm ci
+
+    - name: Check for the presence of changed files inside ./change
+      run: npm run checkchange
+
+    - name: Biome CI check
+      run: npm run biome:ci
+
+    - name: Install wasm-pack
+      run: cargo install wasm-pack
+
+    - name: Build workspaces
+      run: npx lage build ${{ github.event_name == 'pull_request' && format('--since origin/{0}', github.event.pull_request.base.ref) || '' }}
+
+    - name: Install playwright dependencies and browsers
+      run: |
+        npx playwright install --with-deps
+
+    - name: Testing unit tests
+      run: npx lage test:node test:chromium ${{ github.event_name == 'pull_request' && format('--since origin/{0}', github.event.pull_request.base.ref) || '' }}
+
+    - name: Testing final validation
+      run: npm run test:validation

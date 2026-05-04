@@ -1,0 +1,41 @@
+// core/perf.js — overlay performance runtime
+
+import { Events } from './events.js';
+import { CONFIG } from './config.js';
+
+let _el = null;
+
+export function initPerfOverlay() {
+  if (!CONFIG.perf.showOverlay) return;
+
+  _el = document.createElement('div');
+  _el.id = 'perf-overlay';
+  Object.assign(_el.style, {
+    position:      'fixed',
+    top:           '8px',
+    right:         '8px',
+    background:    'rgba(0,0,0,0.65)',
+    color:         '#0f0',
+    fontFamily:    'monospace',
+    fontSize:      '12px',
+    padding:       '4px 8px',
+    borderRadius:  '4px',
+    pointerEvents: 'none',
+    zIndex:        '9999',
+    lineHeight:    '1.6',
+  });
+  document.body.appendChild(_el);
+
+  Events.on('perf:fps', ({ fps, ms }) => {
+    const color = fps >= CONFIG.perf.targetFps  ? '#0f0'
+                : fps >= CONFIG.perf.fallbackFps ? '#ff0'
+                : '#f44';
+    _el.style.color  = color;
+    _el.textContent  = `${fps} FPS  ${ms} ms`;
+  });
+}
+
+export function destroyPerfOverlay() {
+  _el?.remove();
+  _el = null;
+}

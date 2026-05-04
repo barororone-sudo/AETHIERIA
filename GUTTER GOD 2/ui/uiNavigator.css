@@ -1,0 +1,114 @@
+#ui-nav-dock {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: 235;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 200, 74, 0.25);
+  background: rgba(9, 12, 20, 0.74);
+  backdrop-filter: blur(6px);
+}
+
+.ui-nav-btn {
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(232, 200, 74, 0.35);
+  border-radius: 50%;
+  background: rgba(232, 200, 74, 0.08);
+  color: #f1e8ca;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.ui-nav-btn:hover {
+  background: rgba(232, 200, 74, 0.16);
+}
+
+#ui-nav-wheel {
+  position: fixed;
+  inset: 0;
+  z-index: 236;
+  display: none;
+  pointer-events: auto;
+  background: radial-gradient(circle at center, rgba(20, 24, 36, 0.26), rgba(0, 0, 0, 0.55));
+}
+
+#ui-nav-wheel .wheel-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 128px;
+  height: 128px;
+  margin-left: -64px;
+  margin-top: -64px;
+  border-radius: 50%;
+  border: 1px solid rgba(232, 200, 74, 0.36);
+  background: rgba(11, 14, 24, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d8dfee;
+  font-size: 12px;
+  text-align: center;
+  padding: 12px;
+}
+
+#ui-nav-wheel .wheel-item {
+  position: absolute;
+  width: 96px;
+  height: 96px;
+  margin-left: -48px;
+  margin-top: -48px;
+  border-radius: 50%;
+  border: 1px solid rgba(232, 200, 74, 0.34);
+  background: rgba(14, 19, 30, 0.92);
+  color: #f3eacc;
+  cursor: pointer;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 4px;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+
+#ui-nav-wheel .wheel-item:hover,
+#ui-nav-wheel .wheel-item.is-active {
+  transform: scale(1.08);
+  background: rgba(232, 200, 74, 0.2);
+}
+
+#ui-nav-wheel .wheel-ico {
+  font-size: 18px;
+}
+
+#ui-nav-wheel .wheel-label {
+  font-size: 11px;
+}
+
+#ui-nav-wheel .wheel-tip {
+  position: absolute;
+  left: 50%;
+  bottom: 30px;
+  transform: translateX(-50%);
+  color: #9fb0d2;
+  font-size: 12px;
+}
+
+@media (max-width: 780px) {
+  #ui-nav-dock {
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 10px;
+  }
+
+  #ui-nav-wheel .wheel-item {
+    width: 84px;
+    height: 84px;
+    margin-left: -42px;
+    margin-top: -42px;
+  }
+}

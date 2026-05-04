@@ -1,0 +1,69 @@
+#death-screen-root {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at center, rgba(120, 8, 8, 0.28), rgba(0, 0, 0, 0.9) 58%),
+    rgba(0, 0, 0, 0.9);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: #ead7d7;
+}
+
+.death-card {
+  width: min(92vw, 500px);
+  border: 1px solid rgba(215, 90, 90, 0.45);
+  border-radius: 12px;
+  background: rgba(14, 7, 7, 0.94);
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.5);
+  padding: 24px;
+}
+
+.death-title {
+  font-size: clamp(36px, 8vw, 64px);
+  line-height: 0.9;
+  letter-spacing: 0.08em;
+  color: #f2b7b7;
+  text-shadow: 0 0 24px rgba(180, 40, 40, 0.45);
+}
+
+.death-sub {
+  margin-top: 10px;
+  color: #bf9a9a;
+  font-size: 13px;
+}
+
+.death-actions {
+  margin-top: 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.death-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(215, 90, 90, 0.42);
+  background: rgba(170, 44, 44, 0.14);
+  color: #f4dede;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.death-btn:hover {
+  background: rgba(170, 44, 44, 0.23);
+}
+
+.death-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.death-note {
+  margin-top: 10px;
+  min-height: 18px;
+  color: #cf8f8f;
+  font-size: 12px;
+}

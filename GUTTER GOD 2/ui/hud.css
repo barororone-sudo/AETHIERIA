@@ -1,0 +1,87 @@
+:root {
+  --acc: #e8c84a;
+  --bg:  rgba(8,6,14,0.80);
+  --hp:  #4ae84a;
+  --st:  #4ab4e8;
+  --txt: #e8e0d0;
+  --dim: rgba(232,224,208,0.55);
+}
+
+#hud-root { position:fixed; inset:0; pointer-events:none; z-index:50; font-family:system-ui,sans-serif; }
+
+/* ── Bas gauche : HP + Stamina + Level ── */
+#hud-bl {
+  position:absolute; bottom:28px; left:28px;
+  display:flex; flex-direction:column; gap:7px;
+}
+.hud-row { display:flex; align-items:center; gap:8px; }
+.hud-lbl { color:var(--dim); font-size:14px; width:18px; text-align:center; }
+.hud-track {
+  width:160px; height:9px;
+  background:rgba(255,255,255,0.12);
+  border-radius:5px; overflow:hidden;
+}
+.hud-fill { height:100%; border-radius:5px; transition:width .12s; }
+.hud-fill.hp { background:var(--hp); }
+.hud-fill.st { background:var(--st); }
+.hud-num { color:var(--txt); font-size:11px; min-width:32px; }
+#hud-lvl { color:var(--acc); font-size:12px; font-weight:700; margin-top:2px; padding-left:26px; }
+
+/* ── Haut droite : quête ── */
+#hud-quest {
+  position:absolute; top:20px; right:20px;
+  background:var(--bg); border-left:2px solid var(--acc);
+  padding:8px 14px; border-radius:4px; max-width:260px;
+}
+#hud-qt { color:var(--acc); font-size:12px; font-weight:600; margin-bottom:3px; }
+#hud-qs { color:var(--dim); font-size:11px; line-height:1.5; }
+
+/* ── Croix centrale ── */
+#hud-cross {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  width:6px; height:6px;
+  border-radius:50%;
+  background:rgba(255,255,255,0.7);
+  box-shadow:0 0 4px rgba(255,255,255,0.5);
+}
+
+/* ── Lock-on ── */
+#hud-lock {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  width:44px; height:44px;
+  border:2px solid var(--acc);
+  border-radius:50%;
+  opacity:0; transition:opacity .15s;
+  box-shadow:0 0 10px var(--acc);
+}
+#hud-lock.on { opacity:1; }
+
+/* ── Notifications ── */
+#hud-notifs {
+  position:absolute; top:72px; left:50%;
+  transform:translateX(-50%);
+  display:flex; flex-direction:column; align-items:center; gap:5px;
+}
+.notif {
+  background:var(--bg); color:var(--txt);
+  padding:5px 16px; border-radius:20px;
+  font-size:13px; border:1px solid rgba(255,255,255,0.08);
+  animation:nin .2s ease, nout .3s ease 1.9s forwards;
+}
+@keyframes nin  { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:none} }
+@keyframes nout { to{opacity:0;transform:translateY(-6px)} }
+
+/* ── Hint raccourcis ── */
+#hud-hint {
+  position:absolute; bottom:10px; left:50%;
+  transform:translateX(-50%);
+  color:rgba(255,255,255,0.25); font-size:10px;
+}
+
+/* ── Minimap ── */
+#minimap {
+  image-rendering: pixelated;
+  box-shadow: 0 0 12px rgba(0,0,0,0.6);
+}
