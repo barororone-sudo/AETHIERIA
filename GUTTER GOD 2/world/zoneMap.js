@@ -22,6 +22,39 @@ export function registerPOIs(pois) {
   _pois = pois;
 }
 
+export function appendPOIs(pois) {
+  const existing = new Set(_pois.map(p => p.id || p.name));
+  for (const poi of pois || []) {
+    const key = poi.id || poi.name;
+    if (key && existing.has(key)) continue;
+    _pois.push(poi);
+    if (key) existing.add(key);
+  }
+}
+
+// ── City districts — larger settlement zones for multi-POI cities ────────
+// Cities define a center + radius that overrides individual POI radii.
+// Inside a city, the zone is always SETTLEMENT_CORE/EDGE with larger radii.
+let _cities = [];
+
+/**
+ * Register city definitions for expanded settlement zones.
+ * @param {Array<{x:number, z:number, coreRadius:number, edgeRadius:number, name:string}>} cities
+ */
+export function registerCities(cities) {
+  _cities = cities;
+}
+
+export function appendCities(cities) {
+  const existing = new Set(_cities.map(c => c.id || c.name));
+  for (const city of cities || []) {
+    const key = city.id || city.name;
+    if (key && existing.has(key)) continue;
+    _cities.push(city);
+    if (key) existing.add(key);
+  }
+}
+
 // ── Noise for zone variation ─────────────────────────────────────────────
 const _zoneNoise  = createNoise2D(() => 0.42);   // deterministic seed
 const _zoneNoise2 = createNoise2D(() => 0.73);   // secondary layer
@@ -39,6 +72,21 @@ const _zoneNoise2 = createNoise2D(() => 0.73);   // secondary layer
  *   - poiDist: distance to nearest POI
  */
 export function getZoneAt(x, z) {
+  // ── Check city zones first (larger settlement radii) ───────────────
+  for (const city of _cities) {
+    const cdx = x - city.x;
+    const cdz = z - city.z;
+    const cityDist = Math.sqrt(cdx * cdx + cdz * cdz);
+
+    if (cityDist < city.coreRadius) {
+      return { zone: ZONE.SETTLEMENT_CORE, influence: 1.0, nearestPoi: city, poiDist: cityDist };
+    }
+    if (cityDist < city.edgeRadius) {
+      const t = 1.0 - (cityDist - city.coreRadius) / (city.edgeRadius - city.coreRadius);
+      return { zone: ZONE.SETTLEMENT_EDGE, influence: t, nearestPoi: city, poiDist: cityDist };
+    }
+  }
+
   // ── Distance to nearest POI ────────────────────────────────────────
   let nearestPoi = null;
   let poiDist = Infinity;
